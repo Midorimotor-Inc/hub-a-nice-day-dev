@@ -557,7 +557,7 @@ const LoanerGrid=memo(({storeId,entryDate,loanerRes,loanerList,onSelect,selCarId
 // ═══════════════════════════════════════════
 
 // ── 車検カレンダーピッカー（入庫日選択用）──
-const InspCalendarPicker=memo(({value,onChange,inspData,closedDays,closedDates,overrideOpen,inspLimits})=>{
+const InspCalendarPicker=memo(({value,onChange,inspData,closedDays,closedDates,overrideOpen,inspLimits,open,onClose})=>{
   const [calMonth,setCalMonth]=useState(()=>{
     if(value){const p=value.split('-');return new Date(Number(p[0]),Number(p[1])-1,1);}
     return new Date();
@@ -596,6 +596,7 @@ const InspCalendarPicker=memo(({value,onChange,inspData,closedDays,closedDates,o
   };
   const DOW_CAL=['日','月','火','水','木','金','土'];
   const today=new Date();
+  if(!open)return null;
   return(
     <div style={{border:'1.5px solid #e5e7eb',borderRadius:9,overflow:'hidden',fontSize:11}}>
       {/* ナビ */}
@@ -624,15 +625,16 @@ const InspCalendarPicker=memo(({value,onChange,inspData,closedDays,closedDates,o
             const isToday=d===today.getDate()&&cm===today.getMonth()&&cy===today.getFullYear();
             const dateStr=`${cy}-${String(cm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
             const isSel=value===dateStr;
-            const isFull=cc.total>=lmt;
+            // isFull は dayFull に統合済み
             const numColor=di===0?'#dc2626':di===6?'#2563eb':'#111';
+            const dayFull=cc.total>=lmt;  // 合計6台以上で赤網掛け
             let bg='white';
             if(isSel)bg='#dbeafe';
             else if(closed)bg='repeating-linear-gradient(45deg,#f9fafb,#f9fafb 3px,#f3f4f6 3px,#f3f4f6 6px)';
-            else if(isFull)bg='#fef2f2';
+            else if(dayFull)bg='repeating-linear-gradient(45deg,#fee2e2,#fee2e2 3px,#fecaca 3px,#fecaca 6px)';
             return(
               <div key={di}
-                onClick={()=>{if(!closed)onChange(dateStr);}}
+                onClick={()=>{if(!closed){onChange(dateStr);onClose&&onClose();}}}
                 style={{minHeight:58,padding:'3px 2px',cursor:closed?'not-allowed':'pointer',
                   borderTop:'1px solid #f3f4f6',borderLeft:di>0?'1px solid #f3f4f6':'none',
                   background:bg,
@@ -640,55 +642,39 @@ const InspCalendarPicker=memo(({value,onChange,inspData,closedDays,closedDates,o
                   position:'relative'}}>
                 {/* 日付 */}
                 <div style={{textAlign:'center',fontWeight:isToday?900:700,fontSize:11,
-                  color:isSel?'#1d4ed8':closed?'#9ca3af':numColor,marginBottom:2}}>{d}</div>
+                  color:isSel?'#1d4ed8':closed?'#9ca3af':numColor,lineHeight:1.2}}>{d}</div>
                 {!closed&&(
-                  <div style={{padding:'0 2px'}}>
-                    {/* マッハ（赤）: 上限2台 */}
+                  <div style={{display:'flex',justifyContent:'center',gap:2,marginTop:2,flexWrap:'wrap',padding:'0 1px'}}>
+                    {/* マッハ（赤丸）: 数あれば表示 */}
                     {cc[1]>0&&(
-                      <div style={{display:'flex',gap:1,marginBottom:1,justifyContent:'center'}}>
-                        {Array.from({length:2}).map((_,i)=>(
-                          <span key={'m'+i} style={{
-                            display:'inline-block',width:8,height:8,borderRadius:1,
-                            background: i<cc[1]
-                              ? (cc[1]>=2?'#b91c1c':'#ef4444')
-                              : 'repeating-linear-gradient(45deg,#fee2e2,#fee2e2 2px,#fecaca 2px,#fecaca 4px)',
-                            border: i<cc[1]?'none':'1px solid #fca5a5',
-                          }}/>
-                        ))}
-                      </div>
+                      <span style={{
+                        display:'inline-flex',alignItems:'center',justifyContent:'center',
+                        width:14,height:14,borderRadius:'50%',
+                        background:'#dc2626',color:'white',
+                        fontSize:8,fontWeight:900,lineHeight:1,flexShrink:0,
+                      }}>{cc[1]}</span>
                     )}
-                    {/* クイック（青）: 上限は日の上限内 */}
+                    {/* クイック（青丸）: 数あれば表示 */}
                     {cc[2]>0&&(
-                      <div style={{display:'flex',gap:1,marginBottom:1,justifyContent:'center',flexWrap:'wrap'}}>
-                        {Array.from({length:Math.min(cc[2],6)}).map((_,i)=>(
-                          <span key={'q'+i} style={{
-                            display:'inline-block',width:8,height:8,borderRadius:1,
-                            background: cc[2]>=5?'#1e3a8a':cc[2]>=3?'#1d4ed8':'#3b82f6',
-                          }}/>
-                        ))}
-                      </div>
+                      <span style={{
+                        display:'inline-flex',alignItems:'center',justifyContent:'center',
+                        width:14,height:14,borderRadius:'50%',
+                        background:'#2563eb',color:'white',
+                        fontSize:8,fontWeight:900,lineHeight:1,flexShrink:0,
+                      }}>{cc[2]}</span>
                     )}
-                    {/* レギュラー（黄）: 上限3台 */}
+                    {/* レギュラー（黄丸）: 数あれば表示 */}
                     {cc[3]>0&&(
-                      <div style={{display:'flex',gap:1,justifyContent:'center'}}>
-                        {Array.from({length:3}).map((_,i)=>(
-                          <span key={'r'+i} style={{
-                            display:'inline-block',width:8,height:8,borderRadius:1,
-                            background: i<cc[3]
-                              ? (cc[3]>=3?'#b45309':'#d97706')
-                              : 'repeating-linear-gradient(45deg,#fef3c7,#fef3c7 2px,#fde68a 2px,#fde68a 4px)',
-                            border: i<cc[3]?'none':'1px solid #fcd34d',
-                          }}/>
-                        ))}
-                      </div>
-                    )}
-                    {/* 全台満の場合 */}
-                    {isFull&&cc[1]===0&&cc[2]===0&&cc[3]===0&&(
-                      <div style={{textAlign:'center',fontSize:8,color:'#dc2626',fontWeight:700}}>満</div>
+                      <span style={{
+                        display:'inline-flex',alignItems:'center',justifyContent:'center',
+                        width:14,height:14,borderRadius:'50%',
+                        background:'#d97706',color:'white',
+                        fontSize:8,fontWeight:900,lineHeight:1,flexShrink:0,
+                      }}>{cc[3]}</span>
                     )}
                   </div>
                 )}
-                {closed&&<div style={{textAlign:'center',fontSize:8,color:'#9ca3af'}}>休</div>}
+                {closed&&<div style={{textAlign:'center',fontSize:8,color:'#9ca3af',marginTop:2}}>休</div>}
                 {isSel&&<div style={{position:'absolute',top:1,right:1,width:5,height:5,borderRadius:'50%',background:'#2563eb'}}/>}
               </div>
             );
@@ -742,6 +728,7 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
     note:customer.note||'',
   });
   const [selCarId,setSelCarId]=useState(null);
+  const [showCal,setShowCal]=useState(true);
   const [selDays,setSelDays]=useState([]);
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState('');
@@ -788,9 +775,15 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
         <div style={{overflowY:'auto',flex:1,padding:18}}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
             <div>
-              <div style={{fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>
-                📅 入庫日 <span style={{color:'#dc2626',fontSize:10}}>（本予約必須）</span>
-                {form.entryDate&&<span style={{marginLeft:8,fontWeight:800,color:'#1d4ed8',fontSize:12}}>{form.entryDate}</span>}
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:5,flexWrap:'wrap'}}>
+                <span style={{fontSize:11,fontWeight:700,color:'#374151'}}>📅 入庫日 <span style={{color:'#dc2626',fontSize:10}}>（本予約必須）</span></span>
+                {form.entryDate&&<span style={{fontWeight:800,color:'#1d4ed8',fontSize:12}}>{form.entryDate}</span>}
+                <button type="button" onClick={()=>setShowCal(p=>!p)}
+                  style={{padding:'2px 10px',fontSize:10,borderRadius:6,border:'1.5px solid #3b82f6',
+                    background:showCal?'#2563eb':'white',color:showCal?'white':'#2563eb',
+                    fontWeight:700,cursor:'pointer',flexShrink:0}}>
+                  {showCal?'▲ 閉じる':'📅 カレンダー'}
+                </button>
               </div>
               <InspCalendarPicker
                 value={form.entryDate}
@@ -800,6 +793,8 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
                 closedDates={closedDates}
                 overrideOpen={overrideOpen}
                 inspLimits={inspLimits}
+                open={showCal}
+                onClose={()=>setShowCal(false)}
               />
             </div>
             <div>
