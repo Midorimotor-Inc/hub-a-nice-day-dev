@@ -5428,10 +5428,12 @@ function AppInner() {
   const [showHoliday,    setShowHoliday]    =useState(false);
   const [showDayOff,     setShowDayOff]     =useState(false);
   const headerRef=useRef(null);
-  // ヘッダー高さをCSS変数にセット
+  const [headerH, setHeaderH]=useState(90); // ヘッダー高さ（デフォルト90px）
+  // ヘッダー高さをstate＋CSS変数の両方にセット
   useEffect(()=>{
     const update=()=>{
-      const hh=headerRef.current?.offsetHeight||0;
+      const hh=headerRef.current?.offsetHeight||90;
+      setHeaderH(hh);
       document.documentElement.style.setProperty('--header-h', hh+'px');
     };
     update();
@@ -6622,8 +6624,8 @@ function AppInner() {
 
       <main style={{maxWidth:1700,margin:'0 auto',
         ...(view==='schedule'
-          ? {height:'100vh',overflow:'hidden',padding:'0',paddingTop:'var(--header-h,90px)',display:'flex',flexDirection:'column'}
-          : {padding:'20px 16px',paddingTop:'calc(var(--header-h,90px) + 20px)'}
+          ? {height:'100vh',overflow:'hidden',padding:'0',paddingTop:headerH,display:'flex',flexDirection:'column'}
+          : {padding:'20px 16px',paddingTop:20,marginTop:headerH}
         )}}>
 
         {/* -- カレンダー -- */}
