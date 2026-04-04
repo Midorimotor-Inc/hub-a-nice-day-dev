@@ -572,9 +572,16 @@ const InspCalendarPicker=memo(({value,onChange,inspData,closedDays,closedDates,o
   }
   if(wk.some(x=>x!==null))weeks.push([...wk]);
   const getDk=d=>`${cy}-${cm+1}-${d}`;
-  const getCount=d=>{
+  // コース別台数を取得（1:マッハ赤, 2:クイック青, 3:レギュラー黄）
+  const getCourseCounts=d=>{
     const rows=(inspData&&inspData[getDk(d)])||[];
-    return rows.filter(r=>r&&r.name&&!r.pendingApproval&&r.bookingStatus!=='cancelled').length;
+    const valid=rows.filter(r=>r&&r.name&&!r.pendingApproval&&r.bookingStatus!=='cancelled');
+    return {
+      1: valid.filter(r=>Number(r.course)===1).length, // マッハ
+      2: valid.filter(r=>Number(r.course)===2).length, // クイック
+      3: valid.filter(r=>Number(r.course)===3).length, // レギュラー
+      total: valid.length,
+    };
   };
   const getLimit=d=>(inspLimits&&inspLimits[getDk(d)])||6;
   const isClosed=d=>{
@@ -611,13 +618,13 @@ const InspCalendarPicker=memo(({value,onChange,inspData,closedDays,closedDates,o
         <div key={wi} style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)'}}>
           {wk.map((d,di)=>{
             if(!d)return<div key={di} style={{minHeight:46,borderTop:'1px solid #f3f4f6',borderLeft:di>0?'1px solid #f3f4f6':'none',background:'#f9fafb'}}/>;
-            const cnt=getCount(d);
+            const cc=getCourseCounts(d);
             const lmt=getLimit(d);
             const closed=isClosed(d);
             const isToday=d===today.getDate()&&cm===today.getMonth()&&cy===today.getFullYear();
             const dateStr=`${cy}-${String(cm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
             const isSel=value===dateStr;
-            const isFull=cnt>=lmt;
+            const isFull=cc.total>=lmt;
             const numColor=di===0?'#dc2626':di===6?'#2563eb':'#111';
             let bg='white';
             if(isSel)bg='#dbeafe';
@@ -626,19 +633,59 @@ const InspCalendarPicker=memo(({value,onChange,inspData,closedDays,closedDates,o
             return(
               <div key={di}
                 onClick={()=>{if(!closed)onChange(dateStr);}}
-                style={{minHeight:46,padding:'3px 2px',cursor:closed?'not-allowed':'pointer',
+                style={{minHeight:58,padding:'3px 2px',cursor:closed?'not-allowed':'pointer',
                   borderTop:'1px solid #f3f4f6',borderLeft:di>0?'1px solid #f3f4f6':'none',
                   background:bg,
                   outline:isSel?'2px solid #2563eb':isToday?'2px solid #93c5fd':'none',
                   position:'relative'}}>
+                {/* 日付 */}
                 <div style={{textAlign:'center',fontWeight:isToday?900:700,fontSize:11,
-                  color:isSel?'#1d4ed8':closed?'#9ca3af':numColor}}>{d}</div>
+                  color:isSel?'#1d4ed8':closed?'#9ca3af':numColor,marginBottom:2}}>{d}</div>
                 {!closed&&(
-                  <div style={{textAlign:'center',marginTop:1}}>
-                    <span style={{fontSize:9,fontWeight:700,
-                      color:isFull?'#dc2626':cnt>=lmt-1?'#d97706':'#059669'}}>
-                      {cnt}/{lmt}台
-                    </span>
+                  <div style={{padding:'0 2px'}}>
+                    {/* マッハ（赤）: 上限2台 */}
+                    {cc[1]>0&&(
+                      <div style={{display:'flex',gap:1,marginBottom:1,justifyContent:'center'}}>
+                        {Array.from({length:2}).map((_,i)=>(
+                          <span key={'m'+i} style={{
+                            display:'inline-block',width:8,height:8,borderRadius:1,
+                            background: i<cc[1]
+                              ? (cc[1]>=2?'#b91c1c':'#ef4444')
+                              : 'repeating-linear-gradient(45deg,#fee2e2,#fee2e2 2px,#fecaca 2px,#fecaca 4px)',
+                            border: i<cc[1]?'none':'1px solid #fca5a5',
+                          }}/>
+                        ))}
+                      </div>
+                    )}
+                    {/* クイック（青）: 上限は日の上限内 */}
+                    {cc[2]>0&&(
+                      <div style={{display:'flex',gap:1,marginBottom:1,justifyContent:'center',flexWrap:'wrap'}}>
+                        {Array.from({length:Math.min(cc[2],6)}).map((_,i)=>(
+                          <span key={'q'+i} style={{
+                            display:'inline-block',width:8,height:8,borderRadius:1,
+                            background: cc[2]>=5?'#1e3a8a':cc[2]>=3?'#1d4ed8':'#3b82f6',
+                          }}/>
+                        ))}
+                      </div>
+                    )}
+                    {/* レギュラー（黄）: 上限3台 */}
+                    {cc[3]>0&&(
+                      <div style={{display:'flex',gap:1,justifyContent:'center'}}>
+                        {Array.from({length:3}).map((_,i)=>(
+                          <span key={'r'+i} style={{
+                            display:'inline-block',width:8,height:8,borderRadius:1,
+                            background: i<cc[3]
+                              ? (cc[3]>=3?'#b45309':'#d97706')
+                              : 'repeating-linear-gradient(45deg,#fef3c7,#fef3c7 2px,#fde68a 2px,#fde68a 4px)',
+                            border: i<cc[3]?'none':'1px solid #fcd34d',
+                          }}/>
+                        ))}
+                      </div>
+                    )}
+                    {/* 全台満の場合 */}
+                    {isFull&&cc[1]===0&&cc[2]===0&&cc[3]===0&&(
+                      <div style={{textAlign:'center',fontSize:8,color:'#dc2626',fontWeight:700}}>満</div>
+                    )}
                   </div>
                 )}
                 {closed&&<div style={{textAlign:'center',fontSize:8,color:'#9ca3af'}}>休</div>}
@@ -649,11 +696,24 @@ const InspCalendarPicker=memo(({value,onChange,inspData,closedDays,closedDates,o
         </div>
       ))}
       {/* 凡例 */}
-      <div style={{display:'flex',gap:8,padding:'5px 10px',background:'#f8fafc',borderTop:'1px solid #e5e7eb',flexWrap:'wrap'}}>
-        <span style={{display:'flex',alignItems:'center',gap:2,fontSize:9,color:'#059669'}}>●空き</span>
-        <span style={{display:'flex',alignItems:'center',gap:2,fontSize:9,color:'#d97706'}}>●残少</span>
-        <span style={{display:'flex',alignItems:'center',gap:2,fontSize:9,color:'#dc2626'}}>●満</span>
-        <span style={{display:'flex',alignItems:'center',gap:2,fontSize:9,color:'#9ca3af'}}>休休業</span>
+      <div style={{display:'flex',gap:8,padding:'5px 10px',background:'#f8fafc',borderTop:'1px solid #e5e7eb',flexWrap:'wrap',alignItems:'center'}}>
+        <span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:9}}>
+          <span style={{width:8,height:8,borderRadius:1,background:'#b91c1c',display:'inline-block'}}/>
+          <span style={{color:'#b91c1c',fontWeight:700}}>マッハ</span>
+        </span>
+        <span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:9}}>
+          <span style={{width:8,height:8,borderRadius:1,background:'#1d4ed8',display:'inline-block'}}/>
+          <span style={{color:'#1d4ed8',fontWeight:700}}>クイック</span>
+        </span>
+        <span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:9}}>
+          <span style={{width:8,height:8,borderRadius:1,background:'#d97706',display:'inline-block'}}/>
+          <span style={{color:'#d97706',fontWeight:700}}>レギュラー</span>
+        </span>
+        <span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:9,color:'#9ca3af'}}>
+          <span style={{width:8,height:8,borderRadius:1,display:'inline-block',background:'repeating-linear-gradient(45deg,#fee2e2,#fee2e2 2px,#fecaca 2px,#fecaca 4px)',border:'1px solid #fca5a5'}}/>
+          空き枠
+        </span>
+        <span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:9,color:'#9ca3af'}}>休=休業</span>
       </div>
     </div>
   );
