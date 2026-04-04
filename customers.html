@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Hub a Nice Day - 顧客リスト</title>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans",sans-serif;background:#f8fafc;color:#1e293b;font-size:13px;}
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px;}
+button{cursor:pointer;font-family:inherit;}
+input,select,textarea{font-family:inherit;}
+.row-none    {background:white;}
+.row-temp    {background:#bbf7d0;}
+.row-confirm {background:#bfdbfe;}
+.row-cancel  {background:#fecaca;}
+.row-new_car {background:#fde68a;}
+.row-none:hover    {background:#f1f5f9;}
+.row-temp:hover    {background:#86efac;}
+.row-confirm:hover {background:#93c5fd;}
+.row-cancel:hover  {background:#fca5a5;}
+.row-new_car:hover {background:#fbbf24;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
+
+// ═══════════════════════════════════════════
+// 定数
+// ═══════════════════════════════════════════
+const GAS_URL='https://script.google.com/macros/s/AKfycbxyWvIxIyC1EwJUfm4Fy8g6dpBytp7J9wTuT6Dujz-X7V-WzkGkN-bHw2l6rY_B1ST3/exec';
+const GAS_API_KEY='hub2026SandaHonten!9xKy';
+const STOR='hub-v8-';
+const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
+const CHUNK_SIZE=100;
+// ファイル名をGASキーに使える形に変換
+const safeName=n=>n.replace(/[^a-zA-Z0-9　-鿿゠-ヿ぀-ゟ]/g,'_').slice(0,30);
+// ファイルをチャンクに分割してGASに保存
+const saveFileChunked=async(file)=>{
+  const name=safeName(file.name);
+  const chunks=[];
+  for(let i=0;i<file.customers.length;i+=CHUNK_SIZE)
+    chunks.push(file.customers.slice(i,i+CHUNK_SIZE));
+  const idx={name:file.name,total:file.customers.length,chunks:chunks.length};
+  await Promise.all([
+    sSet(STOR+'cf-'+name+'-index',idx),
+    ...chunks.map((c,i)=>sSet(STOR+'cf-'+name+'-chunk-'+i,c))
+  ]);
+};
+// ファイルをチャンクから復元
+const loadFileChunked=async(name)=>{
+  const sn=safeName(name);
+  const idx=await sGet(STOR+'cf-'+sn+'-index');
+  if(!idx)return null;
+  const chunks=await Promise.all(
+    Array.from({length:idx.chunks},(_,i)=>sGet(STOR+'cf-'+sn+'-chunk-'+i))
+  );
+  const customers=chunks.filter(Boolean).flat();
+  return{name:idx.name,customers};
+};
+// 全ファイルリスト
+const saveFilesIndex=async(files)=>{
+  const index=files.map(f=>({name:f.name,count:f.customers.length}));
+  await sSet(STOR+'cf-index',index);
+};
+
+const COURSES=[
+  {id:1,name:'マッハ車検',  short:'マ',color:'#b91c1c',bg:'#fca5a5'},
+  {id:2,name:'クイック車検',short:'ク',color:'#1d4ed8',bg:'#bfdbfe'},
+  {id:3,name:'レギュラー車検',short:'レ',color:'#d97706',bg:'#fde68a'},
+];
+const STORES=[
+  {id:'honten',name:'本店', color:'#2563eb',bg:'#eff6ff'},
+  {id:'sanda', name:'三田店',color:'#dc2626',bg:'#fef2f2'},
+];
+const TIME_SLOTS=(()=>{const s=[];for(let h=9;h<=18;h++)for(let m=0;m<60;m+=30)s.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);return s;})();
+const ALL_STAFF=[
+  {uid:'h1',name:'見取大介',store:'honten'},{uid:'h2',name:'岡上秀一',store:'honten'},
+  {uid:'h3',name:'竹林直行',store:'honten'},{uid:'h4',name:'幸田かつのり',store:'honten'},
+  {uid:'h5',name:'魚住圭',store:'honten'},{uid:'h6',name:'舟田祥子',store:'honten'},
+  {uid:'h7',name:'江川京志',store:'honten'},{uid:'h8',name:'ダク',store:'honten'},
+  {uid:'h9',name:'カビン',store:'honten'},{uid:'s10',name:'藤原昭人',store:'sanda'},
+  {uid:'s11',name:'中井啓介',store:'sanda'},{uid:'s12',name:'宮原てるま',store:'sanda'},
+  {uid:'s13',name:'芦田',store:'sanda'},{uid:'s14',name:'長谷川',store:'sanda'},
+  {uid:'s15',name:'石井',store:'sanda'},{uid:'s16',name:'両澤ちよう',store:'sanda'},
+  {uid:'s17',name:'野呂遥奈',store:'sanda'},{uid:'s18',name:'河合',store:'sanda'},
+];
+const LOANERS_H=[
+  {id:1,name:'ワゴンR',num:'1234',store:'honten'},{id:2,name:'ムーヴ',num:'5678',store:'honten'},
+  {id:3,name:'N-BOX',num:'9012',store:'honten'},{id:4,name:'タント',num:'3456',store:'honten'},
+  {id:5,name:'スペーシア',num:'0001',store:'honten'},{id:6,name:'アルト',num:'0002',store:'honten'},
+];
+const LOANERS_S=[
+  {id:7,name:'スペーシア',num:'7890',store:'sanda'},{id:8,name:'アルト',num:'2468',store:'sanda'},
+  {id:9,name:'ミライース',num:'1357',store:'sanda'},{id:10,name:'デイズ',num:'8024',store:'sanda'},
+  {id:11,name:'ワゴンR',num:'0003',store:'sanda'},{id:12,name:'N-BOX',num:'0004',store:'sanda'},
+];
+
+const STATUS_DEF={
+  none:    {label:'未予約',  btnBg:'#e2e8f0',btnColor:'#334155',btnBorder:'#94a3b8'},
+  temp:    {label:'仮予約',  btnBg:'#86efac',btnColor:'#14532d',btnBorder:'#16a34a'},
+  confirm: {label:'本予約',  btnBg:'#93c5fd',btnColor:'#1e3a8a',btnBorder:'#1d4ed8'},
+  cancel:  {label:'キャンセル',btnBg:'#fca5a5',btnColor:'#7f1d1d',btnBorder:'#dc2626'},
+  new_car: {label:'初回車検',btnBg:'#fde68a',btnColor:'#78350f',btnBorder:'#d97706'},
+};
+
+// ═══════════════════════════════════════════
+// GAS通信
+// ═══════════════════════════════════════════
+const sGet=async(k,retries=3)=>{
+  for(let i=0;i<retries;i++){
+    try{
+      const r=await fetch(`${GAS_URL}?key=${encodeURIComponent(k)}&apiKey=${encodeURIComponent(GAS_API_KEY)}`,{cache:'no-store'});
+      if(r.status===503){
+        if(i<retries-1){await new Promise(r=>setTimeout(r,2000*(i+1)));continue;}
+        return null;
+      }
+      const t=await r.text();
+      if(!t||t==='null'||t.startsWith('error')||t==='unauthorized')return null;
+      try{return JSON.parse(t);}catch{return null;}
+    }catch{if(i===retries-1)return null;}
+  }
+  return null;
+};
+const sSet=async(k,v,retries=3)=>{
+  for(let i=0;i<retries;i++){
+    try{
+      await fetch(GAS_URL,{method:'POST',mode:'no-cors',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({key:k,value:JSON.stringify(v),apiKey:GAS_API_KEY}),
+      });
+      return;
+    }catch{if(i<retries-1)await new Promise(r=>setTimeout(r,1500*(i+1)));}
+  }
+};
+
+// ═══════════════════════════════════════════
+// ユーティリティ
+// ═══════════════════════════════════════════
+const parseExcelDate=v=>{
+  if(v===null||v===undefined||v==='')return'';
+  // Dateオブジェクトの場合
+  if(v instanceof Date){
+    if(isNaN(v.getTime()))return'';
+    return`${v.getFullYear()}-${String(v.getMonth()+1).padStart(2,'0')}-${String(v.getDate()).padStart(2,'0')}`;
+  }
+  // Excel数値（シリアル値）
+  if(typeof v==='number'&&v>1000){
+    const d=new Date(Math.round((v-25569)*86400*1000));
+    return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  const s=String(v).trim();
+  if(!s)return'';
+  // ISO形式・スラッシュ形式
+  let m=s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if(m)return`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  // MM/DD/YYYY形式
+  m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if(m){const y=m[3].length===2?`20${m[3]}`:m[3];return`${y}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;}
+  // JavaScriptのDate.toString()の場合（Mon Jun 01 2026...）
+  const d2=new Date(s);
+  if(!isNaN(d2.getTime())&&s.length>6){
+    return`${d2.getFullYear()}-${String(d2.getMonth()+1).padStart(2,'0')}-${String(d2.getDate()).padStart(2,'0')}`;
+  }
+  return'';
+};
+const fmtDate=s=>{if(!s)return'';const p=s.split('-');return p.length===3?`${p[1]}/${p[2]}`:s;};
+const fmtDateShort=s=>{if(!s)return'';const p=s.split('-');return p.length===3?`${p[1]}/${p[2]}`:s;};
+const today=()=>new Date().toISOString().split('T')[0];
+
+// 特典自動判定
+const calcTokuten=(expiry,bookDate)=>{
+  if(!expiry||!bookDate)return'-';
+  const diff=(new Date(expiry)-new Date(bookDate))/(1000*60*60*24);
+  if(diff>=60)return'②';
+  if(diff>=30)return'①';
+  return'-';
+};
+
+// 受注日のDM列判定
+const calcDMCol=(dm1Date,dm2Date,bookDate)=>{
+  if(!bookDate)return null;
+  if(dm2Date&&bookDate>=dm2Date)return'dm2';
+  return'dm1';
+};
+
+// 固有番号生成（ファイル名＋行番号＋フルネーム＋ナンバー4桁）
+const makeCustId=(fileName,rowIdx,name,no)=>
+  `${fileName}__${rowIdx}__${name}__${no}`;
+
+// セル背景色 → ステータス変換
+const cellColorToStatus=hexColor=>{
+  if(!hexColor)return null;
+  const h=hexColor.replace('#','').toUpperCase();
+  // 黄系 → 初回車検
+  if(/^FF(F[5-9A-F]|[A-E][0-9A-F])[0-9A-F]{2}$/i.test(h)||h==='FFFF00'||h==='FFFF99'||h==='FFFACD'||h.startsWith('FFE')||h.startsWith('FFF'))
+    return'new_car';
+  // 青系 → 本予約
+  if(h.startsWith('ADD')||h.startsWith('B0C')||h.startsWith('9FC')||h==='87CEEB'||h==='87CEFA'||h.startsWith('00B')||h.startsWith('00C')||(/^[0-9A-F]{2}[0-9A-F]{2}F[0-9A-F]$/i.test(h)))
+    return'confirm';
+  // 緑系 → 仮予約
+  if(h.startsWith('90E')||h.startsWith('98F')||h==='00FF00'||h.startsWith('00F')||h.startsWith('7FFF')||(/^[0-9A-F]{2}[C-F][0-9A-F]{3}$/i.test(h)))
+    return'temp';
+  // 赤系 → キャンセル
+  if(h==='FF0000'||h.startsWith('FF0')||h.startsWith('FF4')||h.startsWith('F08')||h.startsWith('FA8'))
+    return'cancel';
+  return null;
+};
+
+// ═══════════════════════════════════════════
+// Excelインポート
+// ═══════════════════════════════════════════
+const parseExcelFile=async(file)=>{
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      try{
+        const wb=XLSX.read(e.target.result,{type:'binary',cellDates:true,cellStyles:true});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+
+        // ヘッダー行検出
+        let headerRow=-1;
+        // ヘッダー行検出：「名称」「NO」「車種」のうち2つ以上一致
+        const kws=['名称','NO','車種','点検','満期'];
+        for(let i=0;i<Math.min(15,rows.length);i++){
+          const s=rows[i].join('');
+          if(kws.filter(k=>s.includes(k)).length>=2){headerRow=i;break;}
+        }
+        if(headerRow<0){reject(new Error('ヘッダー行が見つかりません（名称・NO・車種 のいずれかを含む列が必要です）'));return;}
+
+        // ヘッダー行：Dateオブジェクトや数値は日付文字列に変換
+        const headers=rows[headerRow].map((h,hi)=>{
+          if(h instanceof Date) return isNaN(h.getTime())?`__date_col_${hi}__`:h.toISOString().slice(0,10);
+          if(typeof h==='number'&&h>1000){
+            // Excelシリアル値を日付に変換して列名とする
+            const d=new Date(Math.round((h-25569)*86400*1000));
+            return isNaN(d.getTime())?`__date_col_${hi}__`:d.toISOString().slice(0,10);
+          }
+          return String(h||'').trim();
+        });
+        // 全角半角・スペース正規化して列名検索
+        const norm=s=>String(s||'').replace(/[\s　]/g,'').replace(/[Ａ-Ｚａ-ｚ０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).toUpperCase();
+        const fc=(...kws)=>{for(const k of kws){const nk=norm(k);const i=headers.findIndex(h=>norm(h).includes(nk));if(i>=0)return i;}return-1;};
+
+        const cExpiry =fc('点検満期','満期');
+        const cName   =fc('名称','氏名');
+        const cNo     =fc('NO','ナンバー');
+        const cCar    =fc('車種');
+        // 投函日列：①②の検索（複数パターン対応）
+        // 投函日列検索：文字列パターン or Excelで日付ヘッダーになっているケース
+        const allToukanCols=headers.map((h,i)=>{
+          const hn=h.replace(/[\s　]/g,'');
+          const isDm=(hn.includes('投函')||hn.includes('DM')||hn.includes('案内')||hn.includes('発送'))&&!hn.includes('予約')&&!hn.includes('後');
+          return isDm?i:-1;
+        }).filter(i=>i>=0);
+        // 日付型ヘッダー列（ExcelでDateが列名になっているケース）
+        const isDateCol=h=>h==='Invalid Date'||/^__date_col_/.test(h)||/^\d{4}-\d{2}-\d{2}$/.test(h);
+        const allDateCols=headers.map((h,i)=>isDateCol(h)?i:-1).filter(i=>i>=0);
+        let cDm1D,cDm2D;
+        if(allToukanCols.length>=1){
+          // 「投函」等の文字列で見つかった場合
+          cDm1D=allToukanCols[0];
+          cDm2D=allToukanCols[1]??-1;
+        } else if(allDateCols.length>=2){
+          // 日付型ヘッダーが2個以上 → 奇数番目=投函日、偶数番目=予約日
+          cDm1D=allDateCols[0]??-1;
+          cDm2D=allDateCols[2]??allDateCols[1]??-1;
+        } else {
+          cDm1D=fc('投函日①','投函①','投函日1','投函日','DM1','ＤＭ①','第１回','案内①');
+          cDm2D=fc('投函日②','投函②','投函日2','DM2','ＤＭ②','第２回','案内②');
+        }
+        // 予約列（日付型ヘッダーの場合は偶数番目、文字列の場合は「予約」含む列）
+        let cBook1=-1,cBook2=-1;
+        if(allDateCols.length>=2&&allToukanCols.length===0){
+          cBook1=allDateCols[1]??-1;
+          cBook2=allDateCols[3]??-1;
+        }
+        // デバッグ保存
+        window.__lastImportHeaders=headers;
+        window.__lastImportDmCols={allToukanCols,allDateCols,cDm1D,cDm2D,cBook1,cBook2};
+        // cBook1/cBook2は上部で定義済み（日付型ヘッダー対応）
+        // 文字列「予約」含む列で上書き
+        const bookColsStr=headers.map((h,i)=>h.includes('予約')?i:-1).filter(i=>i>=0);
+        const cBook1f=bookColsStr[0]??cBook1??-1;
+        const cBook2f=bookColsStr[1]??cBook2??-1;
+
+        const cEntry  =fc('入庫日');
+        const cTok    =fc('特典');
+        const cCourse =fc('種類','コース');
+        const cStore  =fc('入庫店舗','店舗');
+        const cStaff  =fc('担当');
+        const cNote   =fc('備考');
+
+        const fileName=file.name.replace(/\.[^.]+$/,'');
+        const customers=[];
+
+        for(let i=headerRow+1;i<rows.length;i++){
+          const row=rows[i];
+          const name=String(row[cName]||'').trim();
+          if(!name||name.includes('合計')||name.includes('件数'))continue;
+
+          const expiry =parseExcelDate(row[cExpiry]);
+          const no     =String(row[cNo]||'').trim();
+          const carType=String(row[cCar>=0?cCar:0]||'').trim();
+          const dm1Date=parseExcelDate(row[cDm1D>=0?cDm1D:null]);
+          const dm1Book=parseExcelDate(row[cBook1f>=0?cBook1f:null]);
+          const dm2Date=parseExcelDate(row[cDm2D>=0?cDm2D:null]);
+          const dm2Book=parseExcelDate(row[cBook2f>=0?cBook2f:null]);
+          const entryDate=parseExcelDate(row[cEntry>=0?cEntry:null]);
+          const tokRaw =String(row[cTok>=0?cTok:null]||'').trim();
+          const courseRaw=String(row[cCourse>=0?cCourse:null]||'').trim();
+          const storeRaw=String(row[cStore>=0?cStore:null]||'').trim();
+          const staff  =String(row[cStaff>=0?cStaff:null]||'').trim();
+          const note   =String(row[cNote>=0?cNote:null]||'').trim();
+
+          // セル背景色からステータス取得
+          const cellRef=XLSX.utils.encode_cell({r:i,c:cName>=0?cName:0});
+          const cell=ws[cellRef];
+          let statusFromColor=null;
+          if(cell&&cell.s&&cell.s.fgColor){
+            const fg=cell.s.fgColor;
+            const hex=fg.rgb||fg.theme||'';
+            statusFromColor=cellColorToStatus(hex);
+          }
+
+          // ステータス自動判定
+          let status=statusFromColor||'none';
+          if(!statusFromColor){
+            if(entryDate)status='confirm';
+            else if(dm1Book||dm2Book)status='confirm';
+          }
+
+          // コース変換
+          const courseObj=COURSES.find(c=>courseRaw.includes(c.name)||courseRaw===c.short);
+
+          // 店舗変換
+          let storeId='';
+          if(storeRaw.includes('三田')||storeRaw==='sanda')storeId='sanda';
+          else if(storeRaw.includes('本店')||storeRaw==='honten')storeId='honten';
+
+          // 特典変換
+          const tokuten=tokRaw==='①'||tokRaw==='1'?'①':tokRaw==='②'||tokRaw==='2'?'②':tokRaw||'-';
+
+          const custId=makeCustId(fileName,i,name,no);
+
+          customers.push({
+            custId,rowIdx:i,
+            expiry,name,no,carType,
+            dm1Date,dm1Book,dm2Date,dm2Book,
+            entryDate,tokuten,
+            course:courseObj?courseObj.id:null,
+            store:storeId,staff,note,status,
+            bookingTime:'',
+            // スケジュール連動フラグ
+            linkedInspDate:'',
+          });
+        }
+        resolve({name:fileName,customers});
+      }catch(err){reject(err);}
+    };
+    reader.onerror=()=>reject(new Error('ファイル読み込みエラー'));
+    reader.readAsBinaryString(file);
+  });
+};
+
+// ═══════════════════════════════════════════
+// 統計パネル
+// ═══════════════════════════════════════════
+const StatsPanel=memo(({customers})=>{
+  const total=customers.length;
+  if(total===0)return null;
+  const cnt=s=>customers.filter(c=>c.status===s).length;
+  const booked=cnt('confirm')+cnt('temp');
+  const rate=Math.round(booked/total*100);
+  const dm1=customers.filter(c=>c.dm1Book).length;
+  const dm2=customers.filter(c=>c.dm2Book).length;
+  const tok1=customers.filter(c=>c.tokuten==='①').length;
+  const tok2=customers.filter(c=>c.tokuten==='②').length;
+
+  const items=[
+    {label:'総件数',val:total,color:'#1e293b'},
+    {label:'本予約',val:cnt('confirm'),color:'#1d4ed8'},
+    {label:'仮予約',val:cnt('temp'),color:'#16a34a'},
+    {label:'未予約',val:cnt('none'),color:'#64748b'},
+    {label:'キャンセル',val:cnt('cancel'),color:'#dc2626'},
+    {label:'初回車検',val:cnt('new_car'),color:'#a16207'},
+    {label:'獲得率',val:`${rate}%`,color:rate>=70?'#059669':rate>=40?'#d97706':'#dc2626'},
+    {label:'DM①後予約',val:dm1,color:'#7c3aed'},
+    {label:'DM②後予約',val:dm2,color:'#0284c7'},
+    {label:'特典①',val:tok1,color:'#374151'},
+    {label:'特典②',val:tok2,color:'#374151'},
+  ];
+
+  return(
+    <div style={{display:'flex',gap:8,flexWrap:'wrap',padding:'10px 14px',background:'white',borderBottom:'1px solid #f1f5f9',alignItems:'center'}}>
+      {items.map(({label,val,color})=>(
+        <div key={label} style={{textAlign:'center',minWidth:64,padding:'5px 10px',background:'#f8fafc',borderRadius:8,border:'1px solid #f1f5f9'}}>
+          <div style={{fontSize:10,color:'#94a3b8',marginBottom:1}}>{label}</div>
+          <div style={{fontSize:16,fontWeight:900,color}}>{val}</div>
+        </div>
+      ))}
+    </div>
+  );
+});
+
+// ═══════════════════════════════════════════
+// 代車グリッド（モーダル内）
+// ═══════════════════════════════════════════
+const LoanerGrid=memo(({storeId,entryDate,loanerRes,loanerList,onSelect,selCarId,selDays})=>{
+  const loaners=(loanerList&&loanerList.length>0)?loanerList:(storeId==='honten'?LOANERS_H:LOANERS_S);
+  const dragRef=useRef({});
+
+  // Hooksはreturnの前に全て宣言する必要がある
+  const [startOffset,setStartOffset]=useState(0);
+  const prevEntryRef=useRef(entryDate);
+
+  // entryDate変化時にoffsetをリセット（useEffectで行う）
+  useEffect(()=>{
+    if(prevEntryRef.current!==entryDate){
+      prevEntryRef.current=entryDate;
+      setStartOffset(0);
+    }
+  },[entryDate]);
+
+  if(!entryDate)return(
+    <div style={{padding:'16px 0',color:'#94a3b8',fontSize:12,textAlign:'center'}}>
+      入庫日を先に入力してください
+    </div>
+  );
+
+  const toNum=(y,mo,d)=>y*10000+mo*100+d;
+  const [y0,m0,d0]=entryDate.split('-').map(Number);
+
+  // 表示開始日（入庫日-2日 + startOffset）
+  const viewStart=new Date(y0,m0-1,d0-2+startOffset);
+
+  // 30日分の日付配列
+  const dates=Array.from({length:30},(_,i)=>{
+    const d=new Date(viewStart.getFullYear(),viewStart.getMonth(),viewStart.getDate()+i);
+    const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const dow=d.getDay();
+    const isEntry=key===entryDate;
+    const isMonthStart=d.getDate()===1;
+    return{key,label:d.getDate(),month:d.getMonth()+1,dow,isEntry,isMonthStart};
+  });
+
+  const isBooked=(carId,key)=>{
+    const [ky,km,kd]=key.split('-').map(Number);
+    const dn=toNum(ky,km-1,kd);
+    return(loanerRes[carId]||[]).some(r=>{
+      const s=toNum(r.fy,r.fm,r.fd),e=toNum(r.ty,r.tm,r.td);
+      return dn>=s&&dn<=e;
+    });
+  };
+
+  const CELL=36;
+  const NAME_W=88;
+
+  return(
+    <div style={{fontSize:11,userSelect:'none'}}>
+      {/* ナビゲーター */}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,paddingLeft:NAME_W}}>
+        <button onClick={()=>setStartOffset(p=>p-30)}
+          style={{background:'#e0e7ff',border:'none',borderRadius:5,padding:'2px 10px',cursor:'pointer',fontWeight:700,color:'#3730a3',fontSize:13}}>‹ 前</button>
+        <span style={{fontSize:11,color:'#64748b',fontWeight:600}}>
+          {dates[0].month}/{dates[0].label} 〜 {dates[29].month}/{dates[29].label}
+        </span>
+        <button onClick={()=>setStartOffset(p=>p+30)}
+          style={{background:'#e0e7ff',border:'none',borderRadius:5,padding:'2px 10px',cursor:'pointer',fontWeight:700,color:'#3730a3',fontSize:13}}>次 ›</button>
+      </div>
+      {/* グリッド */}
+      <div style={{overflowX:'auto'}}>
+        <div style={{minWidth:NAME_W+CELL*30}}>
+          {/* 日付ヘッダー */}
+          <div style={{display:'flex',background:'#dbeafe',borderBottom:'2px solid #93c5fd'}}>
+            <div style={{width:NAME_W,minWidth:NAME_W,padding:'4px 6px',fontWeight:700,color:'#374151',borderRight:'2px solid #93c5fd',fontSize:11,flexShrink:0}}>代車</div>
+            {dates.map(({key,label,month,dow,isEntry,isMonthStart})=>(
+              <div key={key} style={{
+                width:CELL,minWidth:CELL,textAlign:'center',padding:'2px 1px',flexShrink:0,
+                background:isEntry?'#1d4ed8':isMonthStart?'#ecfdf5':'#dbeafe',
+                color:isEntry?'white':dow===0?'#dc2626':dow===6?'#7c3aed':'#1e1b4b',
+                fontWeight:isEntry?800:isMonthStart?700:400,
+                borderRight:'1px solid #bfdbfe',
+                borderLeft:isMonthStart?'2px solid #22c55e':undefined,
+                fontSize:10,lineHeight:1.3}}>
+                {isMonthStart&&<div style={{fontSize:8,color:'#16a34a',fontWeight:800}}>{month}月</div>}
+                <div>{label}</div>
+                {isEntry&&<div style={{fontSize:8}}>◎</div>}
+              </div>
+            ))}
+          </div>
+          {/* 代車行 */}
+          {loaners.map((car,ci)=>(
+            <div key={car.id} style={{display:'flex',borderBottom:'1px solid #e0e7ff',background:ci%2===0?'white':'#f8faff'}}>
+              <div style={{width:NAME_W,minWidth:NAME_W,padding:'5px 7px',borderRight:'2px solid #93c5fd',flexShrink:0}}>
+                <div style={{fontWeight:700,fontSize:11,color:'#1e1b4b',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{car.name}</div>
+                <div style={{fontSize:9,color:'#94a3b8'}}>{car.num}</div>
+              </div>
+              {dates.map(({key})=>{
+                const booked=isBooked(car.id,key);
+                const sel=selCarId===car.id&&(selDays||[]).includes(key);
+                return(
+                  <div key={key}
+                    style={{width:CELL,minWidth:CELL,height:32,borderRight:'1px solid #e0e7ff',flexShrink:0,
+                      background:booked?'#fca5a5':sel?'#bfdbfe':'transparent',
+                      cursor:booked?'not-allowed':'pointer',
+                      display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,
+                      outline:sel?'2px solid #3b82f6':'none'}}
+                    onMouseDown={()=>{
+                      if(booked)return;
+                      dragRef.current={dragging:true,carId:car.id,startKey:key,days:[key]};
+                      onSelect(car.id,[key]);
+                    }}
+                    onMouseEnter={()=>{
+                      if(!dragRef.current.dragging||dragRef.current.carId!==car.id)return;
+                      const allKeys=dates.map(d=>d.key);
+                      const si=allKeys.indexOf(dragRef.current.startKey);
+                      const ei=allKeys.indexOf(key);
+                      if(si<0||ei<0)return;
+                      const range=allKeys.slice(Math.min(si,ei),Math.max(si,ei)+1);
+                      if(range.some(k=>isBooked(car.id,k)))return;
+                      dragRef.current.days=range;
+                      onSelect(car.id,range);
+                    }}
+                    onMouseUp={()=>{dragRef.current.dragging=false;}}
+                  >
+                    {booked&&<span style={{color:'#ef4444',fontWeight:700}}>×</span>}
+                    {sel&&!booked&&<span style={{color:'#1d4ed8',fontWeight:700}}>✓</span>}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+          {/* 凡例 */}
+          <div style={{display:'flex',gap:12,padding:'4px 6px',background:'#f8faff',borderTop:'1px solid #e0e7ff',flexWrap:'wrap'}}>
+            <span style={{display:'flex',alignItems:'center',gap:3,fontSize:10,color:'#64748b'}}><span style={{width:12,height:12,background:'#1d4ed8',borderRadius:2,display:'inline-block'}}/>◎入庫日</span>
+            <span style={{display:'flex',alignItems:'center',gap:3,fontSize:10,color:'#64748b'}}><span style={{width:12,height:12,background:'#bfdbfe',border:'1px solid #3b82f6',borderRadius:2,display:'inline-block'}}/>選択中</span>
+            <span style={{display:'flex',alignItems:'center',gap:3,fontSize:10,color:'#64748b'}}><span style={{width:12,height:12,background:'#fca5a5',borderRadius:2,display:'inline-block'}}/>使用中</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+
+// ═══════════════════════════════════════════
+// 予約モーダル
+// ═══════════════════════════════════════════
+const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerListS,onSave,onClose,currentUser})=>{
+  const normStore=s=>{if(!s)return'honten';if(s==='三田店'||s==='sanda')return'sanda';return'honten';};
+  const defaultStaff=customer.staff||currentUser?.name||'';
+  // デフォルト店舗: 顧客の店舗 > ログインユーザーの店舗 > 本店
+  // 店舗優先順位: 顧客の既存店舗 > ログインユーザーの店舗 > 本店
+  // normStoreは空でも'honten'を返すのでcustomer.storeが空かを先にチェック
+  const userStore=currentUser?.store?.id||currentUser?.store||'honten';
+  const defaultStore=customer.store?normStore(customer.store):userStore;
+  const defaultTokuten=(()=>{
+    if(customer.tokuten&&customer.tokuten!=='-')return customer.tokuten;
+    if(customer.expiry){const today=new Date().toISOString().slice(0,10);return calcTokuten(customer.expiry,today);}
+    return'-';
+  })();
+  const [form,setForm]=useState({
+    entryDate:customer.entryDate||'',
+        store:defaultStore,
+    bookingTime:customer.bookingTime||'',
+    course:customer.course||0,
+    tokuten:defaultTokuten,
+    staff:defaultStaff,
+    note:customer.note||'',
+  });
+  const [selCarId,setSelCarId]=useState(null);
+  const [selDays,setSelDays]=useState([]);
+  const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState('');
+
+  const dynListH=(loanerListH&&loanerListH.length>0)?loanerListH:LOANERS_H;
+  const dynListS=(loanerListS&&loanerListS.length>0)?loanerListS:LOANERS_S;
+  const loanerRes=form.store==='honten'?loanerResH:loanerResS;
+  const storeObj=STORES.find(s=>s.id===form.store)||STORES[0];
+  const upd=k=>e=>setForm(p=>({...p,[k]:typeof e==='object'&&e.target?e.target.value:e}));
+
+  const handleSave=async(isTemp)=>{
+    setErr('');
+    if(isTemp){
+      // 仮予約：特典は必須でない（-=なしも有効）
+    }else{
+      const missing=[];
+      if(!form.entryDate)missing.push('入庫日');
+      if(!form.course)missing.push('車検コース');
+      if(!form.bookingTime)missing.push('入庫時間');
+      if(!form.tokuten)missing.push('特典');
+      // 特典「-」は「特典なし」として有効（エラーにしない）
+      if(missing.length){setErr(`本予約には ${missing.join('・')} が必要です`);return;}
+    }
+    setSaving(true);
+    try{await onSave({...form,isTemp,selCarId,selDays},customer);}
+    catch(e){console.error('onSave error:',e);}
+    finally{setSaving(false);onClose();}
+  };
+
+  const courseObj=COURSES.find(c=>c.id===Number(form.course));
+
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+      <div style={{background:'white',borderRadius:14,width:'100%',maxWidth:860,maxHeight:'92vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,.3)'}}>
+        <div style={{padding:'14px 18px',borderRadius:'14px 14px 0 0',background:storeObj.id==='sanda'?'linear-gradient(135deg,#991b1b,#dc2626)':`linear-gradient(135deg,#1e1b4b,${storeObj.color})`,display:'flex',alignItems:'center',gap:10}}>
+          <div style={{flex:1}}>
+            <div style={{color:'white',fontWeight:900,fontSize:17}}>{customer.name}</div>
+            <div style={{color:'rgba(255,255,255,.7)',fontSize:11,marginTop:2,display:'flex',gap:12,flexWrap:'wrap'}}>
+              <span>🚗 {customer.carType}</span><span>No.{customer.no}</span><span>満期: {fmtDate(customer.expiry)}</span>
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:'rgba(255,255,255,.15)',border:'none',borderRadius:8,padding:'6px 12px',color:'white',fontSize:13,fontWeight:700}}>✕</button>
+        </div>
+        <div style={{overflowY:'auto',flex:1,padding:18}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>入庫日 <span style={{color:'#dc2626',fontSize:10}}>（本予約必須）</span></div>
+              <div style={{position:'relative',cursor:'pointer'}} onClick={()=>document.getElementById('bm-entryDate').showPicker?.()}>
+                <input id="bm-entryDate" type="date" value={form.entryDate} onChange={upd('entryDate')}
+                  style={{width:'100%',padding:'8px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:13,boxSizing:'border-box',cursor:'pointer'}}/>
+              </div>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>店舗</label>
+              <div style={{display:'flex',gap:8}}>
+                {STORES.map(s=>(
+                  <button key={s.id} onClick={()=>setForm(p=>({...p,store:s.id}))}
+                    style={{flex:1,padding:'8px',border:`2px solid ${form.store===s.id?s.color:'#e5e7eb'}`,borderRadius:8,background:form.store===s.id?s.color:'white',color:form.store===s.id?'white':'#374151',fontWeight:700,fontSize:12,cursor:'pointer'}}>
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label htmlFor="bm-bookingTime" style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5,cursor:'pointer'}}>入庫時間 <span style={{color:'#dc2626',fontSize:10}}>（本予約必須）</span></label>
+              <select id="bm-bookingTime" value={form.bookingTime} onChange={upd('bookingTime')}
+                style={{width:'100%',padding:'8px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:13,boxSizing:'border-box',cursor:'pointer'}}>
+                <option value="">時間を選択</option>
+                {Array.from({length:19},(_,i)=>{const h=Math.floor(i/2)+9,m=i%2===0?'00':'30';const v=`${String(h).padStart(2,'0')}:${m}`;return <option key={v} value={v}>{v}</option>;})}
+              </select>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>担当</label>
+              <input value={form.staff} onChange={upd('staff')} placeholder="担当者名"
+                style={{width:'100%',padding:'8px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:13,boxSizing:'border-box'}}/>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>車検コース <span style={{color:'#dc2626',fontSize:10}}>（本予約必須）</span></label>
+              <select value={form.course} onChange={upd('course')}
+                style={{width:'100%',padding:'8px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:13,boxSizing:'border-box'}}>
+                <option value={0}>選択してください</option>
+                {COURSES.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>特典 <span style={{color:'#dc2626',fontSize:10}}>（必須）</span></label>
+              <div style={{display:'flex',gap:6}}>
+                {['-','①','②'].map(t=>(
+                  <button key={t} onClick={()=>setForm(p=>({...p,tokuten:t}))}
+                    style={{flex:1,padding:'8px',border:`2px solid ${form.tokuten===t?'#7c3aed':'#e5e7eb'}`,borderRadius:8,background:form.tokuten===t?'#ede9fe':'white',color:form.tokuten===t?'#7c3aed':'#374151',fontWeight:700,fontSize:13,cursor:'pointer'}}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div style={{marginBottom:14}}>
+            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>備考</label>
+            <textarea value={form.note} onChange={upd('note')} rows={2} placeholder="備考・メモ"
+              style={{width:'100%',padding:'8px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:13,resize:'vertical',boxSizing:'border-box'}}/>
+          </div>
+          <div>
+            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>
+              代車
+              {selCarId&&selDays.length>0&&(
+                <span style={{marginLeft:8,fontSize:11,color:'#0284c7',fontWeight:400}}>
+                  {[...dynListH,...dynListS].find(c=>c.id===selCarId)?.name}　{selDays.length}日間選択中
+                </span>
+              )}
+            </label>
+            <div style={{border:'2px solid #bfdbfe',borderRadius:10,padding:8,background:'#eff6ff'}}>
+              <LoanerGrid storeId={form.store} entryDate={form.entryDate} loanerRes={loanerRes}
+                loanerList={form.store==='honten'?loanerListH:loanerListS}
+                onSelect={(cid,days)=>{setSelCarId(cid);setSelDays(days);}}
+                selCarId={selCarId} selDays={selDays}/>
+            </div>
+          </div>
+          {err&&<div style={{marginTop:10,padding:'8px 12px',background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:8,color:'#dc2626',fontSize:12}}>{err}</div>}
+        </div>
+        <div style={{padding:'12px 18px',borderTop:'1px solid #f1f5f9',display:'flex',gap:8,justifyContent:'flex-end',background:'#fafafa',borderRadius:'0 0 14px 14px'}}>
+          <button onClick={onClose} style={{padding:'9px 20px',border:'1.5px solid #e5e7eb',borderRadius:9,background:'white',color:'#374151',fontWeight:600,cursor:'pointer'}}>キャンセル</button>
+          <button onClick={()=>handleSave(true)} disabled={saving} style={{padding:'9px 20px',border:'1.5px solid #86efac',borderRadius:9,background:'#f0fdf4',color:'#16a34a',fontWeight:700,cursor:'pointer'}}>仮予約</button>
+          <button onClick={()=>handleSave(false)} disabled={saving}
+            style={{padding:'9px 20px',border:'none',borderRadius:9,background:storeObj.id==='sanda'?'linear-gradient(135deg,#991b1b,#dc2626)':`linear-gradient(135deg,#1d4ed8,${storeObj.color})`,color:'white',fontWeight:700,cursor:'pointer',boxShadow:storeObj.id==='sanda'?'0 2px 8px rgba(220,38,38,0.3)':'0 2px 8px rgba(29,78,216,0.3)'}}>
+            {saving?'保存中...':'✓ 本予約'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+// ═══════════════════════════════════════════
+// 顧客リスト行
+// ═══════════════════════════════════════════
+const CustomerRow=memo(({customer,onBook,onRevive})=>{
+  const st=STATUS_DEF[customer.status]||STATUS_DEF.none;
+  const courseObj=COURSES.find(c=>c.id===Number(customer.course));
+  const isCancelled=customer.status==='cancel';
+  return(
+    <tr className={`row-${customer.status||'none'}`}
+      style={{borderBottom:'1px solid #f1f5f9',fontSize:12}}>
+      {/* ＋予約ボタン ＋ 満期日 */}
+      <td style={{padding:'7px 6px',whiteSpace:'nowrap',verticalAlign:'middle'}}>
+        <div style={{display:'flex',alignItems:'center',gap:5}}>
+          <button onClick={()=>isCancelled?onRevive(customer):onBook(customer)}
+            style={{padding:'4px 9px',borderRadius:8,border:`1.5px solid ${st.btnBorder}`,
+              background:st.btnBg,color:st.btnColor,fontWeight:700,fontSize:11,whiteSpace:'nowrap',
+              minWidth:62}}>
+            {isCancelled?'↩ 復活':customer.status==='none'?'＋予約':st.label}
+          </button>
+          {isCancelled&&(
+            <button onClick={()=>onBook(customer)}
+              style={{padding:'4px 7px',borderRadius:8,border:'1.5px solid #86efac',
+                background:'#dcfce7',color:'#16a34a',fontWeight:700,fontSize:10,whiteSpace:'nowrap'}}>
+              再予約
+            </button>
+          )}
+          <span style={{fontSize:11,color:'#374151',fontWeight:customer.expiry?600:400}}>
+            {fmtDate(customer.expiry)}
+          </span>
+        </div>
+      </td>
+      <td style={{padding:'7px 8px',fontWeight:700,verticalAlign:'middle'}}>{customer.name}</td>
+      <td style={{padding:'7px 8px',color:'#64748b',verticalAlign:'middle'}}>{customer.no}</td>
+      <td style={{padding:'7px 8px',verticalAlign:'middle'}}>{customer.carType}</td>
+      <td style={{padding:'7px 8px',color:'#64748b',verticalAlign:'middle',fontSize:11}}>{fmtDateShort(customer.dm1Date)}</td>
+      <td style={{padding:'7px 8px',color:'#7c3aed',verticalAlign:'middle',fontSize:11,fontWeight:600}}>{fmtDateShort(customer.dm1Book)}</td>
+      <td style={{padding:'7px 8px',color:'#64748b',verticalAlign:'middle',fontSize:11}}>{fmtDateShort(customer.dm2Date)}</td>
+      <td style={{padding:'7px 8px',color:'#0284c7',verticalAlign:'middle',fontSize:11,fontWeight:600}}>{fmtDateShort(customer.dm2Book)}</td>
+      <td style={{padding:'7px 8px',verticalAlign:'middle',fontWeight:600,color:'#374151'}}>{fmtDate(customer.entryDate)}</td>
+      <td style={{padding:'7px 6px',verticalAlign:'middle',textAlign:'center'}}>
+        {customer.tokuten&&customer.tokuten!=='-'&&(
+          <span style={{padding:'2px 7px',background:'#ede9fe',color:'#7c3aed',borderRadius:10,fontSize:11,fontWeight:700}}>
+            {customer.tokuten}
+          </span>
+        )}
+      </td>
+      <td style={{padding:'7px 6px',verticalAlign:'middle',textAlign:'center'}}>
+        {courseObj&&<span style={{padding:'2px 7px',background:courseObj.bg,color:courseObj.color,borderRadius:10,fontSize:11,fontWeight:700}}>{courseObj.short}</span>}
+      </td>
+      <td style={{padding:'7px 8px',color:'#64748b',verticalAlign:'middle',fontSize:11}}>
+        {customer.store==='honten'?'本店':customer.store==='sanda'?'三田店':customer.store}
+      </td>
+      <td style={{padding:'7px 8px',color:'#64748b',verticalAlign:'middle',fontSize:11}}>{customer.staff}</td>
+      <td style={{padding:'7px 8px',color:'#94a3b8',verticalAlign:'middle',fontSize:11,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
+        title={customer.note}>{customer.note}</td>
+    </tr>
+  );
+});
+
+// ═══════════════════════════════════════════
+// メインアプリ
+// ═══════════════════════════════════════════
+const App=()=>{
+  // index.htmlのlocalStorageからログインユーザーを取得
+  const currentUser=useMemo(()=>{
+    try{const u=localStorage.getItem('hub_currentUser');return u?JSON.parse(u):null;}catch{return null;}
+  },[]);
+  const [files,setFiles]=useState([]);
+  const [activeIdx,setActiveIdx]=useState(0);
+  const [search,setSearch]=useState('');
+  const [filterStatus,setFilterStatus]=useState('all');
+  const [gasOk,setGasOk]=useState(null);
+  const [gasLoading,setGasLoading]=useState(true);
+  const [importing,setImporting]=useState(false);
+  const [inspData,setInspData]=useState({});
+  const [loanerResH,setLoanerResH]=useState({});
+  const [loanerResS,setLoanerResS]=useState({});
+  const [loanerListH,setLoanerListH]=useState([]);
+  const [loanerListS,setLoanerListS]=useState([]);
+  const [bookingModal,setBookingModal]=useState(null);
+  const fileInputRef=useRef();
+
+  // GASからデータ取得
+  useEffect(()=>{
+    (async()=>{
+      // まずlocalStorageキャッシュから即座に表示（GASを待たない）
+      const SAFE=n=>n.replace(/[^a-zA-Z0-9　-鿿゠-ヿ぀-ゟ]/g,'_').slice(0,30);
+      const cachedIndex=localStorage.getItem('hub-cf-index');
+      if(cachedIndex){
+        try{
+          const cidx=JSON.parse(cachedIndex);
+          const cached=cidx.map(fi=>{
+            const d=localStorage.getItem('hub-cf-'+SAFE(fi.name));
+            return d?JSON.parse(d):null;
+          }).filter(Boolean);
+          if(cached.length>0){
+            setFiles(cached);
+            setGasLoading(false); // キャッシュがあれば即表示
+          }
+        }catch{}
+      }
+      // GASから最新データをバックグラウンドで取得
+      try{
+        const [insp,lh,ls,fileIndex,llh,lls]=await Promise.all([
+          sGet(STOR+'insp'),
+          sGet(storKey('lres','honten')),
+          sGet(storKey('lres','sanda')),
+          sGet(STOR+'cf-index'),
+          sGet(storKey('cars','honten')),
+          sGet(storKey('cars','sanda')),
+        ]);
+        if(insp)setInspData(insp);
+        if(lh)setLoanerResH(lh);
+        if(ls)setLoanerResS(ls);
+        if(Array.isArray(llh)&&llh.length>0)setLoanerListH(llh);
+        if(Array.isArray(lls)&&lls.length>0)setLoanerListS(lls);
+        // GASから最新ファイルデータを取得してキャッシュ更新
+        if(Array.isArray(fileIndex)&&fileIndex.length>0){
+          localStorage.setItem('hub-cf-index',JSON.stringify(fileIndex));
+          for(const fi of fileIndex){
+            loadFileChunked(fi.name).then(f=>{
+              if(f){
+                localStorage.setItem('hub-cf-'+SAFE(fi.name),JSON.stringify(f));
+                setFiles(prev=>{
+                  const i=prev.findIndex(x=>x.name===f.name);
+                  if(i>=0){const n=[...prev];n[i]=f;return n;}
+                  return[...prev,f];
+                });
+              }
+            });
+          }
+        }
+        setGasLoading(false);
+        setGasOk(true);
+      }catch{setGasOk(false);setGasLoading(false);}
+    })();
+
+    // cust-updatesポーリング（スケジュール側からの即時連動）
+    const pollUpdates=async()=>{
+      try{
+        const updates=await sGet('hub-v8-cust-updates');
+        if(!Array.isArray(updates)||updates.length===0)return;
+        setFiles(prev=>{
+          let changed=false;
+          const next=prev.map(f=>{
+            const custs=f.customers.map(c=>{
+              // custIdまたはname+noでマッチング
+              const upd=updates.find(u=>
+                (u.custId&&u.custId===c.custId)||(u.name&&((!u.no&&u.name===c.name)||(u.no&&u.name===c.name&&String(u.no)===String(c.no))))
+              );
+              if(!upd)return c;
+              changed=true;
+              return{...c,...upd};
+            });
+            return{...f,customers:custs};
+          });
+          if(!changed)return prev;
+          // チャンクも更新してupdatesをクリア
+          next.forEach(f=>saveFileChunked(f));
+          sSet(STOR+'cust-updates',[]);
+          return next;
+        });
+      }catch{}
+    };
+    pollUpdates(); // 開いた瞬間に即時適用
+    const pollTimer=setInterval(pollUpdates,2000);
+    return()=>clearInterval(pollTimer);
+  },[]);
+
+  // Excelインポート
+  const handleImport=useCallback(async e=>{
+    const fileList=Array.from(e.target.files||[]);
+    if(!fileList.length)return;
+    setImporting(true);
+    try{
+      const results=await Promise.all(fileList.map(parseExcelFile));
+      setFiles(prev=>{
+        const next=[...prev];
+        results.forEach(r=>{
+          const i=next.findIndex(f=>f.name===r.name);
+          if(i>=0)next[i]=r;else next.push(r);
+        });
+        // チャンク分割保存（GAS 50,000文字制限対策）
+        saveFilesIndex(next);
+        results.forEach(r=>saveFileChunked(r));
+        return next;
+      });
+      alert(`${results.map(r=>`「${r.name}」${r.customers.length}件`).join('、')} をインポートしました`);
+    }catch(err){alert('インポートエラー: '+err.message);}
+    setImporting(false);
+    e.target.value='';
+  },[]);
+
+  // ファイル削除
+  const handleDeleteFile=useCallback(idx=>{
+    if(!confirm(`「${files[idx].name}」を削除しますか？`))return;
+    setFiles(prev=>{
+      const next=prev.filter((_,i)=>i!==idx);
+      saveFilesIndex(next);
+      return next;
+    });
+    setActiveIdx(p=>Math.max(0,p>=idx?p-1:p));
+  },[files]);
+
+  // 予約保存（スケジュール・代車に連動）
+  // キャンセルから未予約に復活
+  const handleRevive=useCallback((customer)=>{
+    if(!confirm(`「${customer.name}」をキャンセルから未予約に戻しますか？`))return;
+    const revived={...customer,status:'none',entryDate:'',linkedInspDate:'',
+      bookingTime:'',course:'',tokuten:'',staff:'',note:''};
+    setFiles(prev=>{
+      const next=prev.map(f=>{
+        const ci=f.customers.findIndex(c=>c.custId===customer.custId);
+        if(ci<0)return f;
+        const custs=[...f.customers];
+        custs[ci]=revived;
+        saveFileChunked({...f,customers:custs});
+        return{...f,customers:custs};
+      });
+      return next;
+    });
+  },[]);
+
+  const handleBookingSave=useCallback(async(form,customer)=>{
+    const{entryDate,store,bookingTime,course,tokuten,staff,note,isTemp,selCarId,selDays}=form;
+    const status=isTemp?'temp':'confirm';
+    const bookDate=today();
+    const dm1=customer.dm1Date,dm2=customer.dm2Date;
+    const dmCol=calcDMCol(dm1,dm2,bookDate);
+
+    // 1. 顧客リスト更新
+    const updCustomer={...customer,status,entryDate,store,bookingTime,course,tokuten,staff,note,
+      linkedInspDate:entryDate,
+      ...(dmCol==='dm1'?{dm1Book:bookDate}:{dm2Book:bookDate}),
+    };
+
+    // 顧客リスト更新（stateのみ即時反映）
+    let changedFile=null;
+    setFiles(prev=>{
+      const next=prev.map((f,i)=>{
+        const ci=f.customers.findIndex(c=>c.custId===customer.custId);
+        if(ci<0)return f;
+        const custs=[...f.customers];
+        custs[ci]=updCustomer;
+        const updated={...f,customers:custs};
+        changedFile=updated; // 変更されたファイルを記録
+        return updated;
+      });
+      return next;
+    });
+
+    // 2. inspDataに予約追加（本予約・仮予約どちらも）
+    if(entryDate||isTemp){
+      const dk=entryDate;
+      if(dk){
+        // index.htmlのdateKey形式に変換（"2026-3-16" ← ゼロなし）
+        const parts=dk.split('-');
+        const dkFormatted=parts.length===3?`${parts[0]}-${parseInt(parts[1])}-${parseInt(parts[2])}`:dk;
+
+        // inspDataはメモリ上のstateを使って即時更新（GAS取得はスキップして高速化）
+        const newInspData={...inspData};
+        // 既存の同一custIdを削除（入庫日変更対応）
+        for(const d of Object.keys(newInspData)){
+          if(Array.isArray(newInspData[d])){
+            newInspData[d]=newInspData[d].filter(r=>r&&r.custId!==customer.custId);
+          }
+        }
+        // 新しい予約を追加
+        const newRow={
+          name:customer.name,carType:customer.carType,
+          course:Number(course)||0,store,staff,tokuten:tokuten||'-',
+          note,no:customer.no,
+          bookingStatus:isTemp?'provisional':'confirmed',
+          pendingApproval:false,
+          custId:customer.custId,
+          bookingTime,
+        };
+        if(!Array.isArray(newInspData[dkFormatted]))newInspData[dkFormatted]=[];
+        newInspData[dkFormatted]=[...newInspData[dkFormatted],newRow];
+        // bookingKeyを確定してrowにも付与
+        const newIdx=newInspData[dkFormatted].length-1;
+        const bKey=`insp-${dkFormatted}-${newIdx}`;
+        newInspData[dkFormatted][newIdx]={...newRow,bookingKey:bKey};
+        setInspData(newInspData);
+        // GAS保存とファイル保存を並列で実行（awaitしない→モーダルを即閉じ）
+        Promise.all([
+          sSet(STOR+'insp',newInspData),
+          changedFile?saveFileChunked(changedFile):Promise.resolve(),
+        ]).catch(e=>console.error('保存エラー:',e));
+
+        // 4. custbk（カレンダー6枠）にも保存
+        // キー形式: "氏名::2026-3-16"（ゼロなし）
+        const bkKey=`${customer.name.trim()}::${dkFormatted}`;
+        const custbkEntry={
+          status:isTemp?'provisional':'confirmed',
+          formData:{
+            name:customer.name,
+            staff:staff||'',
+            carType:customer.carType,
+            course:course||0,
+            tokuten:tokuten||'-',
+            loaner:'',loanerId:null,
+            rentalLabel:'',rentalCarId:null,
+            time:bookingTime||'',
+            note:note||'',
+            bookingStatus:isTemp?'provisional':'confirmed',
+            custId:customer.custId,
+            store:store,
+          },
+          custMonth:null,
+          custRowIdx:null,
+          dk:dkFormatted,
+          idx:newIdx,
+          savedAt:Date.now(),
+        };
+        // 既存custbkにマージして保存（GASから取得してマージ）
+        sGet(STOR+'custbk').then(existing=>{
+          sSet(STOR+'custbk',{...(existing||{}),[bkKey]:custbkEntry});
+        }).catch(()=>{
+          sSet(STOR+'custbk',{[bkKey]:custbkEntry});
+        });
+
+        // 3. 代車予約追加（bookingKey付き）
+        if(selCarId&&selDays&&selDays.length>0){
+          const allLoaners=[...(loanerListH.length>0?loanerListH:LOANERS_H),...(loanerListS.length>0?loanerListS:LOANERS_S)];
+          const car=allLoaners.find(c=>c.id===selCarId);
+          const carStore=car?.store||store;
+          const resKey=storKey('lres',carStore);
+          const loanerRes=carStore==='honten'?{...loanerResH}:{...loanerResS};
+
+          // 既存の同一custIdを削除
+          for(const k of Object.keys(loanerRes)){
+            loanerRes[k]=(loanerRes[k]||[]).filter(r=>r.custId!==customer.custId);
+          }
+
+          const sorted=[...selDays].sort();
+          const s=new Date(sorted[0]),e=new Date(sorted[sorted.length-1]);
+          const newRes={
+            id:Date.now(),
+            bookingKey:bKey,
+            user:customer.name,
+            custId:customer.custId,
+            fy:s.getFullYear(),fm:s.getMonth(),fd:s.getDate(),
+            ty:e.getFullYear(),tm:e.getMonth(),td:e.getDate(),
+            color:'#3b82f6',
+            carName:car?.name||'',
+            carNum:car?.num||'',
+          };
+          if(!loanerRes[selCarId])loanerRes[selCarId]=[];
+          loanerRes[selCarId]=[...loanerRes[selCarId],newRes];
+
+          if(carStore==='honten'){
+            setLoanerResH(loanerRes);
+            sSet(resKey,loanerRes);
+          }else{
+            setLoanerResS(loanerRes);
+            sSet(resKey,loanerRes);
+          }
+        }
+      }
+    }
+  },[inspData,loanerResH,loanerResS,loanerListH,loanerListS]);
+
+  // 現在のファイルの顧客リスト
+  const currentFile=files[activeIdx];
+  const allCustomers=currentFile?.customers||[];
+
+  // 絞り込み
+  const filtered=useMemo(()=>{
+    let list=allCustomers;
+    if(filterStatus!=='all')list=list.filter(c=>c.status===filterStatus);
+    if(search){
+      const q=search.toLowerCase();
+      list=list.filter(c=>
+        c.name.toLowerCase().includes(q)||
+        c.no.includes(q)||
+        c.carType.toLowerCase().includes(q)||
+        (c.staff||'').includes(q)
+      );
+    }
+    return list;
+  },[allCustomers,filterStatus,search]);
+
+  // ── UI ──
+  const TH={padding:'8px 8px',fontWeight:700,fontSize:11,color:'#374151',whiteSpace:'nowrap',background:'#f8fafc',borderBottom:'2px solid #e5e7eb',textAlign:'left',position:'sticky',top:0,zIndex:2};
+
+  return(
+    <div style={{height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      {/* ── ヘッダー ── */}
+      <div style={{flexShrink:0,background:'linear-gradient(135deg,#1e1b4b,#1d4ed8)',padding:'10px 16px',display:'flex',alignItems:'center',gap:10}}>
+        <a href="./index.html" style={{color:'#fef08a',fontSize:12,textDecoration:'none',fontWeight:800,
+          padding:'6px 14px',background:'#16a34a',borderRadius:8,border:'2px solid #15803d',
+          boxShadow:'0 2px 6px rgba(22,163,74,0.4)'}}>
+          ← スケジュールに戻る
+        </a>
+        <div style={{color:'white',fontWeight:900,fontSize:15,flex:1}}>🚗 顧客リスト</div>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          <div style={{width:7,height:7,borderRadius:'50%',background:gasOk===true?'#4ade80':gasOk===false?'#f87171':'#fbbf24'}}/>
+          <span style={{color:'rgba(255,255,255,.6)',fontSize:10}}>{gasOk===true?'GAS接続済':gasOk===false?'GAS接続エラー':'確認中'}</span>
+        </div>
+      </div>
+
+      {/* ── ファイルタブ ── */}
+      <div style={{flexShrink:0,background:'white',borderBottom:'2px solid #e5e7eb',padding:'0 14px',display:'flex',alignItems:'flex-end',gap:3,overflowX:'auto'}}>
+        {[...files].sort((a,b)=>{
+            const na=Number((a.name||'').replace(/[^0-9]/g,'')),nb=Number((b.name||'').replace(/[^0-9]/g,''));
+            return (isNaN(na)||isNaN(nb))?(a.name>b.name?1:-1):na-nb;
+          }).map((f)=>{
+            const origIdx=files.findIndex(x=>x.name===f.name);
+            const isActive=origIdx===activeIdx;
+            return(
+          <div key={f.name} style={{display:'flex',alignItems:'center',gap:3,flexShrink:0,padding:'4px 2px'}}>
+            <button onClick={()=>setActiveIdx(origIdx)}
+              style={{
+                display:'flex',alignItems:'center',gap:5,
+                padding:'5px 10px',
+                border:`2px solid ${isActive?'#16a34a':'#bbf7d0'}`,
+                borderRadius:20,
+                background:isActive?'#16a34a':'#dcfce7',
+                color:isActive?'white':'#15803d',
+                fontWeight:700,
+                fontSize:11,whiteSpace:'nowrap',
+                cursor:'pointer',
+                boxShadow:isActive?'0 2px 8px rgba(22,163,74,0.3)':'none',
+              }}>
+              <span style={{fontSize:12}}>{f.name}</span>
+              <span style={{
+                background:'transparent',
+                color:isActive?'rgba(255,255,255,0.85)':'#166534',
+                borderRadius:10,padding:'1px 4px',fontSize:10,fontWeight:600
+              }}>{f.customers.length}</span>
+            </button>
+            <button onClick={()=>handleDeleteFile(origIdx)}
+              style={{background:'none',border:'none',color:'#94a3b8',fontSize:11,padding:'2px 4px',cursor:'pointer'}}
+              title="このファイルを削除">×</button>
+          </div>
+          );
+        })}
+        {/* Excelインポートボタン */}
+        <button onClick={()=>fileInputRef.current?.click()} disabled={importing}
+          style={{marginLeft:'auto',marginBottom:3,padding:'6px 14px',
+            background:'linear-gradient(135deg,#1e1b4b,#1d4ed8)',color:'white',
+            border:'none',borderRadius:8,fontWeight:700,fontSize:12,flexShrink:0,
+            opacity:importing?0.6:1}}>
+          {importing?'読み込み中...':'+ Excelインポート'}
+        </button>
+        <input ref={fileInputRef} type="file" accept=".xlsx,.xls" multiple style={{display:'none'}}
+          onChange={handleImport}/>
+      </div>
+
+      {/* ファイルがない場合 */}
+      {gasLoading&&(
+        <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12,color:'#94a3b8'}}>
+          <div style={{fontSize:32}}>⏳</div>
+          <div style={{fontSize:14,fontWeight:600}}>データを読み込んでいます...</div>
+        </div>
+      )}
+      {!gasLoading&&files.length===0&&(
+        <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:16,color:'#94a3b8'}}>
+          <div style={{fontSize:48}}>📂</div>
+          <div style={{fontSize:16,fontWeight:600}}>Excelファイルをインポートしてください</div>
+          <div style={{fontSize:12}}>対応形式: .xlsx / .xls</div>
+          <button onClick={()=>fileInputRef.current?.click()}
+            style={{padding:'12px 28px',background:'linear-gradient(135deg,#1e1b4b,#1d4ed8)',color:'white',
+              border:'none',borderRadius:10,fontWeight:800,fontSize:14}}>
+            + Excelインポート
+          </button>
+        </div>
+      )}
+
+      {currentFile&&(<>
+        {/* ── 統計パネル ── */}
+        <StatsPanel customers={allCustomers}/>
+
+        {/* ── 検索・フィルター ── */}
+        <div style={{flexShrink:0,background:'white',borderBottom:'1px solid #f1f5f9',padding:'8px 14px',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)}
+            placeholder="氏名・ナンバー・車種で検索..."
+            style={{padding:'7px 12px',border:'2px solid #e5e7eb',borderRadius:8,fontSize:13,outline:'none',minWidth:220}}/>
+          <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+            {[['all','すべて'],['none','未予約'],['temp','仮予約'],['confirm','本予約'],['cancel','キャンセル'],['new_car','初回']].map(([v,l])=>(
+              <button key={v} onClick={()=>setFilterStatus(v)}
+                style={{padding:'5px 12px',borderRadius:20,border:`1.5px solid ${filterStatus===v?'#1d4ed8':'#e5e7eb'}`,
+                  background:filterStatus===v?'#eff6ff':'white',color:filterStatus===v?'#1d4ed8':'#64748b',
+                  fontWeight:filterStatus===v?700:400,fontSize:11}}>
+                {l}
+              </button>
+            ))}
+          </div>
+          <span style={{marginLeft:'auto',fontSize:11,color:'#94a3b8'}}>{filtered.length}件表示</span>
+        </div>
+
+        {/* ── テーブル ── */}
+        <div style={{flex:1,overflowX:'auto',overflowY:'hidden',display:'flex',flexDirection:'column'}}>
+          <div style={{flex:1,overflowY:'auto',minWidth:900}}>
+          <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
+            <thead>
+              <tr>
+                {['予約 / 満期日','氏名','No.','車種','投函①','予約①','投函②','予約②','入庫日','特典','コース','店舗','担当','備考'].map(h=>(
+                  <th key={h} style={TH}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length===0?(
+                <tr><td colSpan={14} style={{textAlign:'center',padding:32,color:'#94a3b8',fontSize:13}}>
+                  {search||filterStatus!=='all'?'条件に一致する顧客がいません':'データがありません'}
+                </td></tr>
+              ):filtered.map(c=>(
+                <CustomerRow key={c.custId} customer={c} onBook={setBookingModal} onRevive={handleRevive}/>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </>)}
+
+      {/* ── 予約モーダル ── */}
+      {bookingModal&&(
+        <BookingModal
+          customer={bookingModal}
+          inspData={inspData}
+          loanerResH={loanerResH}
+          loanerResS={loanerResS}
+          loanerListH={loanerListH}
+          loanerListS={loanerListS}
+          currentUser={currentUser}
+          onSave={handleBookingSave}
+          onClose={()=>setBookingModal(null)}
+        />
+      )}
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
