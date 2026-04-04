@@ -28,6 +28,32 @@
 <body>
   <div id="root"></div>
   <script type="text/babel" data-presets="react">
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  Hub a Nice Day v1.0 - 開発者ガイド                             ║
+// ║  作成: 2026-04  ベースライン確定日: 2026-04-04                  ║
+// ╠══════════════════════════════════════════════════════════════════╣
+// ║  【リポジトリ】                                                  ║
+// ║  本番: kyoshi-egawa/hub-a-nice-day                              ║
+// ║  開発: kyoshi-egawa/hub-a-nice-day-dev                          ║
+// ╠══════════════════════════════════════════════════════════════════╣
+// ║  【開発フロー】                                                  ║
+// ║  1. hub-a-nice-day-dev で修正・テスト                           ║
+// ║  2. 動作確認OK → hub-a-nice-day（本番）に反映                  ║
+// ╠══════════════════════════════════════════════════════════════════╣
+// ║  【絶対に触ってはいけない箇所】                                  ║
+// ║  - BLOCK-B: sGet / sSet / GAS通信（データ消失リスク）           ║
+// ║  - BLOCK-C: InspRow / 7台目承認ロジック                         ║
+// ╠══════════════════════════════════════════════════════════════════╣
+// ║  【ブロック構成】                                                ║
+// ║  BLOCK-A: 設定値・定数      → 変更可能                          ║
+// ║  BLOCK-B: データ層・GAS通信 → 変更禁止                          ║
+// ║  BLOCK-C: コアロジック      → 変更禁止                          ║
+// ║  BLOCK-D: UIコンポーネント  → 変更可能                          ║
+// ║  BLOCK-E: 画面レイアウト    → 変更可能（要注意）                ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
@@ -85,6 +111,18 @@ const HOLIDAYS_2026 = new Set([
 const isHoliday = (y,m,d) => HOLIDAYS_2026.has(`${y}-${m+1}-${d}`);
 
 // 店舗定義
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  BLOCK-A: 設定値・定数                                          ║
+// ║  【変更可能】ただし変更後は必ずdev環境でテストすること          ║
+// ║  含まれる内容:                                                  ║
+// ║  - STORES（店舗情報・カラー設定）                               ║
+// ║  - DEFAULT_STAFF_HONTEN / DEFAULT_STAFF_SANDA（スタッフ定義）   ║
+// ║  - COURSES（車検コース定義）                                    ║
+// ║  - TIME_SLOTS（タイムスロット）                                 ║
+// ║  - DEFAULT_LOANERS（代車デフォルト定義）                        ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
 const STORES = [
   {id:'honten', name:'本店',  color:'#2563eb', bg:'#eff6ff', accent:'#1d4ed8'},
   {id:'sanda',  name:'三田店',color:'#dc2626', bg:'#fef2f2', accent:'#b91c1c'},
@@ -615,6 +653,17 @@ const resolveOrderSlot = (orderDate, mailing2) => {
   if(mailing2 && orderDate >= mailing2) return 'reserve2';
   return 'reserve1';
 };
+
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  BLOCK-D: UIコンポーネント・モーダル                            ║
+// ║  【変更可能】dev環境でテスト後に本番反映すること                ║
+// ║  含まれる内容:                                                  ║
+// ║  - CustListModal（顧客リスト）                                  ║
+// ║  - BookingModal（予約入力フォーム）                             ║
+// ║  - MemoModal / DayOffModal（備考・休日設定）                    ║
+// ║  - StaffCalendarModal / InspLimitModal（設定系モーダル）        ║
+// ╚══════════════════════════════════════════════════════════════════╝
 
 const CustListModal = memo(({isOpen, onClose, mode:initMode, cust, existingData, currentUser, onSave, onCancelBooking, loanerRes={}, storeLoaners}) => {
   const [form, setForm] = useState({arrivalDate:'',orderDate:'',note:'',staff:'',course:0,tokuten:'-',store:'',loanerCarId:null,loanerLabel:'',loanerFromDate:'',loanerToDate:''});
@@ -1349,6 +1398,17 @@ const lockKey = (type,dk,idx,slot) => {
   return null;
 };
 const LOCK_TTL = 30*1000; // 30秒でロック期限切れ（ページ離脱時に自動解放）
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  BLOCK-B: データ層・GAS通信                                     ║
+// ║  【変更禁止】ここを変更するとデータ消失・破損のリスクあり       ║
+// ║  含まれる内容:                                                  ║
+// ║  - STOR / GAS_URL / GAS_API_KEY（接続設定）                     ║
+// ║  - sGet / sSet（GAS読み書き）                                   ║
+// ║  - acquireLock / releaseLock（同時編集ロック）                  ║
+// ║  ⚠️  変更が必要な場合は必ずKyoshiに確認すること                ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
 const STOR = 'hub-v8-';
 const storKey = (base, storeId) => `${STOR}${storeId}-${base}`;
 
@@ -3658,6 +3718,18 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
 });
 
 // ============================================
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  BLOCK-C: コアロジック・行表示                                  ║
+// ║  【変更禁止】7台目承認・店舗判定・ロック処理が含まれる          ║
+// ║  含まれる内容:                                                  ║
+// ║  - InspRow（車検行コンポーネント）                              ║
+// ║  - SchedRow（スケジュール行コンポーネント）                     ║
+// ║  - 7台目承認待ちロジック（waitingRows / normalRows）            ║
+// ║  - 店舗判定ロジック（otherStore / canApprove）                  ║
+// ║  ⚠️  変更が必要な場合は必ずdev環境で十分テストすること          ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
 const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,vsId,onApprove,isOverLimit,setItems})=>{
   const cObj=row.course?COURSES.find(c=>c.id===row.course):null;
   const isEmpty=!row.name&&!row.staff&&!row.carType&&!row.course;
@@ -5185,6 +5257,17 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
 // ============================================
 //  メインアプリ
 // ============================================
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  BLOCK-E: メインアプリ・画面レイアウト                          ║
+// ║  【要注意】カレンダー・スケジュール・ヘッダー固定が含まれる     ║
+// ║  含まれる内容:                                                  ║
+// ║  - AppInner / App（メインコンポーネント）                       ║
+// ║  - カレンダービュー・スケジュールビュー                         ║
+// ║  - ヘッダー固定・スクロール制御                                 ║
+// ║  ⚠️  高さ計算（height/paddingTop）の変更は十分注意すること      ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
 function AppInner() {
   const nowDate = new Date();
   // -- ログイン後は今日のスケジュールからスタート --
