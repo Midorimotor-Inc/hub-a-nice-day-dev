@@ -555,7 +555,111 @@ const LoanerGrid=memo(({storeId,entryDate,loanerRes,loanerList,onSelect,selCarId
 // ═══════════════════════════════════════════
 // 予約モーダル
 // ═══════════════════════════════════════════
-const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerListS,onSave,onClose,currentUser})=>{
+
+// ── 車検カレンダーピッカー（入庫日選択用）──
+const InspCalendarPicker=memo(({value,onChange,inspData,closedDays,closedDates,overrideOpen,inspLimits})=>{
+  const [calMonth,setCalMonth]=useState(()=>{
+    if(value){const p=value.split('-');return new Date(Number(p[0]),Number(p[1])-1,1);}
+    return new Date();
+  });
+  const cy=calMonth.getFullYear(),cm=calMonth.getMonth();
+  const daysInMonth=new Date(cy,cm+1,0).getDate();
+  const first=new Date(cy,cm,1).getDay();
+  const weeks=[];let wk=Array(7).fill(null);
+  for(let d=1;d<=daysInMonth;d++){
+    const dow=(first+d-1)%7;wk[dow]=d;
+    if(dow===6){weeks.push([...wk]);wk=Array(7).fill(null);}
+  }
+  if(wk.some(x=>x!==null))weeks.push([...wk]);
+  const getDk=d=>`${cy}-${cm+1}-${d}`;
+  const getCount=d=>{
+    const rows=(inspData&&inspData[getDk(d)])||[];
+    return rows.filter(r=>r&&r.name&&!r.pendingApproval&&r.bookingStatus!=='cancelled').length;
+  };
+  const getLimit=d=>(inspLimits&&inspLimits[getDk(d)])||6;
+  const isClosed=d=>{
+    const date=new Date(cy,cm,d);
+    const days=Array.isArray(closedDays)?closedDays:[];
+    const dates=Array.isArray(closedDates)?closedDates:[];
+    const ov=Array.isArray(overrideOpen)?overrideOpen:[];
+    if(days.includes(date.getDay()))return true;
+    const ds=`${cy}-${String(cm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if(dates.includes(ds))return true;
+    return false;
+  };
+  const DOW_CAL=['日','月','火','水','木','金','土'];
+  const today=new Date();
+  return(
+    <div style={{border:'1.5px solid #e5e7eb',borderRadius:9,overflow:'hidden',fontSize:11}}>
+      {/* ナビ */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 12px',background:'#f8fafc',borderBottom:'1px solid #e5e7eb'}}>
+        <button onClick={()=>setCalMonth(new Date(cy,cm-1,1))}
+          style={{padding:'3px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',cursor:'pointer',fontSize:13}}>‹</button>
+        <span style={{fontWeight:800,color:'#1e1b4b',fontSize:13}}>{cy}年{cm+1}月</span>
+        <button onClick={()=>setCalMonth(new Date(cy,cm+1,1))}
+          style={{padding:'3px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',cursor:'pointer',fontSize:13}}>›</button>
+      </div>
+      {/* 曜日ヘッダー */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',background:'#eef2ff',borderBottom:'1px solid #e5e7eb'}}>
+        {DOW_CAL.map((d,i)=>(
+          <div key={d} style={{textAlign:'center',padding:'4px 0',fontWeight:700,fontSize:10,
+            color:i===0?'#dc2626':i===6?'#2563eb':'#374151'}}>{d}</div>
+        ))}
+      </div>
+      {/* 週グリッド */}
+      {weeks.map((wk,wi)=>(
+        <div key={wi} style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)'}}>
+          {wk.map((d,di)=>{
+            if(!d)return<div key={di} style={{minHeight:46,borderTop:'1px solid #f3f4f6',borderLeft:di>0?'1px solid #f3f4f6':'none',background:'#f9fafb'}}/>;
+            const cnt=getCount(d);
+            const lmt=getLimit(d);
+            const closed=isClosed(d);
+            const isToday=d===today.getDate()&&cm===today.getMonth()&&cy===today.getFullYear();
+            const dateStr=`${cy}-${String(cm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const isSel=value===dateStr;
+            const isFull=cnt>=lmt;
+            const numColor=di===0?'#dc2626':di===6?'#2563eb':'#111';
+            let bg='white';
+            if(isSel)bg='#dbeafe';
+            else if(closed)bg='repeating-linear-gradient(45deg,#f9fafb,#f9fafb 3px,#f3f4f6 3px,#f3f4f6 6px)';
+            else if(isFull)bg='#fef2f2';
+            return(
+              <div key={di}
+                onClick={()=>{if(!closed)onChange(dateStr);}}
+                style={{minHeight:46,padding:'3px 2px',cursor:closed?'not-allowed':'pointer',
+                  borderTop:'1px solid #f3f4f6',borderLeft:di>0?'1px solid #f3f4f6':'none',
+                  background:bg,
+                  outline:isSel?'2px solid #2563eb':isToday?'2px solid #93c5fd':'none',
+                  position:'relative'}}>
+                <div style={{textAlign:'center',fontWeight:isToday?900:700,fontSize:11,
+                  color:isSel?'#1d4ed8':closed?'#9ca3af':numColor}}>{d}</div>
+                {!closed&&(
+                  <div style={{textAlign:'center',marginTop:1}}>
+                    <span style={{fontSize:9,fontWeight:700,
+                      color:isFull?'#dc2626':cnt>=lmt-1?'#d97706':'#059669'}}>
+                      {cnt}/{lmt}台
+                    </span>
+                  </div>
+                )}
+                {closed&&<div style={{textAlign:'center',fontSize:8,color:'#9ca3af'}}>休</div>}
+                {isSel&&<div style={{position:'absolute',top:1,right:1,width:5,height:5,borderRadius:'50%',background:'#2563eb'}}/>}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+      {/* 凡例 */}
+      <div style={{display:'flex',gap:8,padding:'5px 10px',background:'#f8fafc',borderTop:'1px solid #e5e7eb',flexWrap:'wrap'}}>
+        <span style={{display:'flex',alignItems:'center',gap:2,fontSize:9,color:'#059669'}}>●空き</span>
+        <span style={{display:'flex',alignItems:'center',gap:2,fontSize:9,color:'#d97706'}}>●残少</span>
+        <span style={{display:'flex',alignItems:'center',gap:2,fontSize:9,color:'#dc2626'}}>●満</span>
+        <span style={{display:'flex',alignItems:'center',gap:2,fontSize:9,color:'#9ca3af'}}>休休業</span>
+      </div>
+    </div>
+  );
+});
+
+const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerListS,onSave,onClose,currentUser,closedDays,closedDates,overrideOpen,inspLimits})=>{
   const normStore=s=>{if(!s)return'honten';if(s==='三田店'||s==='sanda')return'sanda';return'honten';};
   const defaultStaff=customer.staff||currentUser?.name||'';
   // デフォルト店舗: 顧客の店舗 > ログインユーザーの店舗 > 本店
@@ -624,11 +728,19 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
         <div style={{overflowY:'auto',flex:1,padding:18}}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
             <div>
-              <div style={{fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>入庫日 <span style={{color:'#dc2626',fontSize:10}}>（本予約必須）</span></div>
-              <div style={{position:'relative',cursor:'pointer'}} onClick={()=>document.getElementById('bm-entryDate').showPicker?.()}>
-                <input id="bm-entryDate" type="date" value={form.entryDate} onChange={upd('entryDate')}
-                  style={{width:'100%',padding:'8px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:13,boxSizing:'border-box',cursor:'pointer'}}/>
+              <div style={{fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>
+                📅 入庫日 <span style={{color:'#dc2626',fontSize:10}}>（本予約必須）</span>
+                {form.entryDate&&<span style={{marginLeft:8,fontWeight:800,color:'#1d4ed8',fontSize:12}}>{form.entryDate}</span>}
               </div>
+              <InspCalendarPicker
+                value={form.entryDate}
+                onChange={v=>setForm(p=>({...p,entryDate:v}))}
+                inspData={inspData}
+                closedDays={closedDays}
+                closedDates={closedDates}
+                overrideOpen={overrideOpen}
+                inspLimits={inspLimits}
+              />
             </div>
             <div>
               <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>店舗</label>
@@ -791,6 +903,10 @@ const App=()=>{
   const [loanerListH,setLoanerListH]=useState([]);
   const [loanerListS,setLoanerListS]=useState([]);
   const [bookingModal,setBookingModal]=useState(null);
+  const [closedDays,setClosedDays]=useState([]);
+  const [closedDates,setClosedDates]=useState([]);
+  const [overrideOpen,setOverrideOpen]=useState([]);
+  const [inspLimits,setInspLimits]=useState({});
   const fileInputRef=useRef();
 
   // GASからデータ取得
@@ -814,19 +930,27 @@ const App=()=>{
       }
       // GASから最新データをバックグラウンドで取得
       try{
-        const [insp,lh,ls,fileIndex,llh,lls]=await Promise.all([
+        const [insp,lh,ls,fileIndex,llh,lls,cdh,cdate,ov,ilim]=await Promise.all([
           sGet(STOR+'insp'),
           sGet(storKey('lres','honten')),
           sGet(storKey('lres','sanda')),
           sGet(STOR+'cf-index'),
           sGet(storKey('cars','honten')),
           sGet(storKey('cars','sanda')),
+          sGet(storKey('cdow','honten')),
+          sGet(storKey('cdate','honten')),
+          sGet(storKey('overrideOpen','honten')),
+          sGet(STOR+'insp-limits'),
         ]);
         if(insp)setInspData(insp);
         if(lh)setLoanerResH(lh);
         if(ls)setLoanerResS(ls);
         if(Array.isArray(llh)&&llh.length>0)setLoanerListH(llh);
         if(Array.isArray(lls)&&lls.length>0)setLoanerListS(lls);
+        if(Array.isArray(cdh))setClosedDays(cdh);
+        if(Array.isArray(cdate))setClosedDates(cdate);
+        if(Array.isArray(ov))setOverrideOpen(ov);
+        if(ilim&&typeof ilim==='object')setInspLimits(ilim);
         // GASから最新ファイルデータを取得してキャッシュ更新
         if(Array.isArray(fileIndex)&&fileIndex.length>0){
           localStorage.setItem('hub-cf-index',JSON.stringify(fileIndex));
@@ -1233,6 +1357,10 @@ const App=()=>{
         <BookingModal
           customer={bookingModal}
           inspData={inspData}
+          closedDays={closedDays}
+          closedDates={closedDates}
+          overrideOpen={overrideOpen}
+          inspLimits={inspLimits}
           loanerResH={loanerResH}
           loanerResS={loanerResS}
           loanerListH={loanerListH}
