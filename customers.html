@@ -909,7 +909,7 @@ const CustomerRow=memo(({customer,onBook,onRevive})=>{
 const App=()=>{
   // index.htmlのlocalStorageからログインユーザーを取得
   const currentUser=useMemo(()=>{
-    try{const u=localStorage.getItem('hub_currentUser');return u?JSON.parse(u):null;}catch{return null;}
+    try{const u=sessionStorage.getItem('hub_currentUser');return u?JSON.parse(u):null;}catch{return null;}
   },[]);
   const [files,setFiles]=useState([]);
   const [activeIdx,setActiveIdx]=useState(0);
