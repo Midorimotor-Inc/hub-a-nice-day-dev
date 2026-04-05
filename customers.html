@@ -556,139 +556,118 @@ const LoanerGrid=memo(({storeId,entryDate,loanerRes,loanerList,onSelect,selCarId
 // ═══════════════════════════════════════════
 
 // ── 車検カレンダーピッカー（入庫日選択用）──
-const InspCalendarPicker=memo(({value,onChange,inspData,closedDays,closedDates,overrideOpen,inspLimits,open,onClose})=>{
+function InspCalendarPicker({value,onChange,inspData,closedDays,closedDates,inspLimits,open,onClose}){
   const [calMonth,setCalMonth]=useState(()=>{
     if(value){const p=value.split('-');return new Date(Number(p[0]),Number(p[1])-1,1);}
     return new Date();
   });
   if(!open)return null;
   const cy=calMonth.getFullYear(),cm=calMonth.getMonth();
-  const daysInMonth=new Date(cy,cm+1,0).getDate();
+  const dim=new Date(cy,cm+1,0).getDate();
   const first=new Date(cy,cm,1).getDay();
   const weeks=[];let wk=Array(7).fill(null);
-  for(let d=1;d<=daysInMonth;d++){
+  for(let d=1;d<=dim;d++){
     const dow=(first+d-1)%7;wk[dow]=d;
     if(dow===6){weeks.push([...wk]);wk=Array(7).fill(null);}
   }
   if(wk.some(x=>x!==null))weeks.push([...wk]);
-  const getDk=d=>`${cy}-${cm+1}-${d}`;
-  const getCourseCounts=d=>{
+  function getDk(d){return `${cy}-${cm+1}-${d}`;}
+  function getCounts(d){
     const rows=(inspData&&inspData[getDk(d)])||[];
-    const valid=rows.filter(r=>r&&r.name&&!r.pendingApproval&&r.bookingStatus!=='cancelled');
-    return{
-      1:valid.filter(r=>Number(r.course)===1).length,
-      2:valid.filter(r=>Number(r.course)===2).length,
-      3:valid.filter(r=>Number(r.course)===3).length,
-      total:valid.length,
-    };
-  };
-  const getLimit=d=>(inspLimits&&inspLimits[getDk(d)])||6;
-  const isClosed=d=>{
-    const date=new Date(cy,cm,d);
-    if((Array.isArray(closedDays)?closedDays:[]).includes(date.getDay()))return true;
+    const v=rows.filter(r=>r&&r.name&&!r.pendingApproval&&r.bookingStatus!=='cancelled');
+    return{1:v.filter(r=>Number(r.course)===1).length,2:v.filter(r=>Number(r.course)===2).length,3:v.filter(r=>Number(r.course)===3).length,total:v.length};
+  }
+  function getLmt(d){return(inspLimits&&inspLimits[getDk(d)])||6;}
+  function closed(d){
+    const dt=new Date(cy,cm,d);
+    const cdays=Array.isArray(closedDays)?closedDays:[];
+    const cdates=Array.isArray(closedDates)?closedDates:[];
+    if(cdays.includes(dt.getDay()))return true;
     const ds=`${cy}-${String(cm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    if((Array.isArray(closedDates)?closedDates:[]).includes(ds))return true;
-    return false;
-  };
-  const DOW_CAL=['日','月','火','水','木','金','土'];
+    return cdates.includes(ds);
+  }
+  const DOW=['日','月','火','水','木','金','土'];
   const today=new Date();
-  // コース設定（スクリーンショット2の色）
-  // マ=赤, ク=青, レ=黄 の順で6枠表示
-  // 枠の順序: マッハ→クイック→レギュラーで埋まった数だけ色付け
-  const buildSlots=(cc)=>{
-    // 6枠をマ・ク・レの順に割り当て
-    const slots=[];
-    for(let i=0;i<cc[1];i++)slots.push({type:'ma',bg:'#fca5a5',label:'マ',textColor:'#b91c1c'});
-    for(let i=0;i<cc[2];i++)slots.push({type:'ku',bg:'#93c5fd',label:'ク',textColor:'#1d4ed8'});
-    for(let i=0;i<cc[3];i++)slots.push({type:'re',bg:'#fde68a',label:'レ',textColor:'#b45309'});
-    while(slots.length<6)slots.push(null); // 空き枠
-    return slots.slice(0,6);
-  };
-  return(
+  const COLORS={1:{bg:'#fca5a5',tc:'#b91c1c',label:'マ'},2:{bg:'#93c5fd',tc:'#1d4ed8',label:'ク'},3:{bg:'#fde68a',tc:'#b45309',label:'レ'}};
+  return (
     <div style={{border:'1.5px solid #e5e7eb',borderRadius:9,overflow:'hidden',fontSize:12}}>
-      {/* ナビ */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 12px',background:'#f8fafc',borderBottom:'1px solid #e5e7eb'}}>
-        <button onClick={()=>setCalMonth(new Date(cy,cm-1,1))}
-          style={{padding:'3px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',cursor:'pointer',fontSize:13}}>&#8249;</button>
+        <button onClick={()=>setCalMonth(new Date(cy,cm-1,1))} style={{padding:'3px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',cursor:'pointer',fontSize:13}}>&#8249;</button>
         <span style={{fontWeight:800,color:'#1e1b4b',fontSize:13}}>{cy}年{cm+1}月</span>
-        <button onClick={()=>setCalMonth(new Date(cy,cm+1,1))}
-          style={{padding:'3px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',cursor:'pointer',fontSize:13}}>&#8250;</button>
+        <button onClick={()=>setCalMonth(new Date(cy,cm+1,1))} style={{padding:'3px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',cursor:'pointer',fontSize:13}}>&#8250;</button>
       </div>
-      {/* 曜日ヘッダー */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',background:'#eef2ff',borderBottom:'1px solid #e5e7eb'}}>
-        {DOW_CAL.map((d,i)=><div key={d} style={{textAlign:'center',padding:'4px 0',fontWeight:700,fontSize:10,color:i===0?'#dc2626':i===6?'#2563eb':'#374151'}}>{d}</div>)}
+        {DOW.map((d,i)=>(
+          <div key={d} style={{textAlign:'center',padding:'4px 0',fontWeight:700,fontSize:10,color:i===0?'#dc2626':i===6?'#2563eb':'#374151'}}>{d}</div>
+        ))}
       </div>
-      {/* 週グリッド */}
       {weeks.map((wk,wi)=>(
         <div key={wi} style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)'}}>
           {wk.map((d,di)=>{
-            if(!d)return<div key={di} style={{minHeight:72,borderTop:'1px solid #f3f4f6',borderLeft:di>0?'1px solid #f3f4f6':'none',background:'#f9fafb'}}/>;
-            const cc=getCourseCounts(d);
-            const lmt=getLimit(d);
-            const closed=isClosed(d);
+            if(!d)return <div key={di} style={{minHeight:66,borderTop:'1px solid #f3f4f6',borderLeft:di>0?'1px solid #f3f4f6':'none',background:'#f9fafb'}}/>;
+            const cc=getCounts(d);
+            const lmt=getLmt(d);
+            const isClosed=closed(d);
             const isToday=d===today.getDate()&&cm===today.getMonth()&&cy===today.getFullYear();
-            const dateStr=`${cy}-${String(cm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-            const isSel=value===dateStr;
+            const ds=`${cy}-${String(cm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const isSel=value===ds;
             const isFull=cc.total>=lmt;
             const numColor=di===0?'#dc2626':di===6?'#2563eb':'#111';
-            // 背景: 選択=青, 満=単色薄赤, 定休=斜線, 通常=白
             let bg='white';
             if(isSel)bg='#dbeafe';
-            else if(closed)bg='repeating-linear-gradient(45deg,#f9fafb,#f9fafb 3px,#f3f4f6 3px,#f3f4f6 6px)';
-            else if(isFull)bg='#fee2e2';  // 単色薄赤
-            const slots=closed?[]:buildSlots(cc);
-            return(
+            else if(isClosed)bg='repeating-linear-gradient(45deg,#f9fafb,#f9fafb 3px,#f3f4f6 3px,#f3f4f6 6px)';
+            else if(isFull)bg='#fee2e2';
+            // 6枠スロットを生成
+            const slots=[];
+            for(let i=0;i<cc[1];i++)slots.push(1);
+            for(let i=0;i<cc[2];i++)slots.push(2);
+            for(let i=0;i<cc[3];i++)slots.push(3);
+            while(slots.length<6)slots.push(0);
+            return (
               <div key={di}
-                onClick={()=>{if(!closed){onChange(dateStr);if(onClose)onClose();}}}
-                style={{minHeight:72,padding:'4px 2px',cursor:closed?'not-allowed':'pointer',
+                onClick={()=>{if(!isClosed){onChange(ds);if(onClose)onClose();}}}
+                style={{minHeight:66,padding:'3px 2px',cursor:isClosed?'not-allowed':'pointer',
                   borderTop:'1px solid #f3f4f6',borderLeft:di>0?'1px solid #f3f4f6':'none',
-                  background:bg,outline:isSel?'2px solid #2563eb':isToday?'2px solid #93c5fd':'none',
-                  position:'relative'}}>
-                {/* 日付 */}
+                  background:bg,outline:isSel?'2px solid #2563eb':isToday?'2px solid #93c5fd':'none',position:'relative'}}>
                 <div style={{textAlign:'center',fontWeight:isToday?900:700,fontSize:11,
-                  color:isSel?'#1d4ed8':closed?'#9ca3af':numColor,lineHeight:1.3}}>{d}</div>
-                {/* 6枠グリッド（スクリーンショット2と同仕様） */}
-                {!closed&&(
-                  <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:1,padding:'1px 2px'}}>
-                    {slots.map((s,si)=>(
+                  color:isSel?'#1d4ed8':isClosed?'#9ca3af':numColor,lineHeight:1.3}}>{d}</div>
+                {!isClosed&&(
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:1,padding:'2px 2px'}}>
+                    {slots.map((cid,si)=>(
                       <div key={si} style={{
                         height:14,borderRadius:2,
-                        background:s?s.bg:'#f3f4f6',
-                        border:s?'none':'1px solid #e5e7eb',
-                        display:'flex',alignItems:'center',justifyContent:'center',
-                      }}>
-                        {s&&<span style={{fontSize:6,fontWeight:900,color:s.textColor,lineHeight:1}}>{s.label}</span>}
+                        background:cid?COLORS[cid].bg:'#f3f4f6',
+                        border:cid?'none':'1px solid #e5e7eb',
+                        display:'flex',alignItems:'center',justifyContent:'center'}}>
+                        {cid?<span style={{fontSize:7,fontWeight:900,color:COLORS[cid].tc}}>{COLORS[cid].label}</span>:null}
                       </div>
                     ))}
                   </div>
                 )}
-                {closed&&<div style={{textAlign:'center',fontSize:8,color:'#9ca3af',marginTop:2}}>休</div>}
+                {isClosed&&<div style={{textAlign:'center',fontSize:9,color:'#9ca3af',marginTop:2}}>休</div>}
                 {isSel&&<div style={{position:'absolute',top:1,right:1,width:5,height:5,borderRadius:'50%',background:'#2563eb'}}/>}
               </div>
             );
           })}
         </div>
       ))}
-      {/* 凡例 */}
       <div style={{display:'flex',gap:8,padding:'5px 10px',background:'#f8fafc',borderTop:'1px solid #e5e7eb',flexWrap:'wrap',alignItems:'center'}}>
-        {[{bg:'#fca5a5',tc:'#b91c1c',n:'マッハ'},{bg:'#93c5fd',tc:'#1d4ed8',n:'クイック'},{bg:'#fde68a',tc:'#b45309',n:'レギュラー'}].map((x,i)=>(
-          <span key={i} style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:9,fontWeight:700}}>
-            <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:14,height:10,borderRadius:2,background:x.bg}}>
-              <span style={{fontSize:6,fontWeight:900,color:x.tc}}>{x.n[0]==='マ'?'マ':x.n[0]==='ク'?'ク':'レ'}</span>
+        {[1,2,3].map(cid=>(
+          <span key={cid} style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:9,fontWeight:700}}>
+            <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:14,height:10,borderRadius:2,background:COLORS[cid].bg}}>
+              <span style={{fontSize:6,fontWeight:900,color:COLORS[cid].tc}}>{COLORS[cid].label}</span>
             </span>
-            {x.n}
+            {cid===1?'マッハ':cid===2?'クイック':'レギュラー'}
           </span>
         ))}
         <span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:9,color:'#9ca3af'}}>
-          <span style={{display:'inline-block',width:10,height:8,borderRadius:2,background:'#fee2e2',border:'1px solid #fca5a5'}}/>
-          6台満
+          <span style={{width:10,height:8,display:'inline-block',background:'#fee2e2',border:'1px solid #fca5a5',borderRadius:2}}/>6台満
         </span>
         <span style={{fontSize:9,color:'#9ca3af'}}>休=休業</span>
       </div>
     </div>
-    </div>
   );
-});
+}
 
 
 const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerListS,onSave,onClose,currentUser,closedDays,closedDates,overrideOpen,inspLimits})=>{
@@ -715,8 +694,7 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
   });
   const [showCal,setShowCal]=useState(true);
   const [selCarId,setSelCarId]=useState(null);
-  const [showCal,setShowCal]=useState(true);
-  const [selDays,setSelDays]=useState([]);
+    const [selDays,setSelDays]=useState([]);
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState('');
 
