@@ -1132,6 +1132,7 @@ const App=()=>{
           pendingApproval:false,
           custId:customer.custId,
           bookingTime,
+          time:bookingTime||'',  // index.htmlのrow.time表示用
         };
         if(!Array.isArray(newInspData[dkFormatted]))newInspData[dkFormatted]=[];
         newInspData[dkFormatted]=[...newInspData[dkFormatted],newRow];
