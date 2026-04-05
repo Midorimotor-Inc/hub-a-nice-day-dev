@@ -1123,13 +1123,28 @@ const App=()=>{
             newInspData[d]=newInspData[d].filter(r=>r&&r.custId!==customer.custId);
           }
         }
+        // 承認待ちチェック（index.htmlと同じ判定）
+        const existingRows=(newInspData[dkFormatted]||[]).filter(r=>r&&r.name&&r.course&&!r.pendingApproval&&r.bookingStatus!=='cancelled');
+        const lim=(inspLimits&&inspLimits[dkFormatted])??6;
+        const courseNum=Number(course)||0;
+        let needsApproval=false;
+        if(existingRows.length>=lim){needsApproval=true;}
+        if(courseNum===3){
+          const regCount=existingRows.filter(r=>Number(r.course)===3).length;
+          if(regCount>=3){needsApproval=true;}
+        }
+        if(courseNum===1){
+          const mahCount=existingRows.filter(r=>Number(r.course)===1).length;
+          if(mahCount>=2){needsApproval=true;}
+        }
+
         // 新しい予約を追加
         const newRow={
           name:customer.name,carType:customer.carType,
-          course:Number(course)||0,store,staff,tokuten:tokuten||'-',
+          course:courseNum,store,staff,tokuten:tokuten||'-',
           note,no:customer.no,
           bookingStatus:isTemp?'provisional':'confirmed',
-          pendingApproval:false,
+          pendingApproval:needsApproval,
           custId:customer.custId,
           bookingTime,
           time:bookingTime||'',  // index.htmlのrow.time表示用
