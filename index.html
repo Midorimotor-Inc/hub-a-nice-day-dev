@@ -5051,6 +5051,10 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
                             e.stopPropagation();
                             setPinnedRes({car,res:st});
                             setHoverRes(null);
+                          } else if(!pickMode&&!isObj){
+                            // 空きセルクリック → スケジュールへ戻るを案内
+                            setPinnedRes({car,res:null,_emptyDate:dateObj});
+                            setHoverRes(null);
                           }
                         }}
                         style={{
@@ -5104,10 +5108,30 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
 
       {/* 固定編集パネル（クリックで開く・パネル内操作可） */}
       {!pickMode&&pinnedRes&&(
-        <div style={{position:'fixed',bottom:24,right:24,zIndex:2000,background:'white',border:'2px solid #4338ca',borderRadius:12,padding:'16px 18px',boxShadow:'0 8px 40px rgba(0,0,0,0.25)',minWidth:260}}>
+        pinnedRes.res===null ? (
+          /* 空きセルクリック時 → スケジュールへ誘導 */
+          <div style={{position:'fixed',bottom:24,right:24,zIndex:2000,background:'white',border:`2px solid ${pinnedRes._rental?'#059669':'#7c3aed'}`,borderRadius:12,padding:'16px 18px',boxShadow:'0 8px 40px rgba(0,0,0,0.25)',minWidth:240}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+              <div style={{fontSize:13,fontWeight:800,color:pinnedRes._rental?'#065f46':'#5b21b6'}}>
+                {pinnedRes._rental?'🔑':'🚙'} {pinnedRes.car.name}
+              </div>
+              <button onClick={()=>setPinnedRes(null)}
+                style={{background:'#f3f4f6',border:'none',borderRadius:'50%',width:24,height:24,cursor:'pointer',fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',color:'#6b7280'}}>×</button>
+            </div>
+            <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>
+              📅 {pinnedRes._emptyDate&&`${pinnedRes._emptyDate.month+1}/${pinnedRes._emptyDate.day}`} 空き
+            </div>
+            <button onClick={()=>{onBack();setPinnedRes(null);}}
+              style={{width:'100%',padding:'9px 0',background:'#7c3aed',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>
+              📋 スケジュールに戻って予約する
+            </button>
+          </div>
+        ) : (
+        /* 予約済みバークリック時 */
+        <div style={{position:'fixed',bottom:24,right:24,zIndex:2000,background:'white',border:`2px solid ${pinnedRes.res._rental?'#059669':'#4338ca'}`,borderRadius:12,padding:'16px 18px',boxShadow:'0 8px 40px rgba(0,0,0,0.25)',minWidth:260}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-            <div style={{fontSize:13,fontWeight:800,color:'#1e1b4b'}}>
-              🚙 {pinnedRes.car.name}
+            <div style={{fontSize:13,fontWeight:800,color:pinnedRes.res._rental?'#065f46':'#1e1b4b'}}>
+              {pinnedRes.res._rental?'🔑':'🚙'} {pinnedRes.car.name}
             </div>
             <button onClick={()=>setPinnedRes(null)}
               style={{background:'#f3f4f6',border:'none',borderRadius:'50%',width:24,height:24,cursor:'pointer',fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',color:'#6b7280'}}>×</button>
@@ -5120,15 +5144,19 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
             <button onClick={()=>{openEdit(pinnedRes.car,pinnedRes.res);setPinnedRes(null);}}
               style={{flex:1,padding:'8px 0',background:'#4338ca',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>✎ 編集</button>
             <button onClick={()=>{
-              // 関連スケジュールを開く
-              handleResClick({...pinnedRes.res,carId:pinnedRes.car.id});
-              setPinnedRes(null);
+              if(window.confirm(`「${pinnedRes.car.name}」の予約（${pinnedRes.res.fm+1}/${pinnedRes.res.fd}〜${pinnedRes.res.tm+1}/${pinnedRes.res.td} ${pinnedRes.res.user}）を削除しますか？`)){
+                if(pinnedRes.res._rental){
+                  onDeleteRentalRes(pinnedRes.car.id,pinnedRes.res.id);
+                }else{
+                  onDeleteRes(pinnedRes.car.id,pinnedRes.res.id);
+                }
+                setPinnedRes(null);
+              }
             }}
-              style={{flex:1,padding:'8px 0',background:'#0891b2',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>📋 予約へ</button>
-            <button onClick={()=>{onDeleteRes(pinnedRes.car.id,pinnedRes.res.id);setPinnedRes(null);}}
-              style={{flex:1,padding:'8px 0',background:'#ef4444',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>× 削除</button>
+              style={{flex:1,padding:'8px 0',background:'#ef4444',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>🗑 削除</button>
           </div>
         </div>
+        )
       )}
 
 
@@ -5316,6 +5344,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
                               onMouseLeave={()=>{if(!pickMode&&isObj)setHoverRes(null);}}
                               onClick={e=>{
                                 if(!pickMode&&isObj){e.preventDefault();e.stopPropagation();setPinnedRes({car,res:{...st,_rental:true}});}
+                                else if(!pickMode&&!isObj){setPinnedRes({car,res:null,_rental:true,_emptyDate:dateObj});}
                               }}
                               style={{
                                 width:44,minWidth:44,maxWidth:44,height:34,
