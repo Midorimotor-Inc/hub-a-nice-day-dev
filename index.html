@@ -4757,13 +4757,13 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
 
   // 表示範囲：selDateから-2日〜+31日（月をまたぐ）
   const dateRange=useMemo(()=>{
-    const today=selDate||new Date();
-    const startDate=new Date(today);
-    startDate.setDate(startDate.getDate()-2);
-    const endDate=new Date(today);
-    endDate.setDate(endDate.getDate()+31);
-    
-    // 日付配列を生成（月をまたぐ）
+    // loanerMonthの月を中心に前月末〜翌月頭まで表示（長期レンタル対応）
+    const baseMonth=loanerMonth||new Date();
+    const y=baseMonth.getFullYear();
+    const m=baseMonth.getMonth();
+    // 前月15日〜翌々月15日の約90日間を表示
+    const startDate=new Date(y,m-1,15);
+    const endDate=new Date(y,m+2,15);
     const range=[];
     const current=new Date(startDate);
     while(current<=endDate){
@@ -4776,7 +4776,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
       current.setDate(current.getDate()+1);
     }
     return range;
-  },[selDate]);
+  },[loanerMonth]);
 
   const DOW=['日','月','火','水','木','金','土'];
   const hi=selDate?selDate.getDate():null;
