@@ -5121,7 +5121,17 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
             <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>
               📅 {pinnedRes._emptyDate&&`${pinnedRes._emptyDate.month+1}/${pinnedRes._emptyDate.day}`} 空き
             </div>
-            <button onClick={()=>{onBack();setPinnedRes(null);}}
+            <button onClick={()=>{
+              if(pinnedRes._emptyDate){
+                const {year,month,day}=pinnedRes._emptyDate;
+                const dk=`${year}-${month+1}-${day}`;
+                setPinnedRes(null);
+                onOpenBooking('insp',dk,0,null,{...blankInsp()});
+              } else {
+                onBack();
+                setPinnedRes(null);
+              }
+            }}
               style={{width:'100%',padding:'9px 0',background:'#7c3aed',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>
               📋 スケジュールに戻って予約する
             </button>
