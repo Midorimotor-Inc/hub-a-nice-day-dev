@@ -4738,7 +4738,7 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
 // ============================================
 //  代車管理グリッド（閲覧専用 + モーダル編集）
 // ============================================
-const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRes,onUndo,selDate,onBack,onPickLoaner,pickMode,locks,currentUser,onLockCar,onUnlockCar,savedModalData,inspData,schedData,onOpenBooking,pinnedRes,setPinnedRes,hoverRes,setHoverRes,storeLoaners,storeInfo,rentalCars,rentalRes,onAddRentalRes,onDeleteRentalRes,onPickRental,onOpenSettings,tireData,locationData,onOpenTireEdit,onOpenLocationEdit})=>{
+const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRes,onUndo,selDate,onBack,onPickLoaner,pickMode,locks,currentUser,onLockCar,onUnlockCar,savedModalData,inspData,schedData,onOpenBooking,pinnedRes,setPinnedRes,hoverRes,setHoverRes,storeLoaners,storeInfo,rentalCars,rentalRes,onAddRentalRes,onDeleteRentalRes,onReplaceRentalRes,onPickRental,onOpenSettings,tireData,locationData,onOpenTireEdit,onOpenLocationEdit})=>{
   const LOANERS_LOCAL=storeLoaners||LOANERS;
   const RENTAL_LOCAL=rentalCars||DEFAULT_RENTAL_CARS;
   const rentalResLocal=rentalRes||{};
@@ -4935,8 +4935,12 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
       return ns<=re&&ne>=rs;
     });
     if(conflict){alert('その期間は他の予約と重複しています');return;}
-    onDeleteRentalRes(rentalEditModal.carId,rentalEditModal.resId);
-    onAddRentalRes(rentalEditModal.carId,{id:'rr'+Date.now(),carId:rentalEditModal.carId,fy,fm:fm-1,fd,ty,tm:tm-1,td,user:rentalEditForm.user,color:rentalEditModal.color||RES_COLORS[0]});
+    // 1回のatomic更新で既存レコードを差し替え（delete+addの競合を防ぐ）
+    onReplaceRentalRes(rentalEditModal.carId,rentalEditModal.resId,{
+      fy,fm:fm-1,fd,ty,tm:tm-1,td,
+      user:rentalEditForm.user,
+      color:rentalEditModal.color||RES_COLORS[0],
+    });
     setRentalEditModal(null);
   };
 
@@ -5593,6 +5597,7 @@ function AppInner() {
   const [locks,      setLocks]     =useShared(STOR+'locks',{},3000);
   const addRentalRes    = useCallback((carId,rec) => setRentalResData(p=>({...p,[carId]:[...(p[carId]||[]),rec]})),[setRentalResData]);
   const deleteRentalRes = useCallback((carId,resId) => setRentalResData(p=>({...p,[carId]:(p[carId]||[]).filter(r=>r.id!==resId)})),[setRentalResData]);
+  const replaceRentalRes = useCallback((carId,resId,newRec) => setRentalResData(p=>({...p,[carId]:(p[carId]||[]).map(r=>r.id===resId?{...r,...newRec}:r)})),[setRentalResData]);
   const [loanerUndo, setLoanerUndo]=useState([]);
   // LoanerGridのpinnedRes/hoverResを親で管理（グリッドの再レンダリング防止→scrollLeft保持）
   const [loanerPinnedRes, setLoanerPinnedRes]=useState(null);
@@ -7660,7 +7665,7 @@ function AppInner() {
               hoverRes={loanerHoverRes}   setHoverRes={stableHoverSetter}
               storeLoaners={currentLoaners} storeInfo={STORES.find(s=>s.id===vsId)}
               rentalCars={dynRentalCars} rentalRes={rentalResData}
-              onAddRentalRes={addRentalRes} onDeleteRentalRes={deleteRentalRes}
+              onAddRentalRes={addRentalRes} onDeleteRentalRes={deleteRentalRes} onReplaceRentalRes={replaceRentalRes}
               onPickRental={handlePickRental}
               onOpenSettings={()=>setShowLoanerSettings(true)}
               tireData={carTireData}
