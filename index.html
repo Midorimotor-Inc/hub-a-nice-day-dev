@@ -3850,12 +3850,17 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
 // ║  ⚠️  変更が必要な場合は必ずdev環境で十分テストすること          ║
 // ╚══════════════════════════════════════════════════════════════════╝
 
-const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,vsId,onApprove,isOverLimit,setItems})=>{
+const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,loanerResH,loanerResS,vsId,onApprove,isOverLimit,setItems})=>{
   const cObj=row.course?COURSES.find(c=>c.id===row.course):null;
   const isEmpty=!row.name&&!row.staff&&!row.carType&&!row.course;
   const locked=lockInfo?.lockedBy;
   const bookingKey=`insp-${dk}-${idx}`;
-  const loanerLabel=getLoanerLabel(loanerRes,dk,row.name,bookingKey);
+  // row.storeに基づいてloanerResを選択（店舗切り替えで代車が変わらないようにする）
+  const normRowStore=s=>{if(!s)return vsId;if(s==='honten'||s==='本店')return'honten';if(s==='sanda'||s==='三田店')return'sanda';return vsId;};
+  const rowLoanerRes=(loanerResH&&loanerResS)
+    ?(normRowStore(row.store)==='honten'?loanerResH:loanerResS)
+    :loanerRes;
+  const loanerLabel=getLoanerLabel(rowLoanerRes,dk,row.name,bookingKey);
   // store正規化: 'honten'/'本店' → 'honten'、'sanda'/'三田店' → 'sanda'
   const normStore=s=>{if(!s)return'';if(s==='honten'||s==='本店')return'honten';if(s==='sanda'||s==='三田店')return'sanda';return s;};
   const rowStore=normStore(row.store);
@@ -4739,6 +4744,8 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
   const rentalResLocal=rentalRes||{};
   const [editModal,setEditModal]=useState(null);
   const [editForm,setEditForm]=useState({user:'',startDate:'',endDate:''});
+  const [rentalEditModal,setRentalEditModal]=useState(null);
+  const [rentalEditForm,setRentalEditForm]=useState({user:'',startDate:'',endDate:''});
   // pinnedRes/hoverResは親から受け取る（グリッドの再レンダリングを防いでscrollLeftを保持）
   // pickMode用ドラッグ状態
   const [drag,setDrag]=useState(null);
@@ -4844,6 +4851,16 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
 
   // 閲覧モード：editModalで編集
   const openEdit=(car,res)=>{
+    if(res._rental){
+      // レンタカー編集
+      setRentalEditForm({
+        user:res.user,
+        startDate:`${res.fy}-${String(res.fm+1).padStart(2,'0')}-${String(res.fd).padStart(2,'0')}`,
+        endDate:`${res.ty}-${String(res.tm+1).padStart(2,'0')}-${String(res.td).padStart(2,'0')}`
+      });
+      setRentalEditModal({carId:car.id,resId:res.id,carName:car.name,color:res.color});
+      return;
+    }
     setEditForm({
       user:res.user,
       startDate:`${res.fy}-${String(res.fm+1).padStart(2,'0')}-${String(res.fd).padStart(2,'0')}`,
@@ -4901,6 +4918,26 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
     onDeleteRes(editModal.carId,editModal.resId);
     onAddRes(editModal.carId,{id:Date.now(),fy,fm:fm-1,fd,ty,tm:tm-1,td,user:editForm.user,color:prev?.color||RES_COLORS[0]});
     setEditModal(null);
+  };
+
+  // レンタカー編集保存
+  const saveEditRental=()=>{
+    if(!rentalEditForm.user.trim()||!rentalEditForm.startDate||!rentalEditForm.endDate)return;
+    const [fy,fm,fd]=rentalEditForm.startDate.split('-').map(Number);
+    const [ty,tm,td]=rentalEditForm.endDate.split('-').map(Number);
+    if(toNum(fy,fm-1,fd)>toNum(ty,tm-1,td)){alert('返却日は貸出日以降にしてください');return;}
+    // 重複チェック
+    const rentalResLocal=rentalRes||{};
+    const others=(rentalResLocal[rentalEditModal.carId]||[]).filter(r=>r.id!==rentalEditModal.resId);
+    const conflict=others.some(r=>{
+      const rs=toNum(r.fy,r.fm,r.fd),re=toNum(r.ty,r.tm,r.td);
+      const ns=toNum(fy,fm-1,fd),ne=toNum(ty,tm-1,td);
+      return ns<=re&&ne>=rs;
+    });
+    if(conflict){alert('その期間は他の予約と重複しています');return;}
+    onDeleteRentalRes(rentalEditModal.carId,rentalEditModal.resId);
+    onAddRentalRes(rentalEditModal.carId,{id:'rr'+Date.now(),carId:rentalEditModal.carId,fy,fm:fm-1,fd,ty,tm:tm-1,td,user:rentalEditForm.user,color:rentalEditModal.color||RES_COLORS[0]});
+    setRentalEditModal(null);
   };
 
   return (
@@ -5335,7 +5372,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
         );
       })()}
 
-      {/* 編集モーダル */}
+      {/* 編集モーダル（代車） */}
       {editModal&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setEditModal(null)}>
           <div onClick={e=>e.stopPropagation()} className="modal-box" style={{background:'white',borderRadius:15,padding:'24px 28px',width:'min(420px,92vw)',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
@@ -5366,6 +5403,41 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
               <button onClick={saveEdit} style={{flex:1,padding:'11px 0',background:'linear-gradient(135deg,#4338ca,#6d28d9)',color:'white',border:'none',borderRadius:9,fontWeight:700,cursor:'pointer'}}>✓ 更新</button>
               <button onClick={()=>{onDeleteRes(editModal.carId,editModal.resId);setEditModal(null);}} style={{padding:'11px 14px',background:'#fee2e2',color:'#dc2626',border:'2px solid #fca5a5',borderRadius:9,fontWeight:700,cursor:'pointer'}}>🗑</button>
               <button onClick={()=>setEditModal(null)} style={{padding:'11px 14px',background:'#f3f4f6',border:'none',borderRadius:9,fontWeight:600,cursor:'pointer'}}>戻る</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 編集モーダル（レンタカー） */}
+      {rentalEditModal&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setRentalEditModal(null)}>
+          <div onClick={e=>e.stopPropagation()} className="modal-box" style={{background:'white',borderRadius:15,padding:'24px 28px',width:'min(420px,92vw)',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+              <h2 style={{fontSize:16,fontWeight:800,color:'#065f46',margin:0}}>🔑 レンタカー予約の編集 - {rentalEditModal.carName}</h2>
+              <button onClick={()=>setRentalEditModal(null)} style={{background:'#f3f4f6',border:'none',borderRadius:'50%',width:30,height:30,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><X size={14}/></button>
+            </div>
+            <div style={{display:'grid',gap:12}}>
+              <div><label style={LBL}>利用者名</label><input value={rentalEditForm.user} onChange={e=>setRentalEditForm(p=>({...p,user:e.target.value}))} style={INP} autoFocus/></div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                <div><label style={LBL}>貸出日</label><input type="date" value={rentalEditForm.startDate} onChange={e=>setRentalEditForm(p=>({...p,startDate:e.target.value}))} style={INP}/></div>
+                <div><label style={LBL}>返却日</label><input type="date" value={rentalEditForm.endDate} onChange={e=>setRentalEditForm(p=>({...p,endDate:e.target.value}))} style={INP}/></div>
+              </div>
+              <div style={{background:'#f0fdf4',borderRadius:6,padding:'8px 10px',fontSize:11,color:'#6b7280'}}>
+                <strong style={{color:'#065f46'}}>📅 {rentalEditModal.carName} の既存予約：</strong>
+                {((rentalRes||{})[rentalEditModal.carId]||[]).filter(r=>r.id!==rentalEditModal.resId).length===0
+                  ?<span style={{marginLeft:6}}>なし</span>
+                  :((rentalRes||{})[rentalEditModal.carId]||[]).filter(r=>r.id!==rentalEditModal.resId).map(r=>(
+                    <div key={r.id} style={{marginTop:3,color:'#dc2626'}}>
+                      🚫 {r.user}：{r.fm+1}/{r.fd}〜{r.tm+1}/{r.td}
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+            <div style={{display:'flex',gap:8,marginTop:18}}>
+              <button onClick={saveEditRental} style={{flex:1,padding:'11px 0',background:'linear-gradient(135deg,#059669,#047857)',color:'white',border:'none',borderRadius:9,fontWeight:700,cursor:'pointer'}}>✓ 更新</button>
+              <button onClick={()=>{onDeleteRentalRes(rentalEditModal.carId,rentalEditModal.resId);setRentalEditModal(null);}} style={{padding:'11px 14px',background:'#fee2e2',color:'#dc2626',border:'2px solid #fca5a5',borderRadius:9,fontWeight:700,cursor:'pointer'}}>🗑</button>
+              <button onClick={()=>setRentalEditModal(null)} style={{padding:'11px 14px',background:'#f3f4f6',border:'none',borderRadius:9,fontWeight:600,cursor:'pointer'}}>戻る</button>
             </div>
           </div>
         </div>
@@ -7334,7 +7406,7 @@ function AppInner() {
                           const origIdx=row._origIdx??dispIdx;
                           const {_origIdx,...cleanRow}=row;
                           rows.push(
-                            <InspRow key={`${origIdx}-${dispIdx}`} row={cleanRow} idx={origIdx} dispNo={dispIdx+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
+                            <InspRow key={`${origIdx}-${dispIdx}`} row={cleanRow} idx={origIdx} dispNo={dispIdx+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} loanerResH={loanerResH} loanerResS={loanerResS} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
                           );
                         });
                         // ② 台数制限超過バナー（7台目以降がある場合）
@@ -7356,13 +7428,13 @@ function AppInner() {
                             ?{...cleanRow,pendingApproval:false}  // 承認済み：承認待ちバッジ消す
                             :{...cleanRow,pendingApproval:true};  // 未承認：承認待ちバッジ表示
                           rows.push(
-                            <InspRow key={`waiting-${origIdx}-${pi}`} row={displayRow} idx={origIdx} dispNo={normalRows.length+pi+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
+                            <InspRow key={`waiting-${origIdx}-${pi}`} row={displayRow} idx={origIdx} dispNo={normalRows.length+pi+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} loanerResH={loanerResH} loanerResS={loanerResS} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
                           );
                         });
                         // ④ 追加行（isNew=trueで開く）
                         const addDispNo=normalRows.length+waitingRows.length+1;
                         rows.push(
-                          <InspRow key={`add-${addIdx}`} row={{...blankInsp()}} idx={addIdx} dispNo={addDispNo} dk={dk} onOpenModal={(type,dk2,idx2,slot)=>handleOpenModal(type,dk2,idx2,slot,true)} lockInfo={null} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
+                          <InspRow key={`add-${addIdx}`} row={{...blankInsp()}} idx={addIdx} dispNo={addDispNo} dk={dk} onOpenModal={(type,dk2,idx2,slot)=>handleOpenModal(type,dk2,idx2,slot,true)} lockInfo={null} loanerRes={loanerRes} loanerResH={loanerResH} loanerResS={loanerResS} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
                         );
                         return rows;
                       })()}
