@@ -870,19 +870,19 @@ const CustomerRow=memo(({customer,onBook,onRevive})=>{
               再予約
             </button>
           )}
-          <span style={{fontSize:11,color:'#374151',fontWeight:customer.expiry?600:400}}>
+          <span style={{fontSize:11,color:'#111827',fontWeight:customer.expiry?600:400}}>
             {fmtDate(customer.expiry)}
           </span>
         </div>
       </td>
       <td style={{padding:'7px 8px',fontWeight:700,verticalAlign:'middle'}}>{customer.name}</td>
-      <td style={{padding:'7px 8px',color:'#64748b',verticalAlign:'middle'}}>{customer.no}</td>
+      <td style={{padding:'7px 8px',color:'#111827',verticalAlign:'middle'}}>{customer.no}</td>
       <td style={{padding:'7px 8px',verticalAlign:'middle'}}>{customer.carType}</td>
-      <td style={{padding:'7px 8px',color:'#64748b',verticalAlign:'middle',fontSize:11}}>{fmtDateShort(customer.dm1Date)}</td>
+      <td style={{padding:'7px 8px',color:'#111827',verticalAlign:'middle',fontSize:11}}>{fmtDateShort(customer.dm1Date)}</td>
       <td style={{padding:'7px 8px',color:'#7c3aed',verticalAlign:'middle',fontSize:11,fontWeight:600}}>{fmtDateShort(customer.dm1Book)}</td>
-      <td style={{padding:'7px 8px',color:'#64748b',verticalAlign:'middle',fontSize:11}}>{fmtDateShort(customer.dm2Date)}</td>
+      <td style={{padding:'7px 8px',color:'#111827',verticalAlign:'middle',fontSize:11}}>{fmtDateShort(customer.dm2Date)}</td>
       <td style={{padding:'7px 8px',color:'#0284c7',verticalAlign:'middle',fontSize:11,fontWeight:600}}>{fmtDateShort(customer.dm2Book)}</td>
-      <td style={{padding:'7px 8px',verticalAlign:'middle',fontWeight:600,color:'#374151'}}>{fmtDate(customer.entryDate)}</td>
+      <td style={{padding:'7px 8px',verticalAlign:'middle',fontWeight:600,color:'#111827'}}>{fmtDate(customer.entryDate)}</td>
       <td style={{padding:'7px 6px',verticalAlign:'middle',textAlign:'center'}}>
         {customer.tokuten&&customer.tokuten!=='-'&&(
           <span style={{padding:'2px 7px',background:'#ede9fe',color:'#7c3aed',borderRadius:10,fontSize:11,fontWeight:700}}>
@@ -893,11 +893,11 @@ const CustomerRow=memo(({customer,onBook,onRevive})=>{
       <td style={{padding:'7px 6px',verticalAlign:'middle',textAlign:'center'}}>
         {courseObj&&<span style={{padding:'2px 7px',background:courseObj.bg,color:courseObj.color,borderRadius:10,fontSize:11,fontWeight:700}}>{courseObj.short}</span>}
       </td>
-      <td style={{padding:'7px 8px',color:'#64748b',verticalAlign:'middle',fontSize:11}}>
+      <td style={{padding:'7px 8px',color:'#111827',verticalAlign:'middle',fontSize:11}}>
         {customer.store==='honten'?'本店':customer.store==='sanda'?'三田店':customer.store}
       </td>
-      <td style={{padding:'7px 8px',color:'#64748b',verticalAlign:'middle',fontSize:11}}>{customer.staff}</td>
-      <td style={{padding:'7px 8px',color:'#94a3b8',verticalAlign:'middle',fontSize:11,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
+      <td style={{padding:'7px 8px',color:'#111827',verticalAlign:'middle',fontSize:11}}>{customer.staff}</td>
+      <td style={{padding:'7px 8px',color:'#111827',verticalAlign:'middle',fontSize:11,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
         title={customer.note}>{customer.note}</td>
     </tr>
   );
