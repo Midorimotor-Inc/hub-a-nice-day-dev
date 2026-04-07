@@ -70,9 +70,8 @@ const saveFilesIndex=async(files)=>{
   const index=files.map(f=>({name:f.name,count:f.customers.length}));
   await sSet(STOR+'cf-index',index);
 };
-// ファイル削除：GASのインデックスを更新し、localStorageキャッシュを削除
+// 削除時：localStorageキャッシュを削除
 const deleteFileFromCache=(file)=>{
-  // localStorageのキャッシュを削除（safeName関数と同じ変換）
   const sn=safeName(file.name);
   try{localStorage.removeItem('hub-cf-'+sn);}catch(e){}
 };
@@ -292,10 +291,6 @@ const parseExcelFile=async(file)=>{
         // デバッグ保存
         window.__lastImportHeaders=headers;
         window.__lastImportDmCols={allToukanCols,allDateCols,cDm1D,cDm2D,cBook1,cBook2};
-        window.__lastImportCols={cPhoneHome,cPhoneMobile,cAddress,
-          phoneHomeHeader:cPhoneHome>=0?headers[cPhoneHome]:'(未検出)',
-          phoneMobileHeader:cPhoneMobile>=0?headers[cPhoneMobile]:'(未検出)',
-          addressHeader:cAddress>=0?headers[cAddress]:'(未検出)'};
         // cBook1/cBook2は上部で定義済み（日付型ヘッダー対応）
         // 文字列「予約」含む列で上書き
         const bookColsStr=headers.map((h,i)=>h.includes('予約')?i:-1).filter(i=>i>=0);
@@ -311,6 +306,12 @@ const parseExcelFile=async(file)=>{
         const cPhoneHome   =fc('自宅','tel（自宅）','自宅電話','自宅tel','tel(自宅)');
         const cPhoneMobile =fc('携帯','mobile','tel（携帯）','携帯電話','携帯tel','tel(携帯)');
         const cAddress     =fc('住所','address','所在地','住居','お住まい','〒','郵便');
+        // デバッグ：列検出結果をconsoleで確認できるようにする
+        window.__lastImportCols={
+          phoneHomeHeader:cPhoneHome>=0?headers[cPhoneHome]:'(未検出)',
+          phoneMobileHeader:cPhoneMobile>=0?headers[cPhoneMobile]:'(未検出)',
+          addressHeader:cAddress>=0?headers[cAddress]:'(未検出)',
+        };
 
         const fileName=file.name.replace(/\.[^.]+$/,'');
         const customers=[];
@@ -335,9 +336,7 @@ const parseExcelFile=async(file)=>{
           const note   =String(row[cNote>=0?cNote:null]||'').trim();
           const phoneHome   =String(row[cPhoneHome>=0?cPhoneHome:null]||'').trim();
           const phoneMobile =String(row[cPhoneMobile>=0?cPhoneMobile:null]||'').trim();
-          // 住所：住所列が見つからない場合は郵便番号+住所列を結合
-          const addrRaw =String(row[cAddress>=0?cAddress:null]||'').trim();
-          const address = addrRaw;
+          const address     =String(row[cAddress>=0?cAddress:null]||'').trim();
 
           // セル背景色からステータス取得
           const cellRef=XLSX.utils.encode_cell({r:i,c:cName>=0?cName:0});
@@ -1077,7 +1076,6 @@ const App=()=>{
       saveFilesIndex(next);
       return next;
     });
-    // localStorageキャッシュも削除（再起動時に復活しないよう）
     deleteFileFromCache(deletedFile);
     setActiveIdx(p=>Math.max(0,p>=idx?p-1:p));
   },[files]);
