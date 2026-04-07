@@ -6021,6 +6021,9 @@ function AppInner() {
         }
       }
     }catch(e){}
+    // デバッグ：コンソールで住所取得状況を確認
+    console.log('[印刷デバッグ]', {name:row.name, no:row.no, phoneHome, phoneMobile, address,
+      lsIndex:localStorage.getItem('hub-cf-index')?'あり':'なし'});
     const [y,m,d] = dk.split('-').map(Number);
     const normRowStore = s => {if(!s)return vsId;if(s==='honten'||s==='本店')return'honten';if(s==='sanda'||s==='三田店')return'sanda';return vsId;};
     const rowLoanerRes = (loanerResH&&loanerResS)
@@ -6042,7 +6045,7 @@ function AppInner() {
     const BG = JOBSHEET_BG;
     const html = [
       '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">',
-      '<title>\u4f5c\u696d\u6307\u793a\u66f8 '+row.name+'</title>',
+      '<title>\u4f5c\u696d\u6307\u793a\u66f8 '+row.name+(address?' [住所OK]':' [住所なし]')+'</title>',
       '<style>',
       '* { box-sizing:border-box; margin:0; padding:0; }',
       'html,body { width:100%; height:100%; background:white; }',
