@@ -5767,7 +5767,7 @@ function AppInner() {
         // cf-indexをlocalStorageに保存
         localStorage.setItem('hub-cf-index',JSON.stringify(idx));
         // 各ファイルのチャンクを順番にバックグラウンド取得
-        const SAFE=n=>n.replace(/[^a-zA-Z0-9\u3000-\u9fff\u30a0-\u30ff\u3040-\u309f]/g,'_').slice(0,30);
+        const SAFE=n=>n.replace(/[^a-zA-Z0-9　-鿿゠-ヿ぀-ゟ]/g,'_').slice(0,30);
         for(const fi of idx){
           const sn=SAFE(fi.name);
           const chunkIdx=await sGet(STOR+'cf-'+sn+'-index');
@@ -6000,7 +6000,7 @@ function AppInner() {
       const normName = s => String(s||'').replace(/　/g,' ').trim();
       const rowName = normName(row.name);
       const rowNo = String(row.no||'').trim();
-      const SAFE = n => n.replace(/[^a-zA-Z0-9\u3000-\u9fff\u30a0-\u30ff\u3040-\u309f]/g,'_').slice(0,30);
+      const SAFE = n => n.replace(/[^a-zA-Z0-9　-鿿゠-ヿ぀-ゟ]/g,'_').slice(0,30);
       const idxRaw = localStorage.getItem('hub-cf-index');
       const fileIndex = idxRaw ? JSON.parse(idxRaw) : [];
       outer: for(const fi of fileIndex){

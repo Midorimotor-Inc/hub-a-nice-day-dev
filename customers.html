@@ -70,22 +70,10 @@ const saveFilesIndex=async(files)=>{
   const index=files.map(f=>({name:f.name,count:f.customers.length}));
   await sSet(STOR+'cf-index',index);
 };
-// チャンクデータをGAS+localStorageから削除
-const deleteFileChunked=async(file)=>{
-  const name=safeName(file.name);
-  const SAFE=n=>n.replace(/[^a-zA-Z0-9\u3000-\u9fff\u30a0-\u30ff\u3040-\u309f]/g,'_').slice(0,30);
-  const sn=SAFE(file.name);
-  // チャンク数を取得して各チャンクをGASからnullで上書き削除
-  try{
-    const idx=await sGet(STOR+'cf-'+name+'-index');
-    if(idx&&idx.chunks){
-      const dels=[];
-      for(let i=0;i<idx.chunks;i++) dels.push(sSet(STOR+'cf-'+name+'-chunk-'+i,null));
-      await Promise.all(dels);
-    }
-    await sSet(STOR+'cf-'+name+'-index',null);
-  }catch(e){}
-  // localStorageからも削除
+// ファイル削除：GASのインデックスを更新し、localStorageキャッシュを削除
+const deleteFileFromCache=(file)=>{
+  // localStorageのキャッシュを削除（safeName関数と同じ変換）
+  const sn=safeName(file.name);
   try{localStorage.removeItem('hub-cf-'+sn);}catch(e){}
 };
 
@@ -1083,8 +1071,8 @@ const App=()=>{
       saveFilesIndex(next);
       return next;
     });
-    // チャンクデータもGAS+localStorageから削除
-    deleteFileChunked(deletedFile);
+    // localStorageキャッシュも削除（再起動時に復活しないよう）
+    deleteFileFromCache(deletedFile);
     setActiveIdx(p=>Math.max(0,p>=idx?p-1:p));
   },[files]);
 
