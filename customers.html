@@ -298,6 +298,9 @@ const parseExcelFile=async(file)=>{
         const cStore  =fc('入庫店舗','店舗');
         const cStaff  =fc('担当');
         const cNote   =fc('備考');
+        const cPhoneHome   =fc('自宅','tel（自宅）','自宅電話','自宅tel','tel(自宅)');
+        const cPhoneMobile =fc('携帯','mobile','tel（携帯）','携帯電話','携帯tel','tel(携帯)');
+        const cAddress     =fc('住所','address','所在地');
 
         const fileName=file.name.replace(/\.[^.]+$/,'');
         const customers=[];
@@ -320,6 +323,9 @@ const parseExcelFile=async(file)=>{
           const storeRaw=String(row[cStore>=0?cStore:null]||'').trim();
           const staff  =String(row[cStaff>=0?cStaff:null]||'').trim();
           const note   =String(row[cNote>=0?cNote:null]||'').trim();
+          const phoneHome   =String(row[cPhoneHome>=0?cPhoneHome:null]||'').trim();
+          const phoneMobile =String(row[cPhoneMobile>=0?cPhoneMobile:null]||'').trim();
+          const address     =String(row[cAddress>=0?cAddress:null]||'').trim();
 
           // セル背景色からステータス取得
           const cellRef=XLSX.utils.encode_cell({r:i,c:cName>=0?cName:0});
@@ -354,6 +360,7 @@ const parseExcelFile=async(file)=>{
           customers.push({
             custId,rowIdx:i,
             expiry,name,no,carType,
+            phoneHome,phoneMobile,address,
             dm1Date,dm1Book,dm2Date,dm2Book,
             entryDate,tokuten,
             course:courseObj?courseObj.id:null,
