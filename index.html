@@ -3451,7 +3451,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
   const contRef=useRef(null);
 
   // 同じ予約かどうかをキーで判定（代車ピッカー往復などでリセットしないため）
-  const makeKey=(d)=>d?`${d._idx??'none'}|${d.name??''}`:'';
+  const makeKey=(d)=>d?`${d._idx??'none'}|${d._slot??'none'}|${d.name??''}`:'';
   const prevKeyRef=useRef('');
   const prevOpenRef=useRef(false);
 
@@ -3972,7 +3972,7 @@ const SchedRow=memo(({row,slot,baseSlot,isFirstSub,dk,onOpenModal,lockInfo,loane
 
   return (
     <tr style={{background:isRestricted?'#fee2e2':locked?'#fff7ed':row.store==='sanda'?'#fff0f0':row.store==='honten'?'#eff6ff':isHour?'white':'#f0feff',cursor:locked||otherStore?'not-allowed':'pointer'}}
-      onClick={()=>{if(!locked&&!otherStore)onOpenModal('sched',dk,null,slot,false);}}>
+      onClick={()=>{if(!locked&&!otherStore){const isEmpty=!row.name;onOpenModal('sched',dk,null,slot,isEmpty);}}}>
       <td style={{...TD,fontWeight:isFirstSub&&isHour?800:500,color:isFirstSub&&isHour?'#0891b2':'#7dd3fc',whiteSpace:'nowrap',paddingLeft:10,fontSize:isFirstSub&&isHour?13:11,borderLeft:isSub?'3px solid #7dd3fc':''}}>
         {isFirstSub?slot:<span style={{fontSize:9,color:'#a5f3fc'}}>↳</span>}
       </td>
