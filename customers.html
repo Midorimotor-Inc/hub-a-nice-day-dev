@@ -70,6 +70,10 @@ const saveFilesIndex=async(files)=>{
   const index=files.map(f=>({name:f.name,count:f.customers.length}));
   await sSet(STOR+'cf-index',index);
 };
+const deleteFileFromCache=(file)=>{
+  const sn=safeName(file.name);
+  try{localStorage.removeItem('hub-cf-'+sn);}catch(e){}
+};
 
 const COURSES=[
   {id:1,name:'マッハ車検',  short:'マ',color:'#b91c1c',bg:'#fca5a5'},
@@ -298,6 +302,14 @@ const parseExcelFile=async(file)=>{
         const cStore  =fc('入庫店舗','店舗');
         const cStaff  =fc('担当');
         const cNote   =fc('備考');
+        const cPhoneHome   =fc('自宅','tel（自宅）','自宅電話','自宅tel','tel(自宅)');
+        const cPhoneMobile =fc('携帯','mobile','tel（携帯）','携帯電話','携帯tel','tel(携帯)');
+        const cAddress     =fc('住所','address','所在地','住居','お住まい','〒','郵便');
+        window.__lastImportCols={
+          phoneHomeHeader:cPhoneHome>=0?headers[cPhoneHome]:'(未検出)',
+          phoneMobileHeader:cPhoneMobile>=0?headers[cPhoneMobile]:'(未検出)',
+          addressHeader:cAddress>=0?headers[cAddress]:'(未検出)',
+        };
 
         const fileName=file.name.replace(/\.[^.]+$/,'');
         const customers=[];
@@ -320,6 +332,9 @@ const parseExcelFile=async(file)=>{
           const storeRaw=String(row[cStore>=0?cStore:null]||'').trim();
           const staff  =String(row[cStaff>=0?cStaff:null]||'').trim();
           const note   =String(row[cNote>=0?cNote:null]||'').trim();
+          const phoneHome   =String(row[cPhoneHome>=0?cPhoneHome:null]||'').trim();
+          const phoneMobile =String(row[cPhoneMobile>=0?cPhoneMobile:null]||'').trim();
+          const address     =String(row[cAddress>=0?cAddress:null]||'').trim();
 
           // セル背景色からステータス取得
           const cellRef=XLSX.utils.encode_cell({r:i,c:cName>=0?cName:0});
@@ -354,12 +369,12 @@ const parseExcelFile=async(file)=>{
           customers.push({
             custId,rowIdx:i,
             expiry,name,no,carType,
+            phoneHome,phoneMobile,address,
             dm1Date,dm1Book,dm2Date,dm2Book,
             entryDate,tokuten,
             course:courseObj?courseObj.id:null,
             store:storeId,staff,note,status,
             bookingTime:'',
-            // スケジュール連動フラグ
             linkedInspDate:'',
           });
         }
@@ -698,69 +713,16 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
   const [selDays,setSelDays]=useState([]);
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState('');
-  const [focusedField,setFocusedField]=useState('');
-  const [showTimePicker2,setShowTimePicker2]=useState(false);
-  const timeRef2=useRef(null);
-  const noteRef2=useRef(null);
-  // フォーカスリング
-  const FR2=(key)=>focusedField===key?{outline:'3px solid #1d4ed8',outlineOffset:'2px',boxShadow:'0 0 0 4px rgba(29,78,216,0.15)'}:{};
-
-  // フィールド順序：時間→コース→特典→備考
-  const fieldOrder2=['time','course','tokuten','note'];
-  const refMap2={time:timeRef2,note:noteRef2};
-  const pickerFields2=['course','tokuten'];
-
-  const moveFocus2=(dir)=>{
-    const cur=fieldOrder2.indexOf(focusedField);
-    if(cur===-1)return;
-    const next=fieldOrder2[cur+dir];
-    if(!next)return;
-    if(pickerFields2.includes(next)){
-      setFocusedField(next);
-      setTimeout(()=>document.querySelector(`[data-field2="${next}"]`)?.focus(),50);
-      return;
-    }
-    refMap2[next]?.current?.focus();
-  };
-
-  // 入庫時間picker操作
-  const TIME_VALS2=Array.from({length:19},(_,i)=>{const h=Math.floor(i/2)+9,m=i%2===0?'00':'30';return`${String(h).padStart(2,'0')}:${m}`;});
-  const handleTimeKey2=(e)=>{
-    if(!showTimePicker2){
-      if(e.key==='Enter'||e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();setShowTimePicker2(true);return;}
-      return;
-    }
-    const cur=TIME_VALS2.indexOf(form.bookingTime);
-    if(e.key==='ArrowDown'){e.preventDefault();upd('bookingTime')(TIME_VALS2[Math.min(cur+1,TIME_VALS2.length-1)]);}
-    else if(e.key==='ArrowUp'){e.preventDefault();upd('bookingTime')(TIME_VALS2[Math.max(cur-1,0)]);}
-    else if(e.key==='Enter'){e.preventDefault();setShowTimePicker2(false);moveFocus2(1);}
-    else if(e.key==='Escape'){e.preventDefault();setShowTimePicker2(false);}
-  };
-
-  // コース左右キー
-  const handleCourseKey2=(e)=>{
-    const ids=COURSES.map(c=>c.id);
-    const cur=ids.indexOf(Number(form.course));
-    if(e.key==='ArrowLeft'&&cur>0){e.preventDefault();upd('course')(ids[cur-1]);}
-    else if(e.key==='ArrowRight'&&cur<ids.length-1){e.preventDefault();upd('course')(ids[cur+1]);}
-    else if(e.key==='ArrowDown'||e.key==='Enter'){e.preventDefault();moveFocus2(1);}
-    else if(e.key==='ArrowUp'){e.preventDefault();moveFocus2(-1);}
-  };
-
-  // 特典左右キー
-  const TOK_VALS2=['-','①','②'];
-  const handleTokutenKey2=(e)=>{
-    const cur=TOK_VALS2.indexOf(form.tokuten);
-    if(e.key==='ArrowLeft'&&cur>0){e.preventDefault();upd('tokuten')(TOK_VALS2[cur-1]);}
-    else if(e.key==='ArrowRight'&&cur<TOK_VALS2.length-1){e.preventDefault();upd('tokuten')(TOK_VALS2[cur+1]);}
-    else if(e.key==='ArrowDown'||e.key==='Enter'){e.preventDefault();moveFocus2(1);}
-    else if(e.key==='ArrowUp'){e.preventDefault();moveFocus2(-1);}
-  };
-
-  // モーダルopen時に入庫時間にフォーカス
+  // キーボード操作用state/ref（Hooksはreturnより前に全定義）
+  const [focusField,setFocusField]=useState('time');
+  const [showTimePicker,setShowTimePicker]=useState(false);
+  const timeRef=useRef(null);
+  const noteRef=useRef(null);
+  // モーダルを開いたとき入庫時間にフォーカス
   useEffect(()=>{
-    if(customer){setTimeout(()=>{setFocusedField('time');timeRef2.current?.focus();},150);}
-  },[customer?.custId]);
+    const t=setTimeout(()=>{setFocusField('time');timeRef.current?.focus();},150);
+    return()=>clearTimeout(t);
+  },[customer.custId]);
 
   const dynListH=(loanerListH&&loanerListH.length>0)?loanerListH:LOANERS_H;
   const dynListS=(loanerListS&&loanerListS.length>0)?loanerListS:LOANERS_S;
@@ -788,6 +750,69 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
   };
 
   const courseObj=COURSES.find(c=>c.id===Number(form.course));
+
+  // ── キーボード操作ロジック（return前に定義）──────────────────
+  // フィールド順序：時間 → コース → 特典 → 備考
+  const FIELD_ORDER=['time','course','tokuten','note'];
+  const FOCUS_STYLE={outline:'3px solid #1d4ed8',outlineOffset:'2px',boxShadow:'0 0 0 4px rgba(29,78,216,0.15)'};
+  const FR=(key)=>focusField===key?FOCUS_STYLE:{};
+
+  // 時間リスト
+  const TIME_LIST=Array.from({length:19},(_,i)=>{
+    const h=Math.floor(i/2)+9,m=i%2===0?'00':'30';
+    return`${String(h).padStart(2,'0')}:${m}`;
+  });
+
+  // 次のフィールドへ移動
+  const moveNext=(from)=>{
+    const cur=FIELD_ORDER.indexOf(from);
+    const next=FIELD_ORDER[cur+1];
+    if(!next)return;
+    if(next==='time'){setFocusField('time');timeRef.current?.focus();}
+    else if(next==='note'){setFocusField('note');noteRef.current?.focus();}
+    else{setFocusField(next);}// course/tokuten はdivなので自動フォーカス
+  };
+  const movePrev=(from)=>{
+    const cur=FIELD_ORDER.indexOf(from);
+    const prev=FIELD_ORDER[cur-1];
+    if(!prev)return;
+    if(prev==='time'){setFocusField('time');timeRef.current?.focus();}
+    else if(prev==='note'){setFocusField('note');noteRef.current?.focus();}
+    else{setFocusField(prev);}
+  };
+
+  // 入庫時間キー操作
+  const onTimeKey=(e)=>{
+    if(!showTimePicker){
+      if(e.key==='Enter'||e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();setShowTimePicker(true);}
+      return;
+    }
+    const cur=TIME_LIST.indexOf(form.bookingTime);
+    if(e.key==='ArrowDown'){e.preventDefault();upd('bookingTime')(TIME_LIST[Math.min(cur+1,TIME_LIST.length-1)]);}
+    else if(e.key==='ArrowUp'){e.preventDefault();upd('bookingTime')(TIME_LIST[Math.max(cur-1,0)]);}
+    else if(e.key==='Enter'||e.key==='Escape'){e.preventDefault();setShowTimePicker(false);if(e.key==='Enter')moveNext('time');}
+  };
+
+  // コースキー操作（←→）
+  const onCourseKey=(e)=>{
+    const ids=COURSES.map(c=>c.id);
+    const cur=ids.indexOf(Number(form.course));
+    if(e.key==='ArrowLeft'&&cur>0){e.preventDefault();upd('course')(ids[cur-1]);}
+    else if(e.key==='ArrowRight'&&cur<ids.length-1){e.preventDefault();upd('course')(ids[cur+1]);}
+    else if(e.key==='ArrowDown'||e.key==='Enter'){e.preventDefault();moveNext('course');}
+    else if(e.key==='ArrowUp'){e.preventDefault();movePrev('course');}
+  };
+
+  // 特典キー操作（←→）
+  const TOK_LIST=['-','①','②'];
+  const onTokKey=(e)=>{
+    const cur=TOK_LIST.indexOf(form.tokuten);
+    if(e.key==='ArrowLeft'&&cur>0){e.preventDefault();upd('tokuten')(TOK_LIST[cur-1]);}
+    else if(e.key==='ArrowRight'&&cur<TOK_LIST.length-1){e.preventDefault();upd('tokuten')(TOK_LIST[cur+1]);}
+    else if(e.key==='ArrowDown'||e.key==='Enter'){e.preventDefault();moveNext('tokuten');}
+    else if(e.key==='ArrowUp'){e.preventDefault();movePrev('tokuten');}
+  };
+  // ─────────────────────────────────────────────────────────────
 
   return(
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
@@ -829,44 +854,33 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
             <div>
               <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>店舗</label>
               <div style={{display:'flex',gap:8}}>
-                {STORES.map((s,si)=>(
+                {STORES.map(s=>(
                   <button key={s.id} onClick={()=>setForm(p=>({...p,store:s.id}))}
-                    onKeyDown={e=>{
-                      const ids=STORES.map(x=>x.id);
-                      const cur=ids.indexOf(form.store);
-                      if(e.key==='ArrowLeft'&&cur>0){e.preventDefault();setForm(p=>({...p,store:ids[cur-1]}));}
-                      else if(e.key==='ArrowRight'&&cur<ids.length-1){e.preventDefault();setForm(p=>({...p,store:ids[cur+1]}));}
-                    }}
-                    style={{flex:1,padding:'8px',
-                      border:`2px solid ${form.store===s.id?s.color:'#e5e7eb'}`,
-                      borderRadius:8,background:form.store===s.id?s.color:'white',
-                      color:form.store===s.id?'white':'#374151',fontWeight:700,fontSize:12,cursor:'pointer',
-                      outline:form.store===s.id?`3px solid ${s.color}`:'none',outlineOffset:'2px'}}>
+                    style={{flex:1,padding:'8px',border:`2px solid ${form.store===s.id?s.color:'#e5e7eb'}`,borderRadius:8,background:form.store===s.id?s.color:'white',color:form.store===s.id?'white':'#374151',fontWeight:700,fontSize:12,cursor:'pointer'}}>
                     {s.name}
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <label htmlFor="bm-bookingTime" style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5,cursor:'pointer'}}>入庫時間 <span style={{color:'#dc2626',fontSize:10}}>（本予約必須）</span></label>
-              <div data-field2="time" ref={timeRef2} tabIndex={0}
-                onFocus={()=>setFocusedField('time')}
-                onBlur={()=>{setFocusedField('');setTimeout(()=>setShowTimePicker2(false),150);}}
-                onKeyDown={handleTimeKey2}
-                onClick={()=>setShowTimePicker2(p=>!p)}
-                style={{width:'100%',padding:'8px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:13,boxSizing:'border-box',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',...FR2('time')}}>
+              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>入庫時間 <span style={{color:'#dc2626',fontSize:10}}>（本予約必須）</span></label>
+              <div ref={timeRef} tabIndex={0}
+                onFocus={()=>setFocusField('time')} onBlur={()=>{setFocusField('');setTimeout(()=>setShowTimePicker(false),150);}}
+                onKeyDown={onTimeKey}
+                onClick={()=>setShowTimePicker(p=>!p)}
+                style={{width:'100%',padding:'8px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:13,boxSizing:'border-box',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',...FR('time')}}>
                 <span style={{color:form.bookingTime?'#0284c7':'#9ca3af',fontWeight:form.bookingTime?700:400}}>
                   {form.bookingTime||'時間を選択（Enterで開く）'}
                 </span>
-                <span style={{fontSize:10,color:'#6b7280'}}>{showTimePicker2?'▲':'▼'}</span>
+                <span style={{fontSize:10,color:'#6b7280'}}>{showTimePicker?'▲':'▼'}</span>
               </div>
-              {showTimePicker2&&(
-                <div style={{border:'2px solid #0284c7',borderRadius:8,marginTop:4,maxHeight:180,overflowY:'auto',background:'white',boxShadow:'0 4px 12px rgba(0,0,0,0.15)',zIndex:10,position:'relative'}}>
-                  {TIME_VALS2.map(v=>(
-                    <div key={v} onClick={()=>{upd('bookingTime')(v);setShowTimePicker2(false);moveFocus2(1);}}
+              {showTimePicker&&(
+                <div style={{border:'2px solid #0284c7',borderRadius:8,marginTop:4,maxHeight:180,overflowY:'auto',background:'white',boxShadow:'0 4px 12px rgba(0,0,0,0.15)'}}>
+                  {TIME_LIST.map(v=>(
+                    <div key={v}
+                      onMouseDown={e=>{e.preventDefault();upd('bookingTime')(v);setShowTimePicker(false);moveNext('time');}}
                       style={{padding:'7px 14px',cursor:'pointer',fontSize:13,fontWeight:form.bookingTime===v?800:400,
-                        background:form.bookingTime===v?'#e0f2fe':'white',
-                        color:form.bookingTime===v?'#0284c7':'#374151',
+                        background:form.bookingTime===v?'#e0f2fe':'white',color:form.bookingTime===v?'#0284c7':'#374151',
                         borderLeft:form.bookingTime===v?'4px solid #0284c7':'4px solid transparent'}}>
                       {v}
                     </div>
@@ -876,25 +890,23 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
             </div>
             <div>
               <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>担当</label>
-              <input ref={staffRef2} value={form.staff} onChange={upd('staff')} placeholder="担当者名"
-                onFocus={()=>setFocusedField('staff')} onBlur={()=>setFocusedField('')}
-                onKeyDown={e=>handleKey2(e,timeRef2)}
-                style={{width:'100%',padding:'8px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:13,boxSizing:'border-box',...FR2('staff')}}/>
+              <input value={form.staff} onChange={upd('staff')} placeholder="担当者名"
+                style={{width:'100%',padding:'8px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:13,boxSizing:'border-box'}}/>
             </div>
             <div>
-              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>車検コース <span style={{color:'#dc2626',fontSize:10}}>（本予約必須）</span></label>
-              <div data-field2="course" tabIndex={0}
-                onFocus={()=>setFocusedField('course')} onBlur={()=>setFocusedField('')}
-                onKeyDown={handleCourseKey2}
-                style={{outline:'none',display:'flex',gap:6}}>
+              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>車検コース <span style={{color:'#dc2626',fontSize:10}}>（本予約必須・←→キー）</span></label>
+              <div tabIndex={0}
+                onFocus={()=>setFocusField('course')} onBlur={()=>setFocusField('')}
+                onKeyDown={onCourseKey}
+                style={{display:'flex',gap:6,outline:'none'}}>
                 {COURSES.map(c=>(
                   <button key={c.id} tabIndex={-1}
-                    onClick={()=>upd('course')(c.id)}
-                    style={{flex:1,padding:'8px 4px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:11,
+                    onMouseDown={e=>{e.preventDefault();upd('course')(c.id);}}
+                    style={{flex:1,padding:'9px 4px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:11,
                       border:`2px solid ${Number(form.course)===c.id?c.color:'#e5e7eb'}`,
                       background:Number(form.course)===c.id?c.bg:'white',
                       color:Number(form.course)===c.id?c.color:'#6b7280',
-                      outline:focusedField==='course'&&Number(form.course)===c.id?`3px solid ${c.color}`:'none',
+                      outline:focusField==='course'&&Number(form.course)===c.id?`3px solid ${c.color}`:'none',
                       outlineOffset:'2px'}}>
                     {c.name}
                   </button>
@@ -902,19 +914,20 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
               </div>
             </div>
             <div>
-              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>特典 <span style={{color:'#dc2626',fontSize:10}}>（必須）</span></label>
-              <div data-field2="tokuten" tabIndex={0}
-                onFocus={()=>setFocusedField('tokuten')} onBlur={()=>setFocusedField('')}
-                onKeyDown={handleTokutenKey2}
+              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>特典 <span style={{color:'#dc2626',fontSize:10}}>（←→キー）</span></label>
+              <div tabIndex={0}
+                onFocus={()=>setFocusField('tokuten')} onBlur={()=>setFocusField('')}
+                onKeyDown={onTokKey}
                 style={{display:'flex',gap:6,outline:'none'}}>
-                {['-','①','②'].map((t,ti)=>(
+                {TOK_LIST.map(t=>(
                   <button key={t} tabIndex={-1}
-                    onClick={()=>upd('tokuten')(t)}
+                    onMouseDown={e=>{e.preventDefault();upd('tokuten')(t);}}
                     style={{flex:1,padding:'8px',
                       border:`2px solid ${form.tokuten===t?'#7c3aed':'#e5e7eb'}`,
                       borderRadius:8,background:form.tokuten===t?'#ede9fe':'white',
                       color:form.tokuten===t?'#7c3aed':'#374151',fontWeight:700,fontSize:13,cursor:'pointer',
-                      outline:focusedField==='tokuten'&&form.tokuten===t?'3px solid #7c3aed':'none',outlineOffset:'2px'}}>
+                      outline:focusField==='tokuten'&&form.tokuten===t?'3px solid #7c3aed':'none',
+                      outlineOffset:'2px'}}>
                     {t}
                   </button>
                 ))}
@@ -923,10 +936,10 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
           </div>
           <div style={{marginBottom:14}}>
             <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>備考</label>
-            <textarea ref={noteRef2} value={form.note} onChange={upd('note')} rows={2} placeholder="備考・メモ"
-              onFocus={()=>setFocusedField('note')} onBlur={()=>setFocusedField('')}
-              onKeyDown={e=>{if(e.key==='ArrowUp'&&e.target.selectionStart===0){e.preventDefault();moveFocus2(-1);}}}
-              style={{width:'100%',padding:'8px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:13,resize:'vertical',boxSizing:'border-box',...FR2('note')}}/>
+            <textarea ref={noteRef} value={form.note} onChange={upd('note')} rows={2} placeholder="備考・メモ"
+              onFocus={()=>setFocusField('note')} onBlur={()=>setFocusField('')}
+              onKeyDown={e=>{if(e.key==='ArrowUp'&&e.target.selectionStart===0){e.preventDefault();movePrev('note');}}}
+              style={{width:'100%',padding:'8px 10px',border:'1.5px solid #e5e7eb',borderRadius:8,fontSize:13,resize:'vertical',boxSizing:'border-box',...FR('note')}}/>
           </div>
           <div>
             <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>
@@ -1168,11 +1181,13 @@ const App=()=>{
   // ファイル削除
   const handleDeleteFile=useCallback(idx=>{
     if(!confirm(`「${files[idx].name}」を削除しますか？`))return;
+    const deletedFile=files[idx];
     setFiles(prev=>{
       const next=prev.filter((_,i)=>i!==idx);
       saveFilesIndex(next);
       return next;
     });
+    deleteFileFromCache(deletedFile);
     setActiveIdx(p=>Math.max(0,p>=idx?p-1:p));
   },[files]);
 
@@ -1193,6 +1208,15 @@ const App=()=>{
       });
       return next;
     });
+    // cust-updatesからキャンセル通知を削除（ポーリングで再cancelされないよう）
+    sGet(STOR+'cust-updates').then(updates=>{
+      if(!Array.isArray(updates)||updates.length===0)return;
+      const filtered=updates.filter(u=>
+        !(u.custId&&u.custId===customer.custId)&&
+        !(u.name&&u.name===customer.name&&String(u.no||'')===String(customer.no||''))
+      );
+      if(filtered.length!==updates.length)sSet(STOR+'cust-updates',filtered);
+    }).catch(()=>{});
   },[]);
 
   const handleBookingSave=useCallback(async(form,customer)=>{
