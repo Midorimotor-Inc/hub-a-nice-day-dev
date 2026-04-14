@@ -3470,7 +3470,8 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
     prevKeyRef.current=curKey;
 
     // 同じ予約の再open（代車ピッカーから戻るなど）→ formをリセットしない
-    if(sameBooking) return;
+    // ただしisNew=trueの新規入力は必ずリセット
+    if(sameBooking && !isNew) return;
 
     const loginName = currentUser?.name || '';
     const defaultStaff = initialData.staff || (isNew ? loginName : loginName);
@@ -3739,7 +3740,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
           {isInsp&&(
             <div>
               <label style={LBL}>コース *</label>
-              <div data-kbkey="course" tabIndex={0} onFocus={()=>setKbField('course')} onBlur={()=>setKbField('')}
+              <div data-kbkey="course" tabIndex={0} onFocus={()=>{setKbField('course');if(!form.course)setForm(p=>({...p,course:COURSES[0].id}));}} onBlur={()=>setKbField('')}
                 onKeyDown={onCourseKb}
                 style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:7,outline:'none'}}>
                 {COURSES.map(c=>(
