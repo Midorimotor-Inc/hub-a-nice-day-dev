@@ -6173,7 +6173,7 @@ function AppInner() {
     window.addEventListener('resize',updateH);
     return()=>window.removeEventListener('resize',updateH);
   },[]);
-  useEffect(()=>{const h=()=>{setShowStaffRegister(true);};document.addEventListener('openRegister',h);return()=>document.removeEventListener('openRegister',h);},[]);
+  useEffect(()=>{const h=()=>{setShowStaffRegister(true);};document.addEventListener('openRegister',h);const hs=()=>{setShowStaffSettings(true);};document.addEventListener('openStaffSettings',hs);return()=>{document.removeEventListener('openRegister',h);document.removeEventListener('openStaffSettings',hs);};},[]);
 
   const isClosed=useCallback((date)=>{
     if(!date||!(date instanceof Date)||isNaN(date.getTime()))return false;
@@ -6901,7 +6901,7 @@ function AppInner() {
                   <span style={{width:22,height:22,borderRadius:'50%',background:userStore.color,color:'white',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:11}}>{currentUser?.myNumber??currentUser?.id}</span>
                   <span style={{fontWeight:700,color:userStore.accent,fontSize:12}}>{currentUser?.name}</span>
                   {currentUser?.badge&&<BadgeIcon badge={currentUser.badge} size={18}/>}
-                  <button onClick={()=>setShowStaffSettings(true)} title="スタッフ管理"
+                  <button onClick={()=>document.dispatchEvent(new CustomEvent('openStaffSettings'))} title="スタッフ管理"
                     style={{background:'none',border:'none',cursor:'pointer',color:'#6b7280',display:'flex',alignItems:'center',padding:'1px',borderRadius:3}}
                     onMouseEnter={e=>e.currentTarget.style.color='#4338ca'}
                     onMouseLeave={e=>e.currentTarget.style.color='#6b7280'}>
