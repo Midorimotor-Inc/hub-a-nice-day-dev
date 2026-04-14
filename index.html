@@ -3567,7 +3567,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
       else if(e.key==='ArrowUp'){e.preventDefault();goPrev('work');}
       return;}
     const cur=WIDS.indexOf(form.work);
-    if(e.key==='ArrowDown'){e.preventDefault();setForm(p=>({...p,work:WIDS[Math.min(Math.max(cur,0)+1,WIDS.length-1)]}));}
+    if(e.key==='ArrowDown'){e.preventDefault();setForm(p=>({...p,work:WIDS[cur<0?0:Math.min(cur+1,WIDS.length-1)]}));}
     else if(e.key==='ArrowUp'){e.preventDefault();setForm(p=>({...p,work:WIDS[Math.max(cur-1,0)]}));}
     else if(e.key==='Enter'){e.preventDefault();setShowWkPk(false);setKbField('shimi');}
     else if(e.key==='Escape'){e.preventDefault();setShowWkPk(false);}
@@ -3846,7 +3846,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
             <div>
               <label style={LBL}>指・見</label>
               <div data-kbkey="shimi" tabIndex={0}
-                onFocus={()=>setKbField('shimi')} onBlur={()=>{setKbField('');setTimeout(()=>setShowShPk(false),150);}}
+                onFocus={()=>{setKbField('shimi');setShowWkPk(false);}} onBlur={()=>{setKbField('');setTimeout(()=>setShowShPk(false),150);}}
                 onKeyDown={onShimiKb} onClick={()=>setShowShPk(p=>!p)}
                 style={{...INP,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',...KB('shimi')}}>
                 <span style={{color:form.shimi!==undefined&&form.shimi!==''?'#111':'#9ca3af'}}>
