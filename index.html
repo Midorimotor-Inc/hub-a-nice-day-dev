@@ -8017,6 +8017,24 @@ function AppInner() {
         title="備考・メモ クイック編集"
         items={Array.isArray(memoItemsRaw)?memoItemsRaw.map(si=>({...si,text:si.text??si.content??si.label??''})):DEFAULT_MEMO_ITEMS}
         onSave={v=>setMemoItems(v)}/>
+
+      {/* -- スタッフ新規登録 -- */}
+      <StaffRegisterModal
+        isOpen={showStaffRegister}
+        onClose={()=>setShowStaffRegister(false)}
+        staffListH={dynStaffH} staffListS={dynStaffS}
+        onSave={handleRegisterStaff}/>
+
+      {/* -- スタッフ設定（編集・削除・店舗変更） -- */}
+      <StaffSettingsModal
+        isOpen={showStaffSettings}
+        onClose={()=>setShowStaffSettings(false)}
+        staffListH={dynStaffH} staffListS={dynStaffS}
+        onUpdate={handleUpdateStaff}
+        onDelete={handleDeleteStaff}
+        desktopListH={desktopListH} desktopListS={desktopListS}
+        onDesktopSave={handleDesktopSave}
+        onDesktopDelete={handleDesktopDelete}/>
     </div>
   );
 }
