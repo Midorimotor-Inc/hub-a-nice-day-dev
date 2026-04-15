@@ -1756,6 +1756,7 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
   const [editBadge,setEditBadge]=useState('mechanic');
   const [editNumber,setEditNumber]=useState(null);
   const [editCaps,setEditCaps]=useState({}); // capabilities
+  const [editStore,setEditStore]=useState('honten');
   const [confirmDel,setConfirmDel]=useState(false);
   const [tab,setTab]=useState('honten');
   const [lockedBy,setLockedBy]=useState(null);
@@ -1788,6 +1789,7 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
   const selectStaff=(s)=>{
     setSelUid(s.uid);setEditName(s.name);setEditBadge(s.badge||'mechanic');setEditNumber(s.myNumber);setConfirmDel(false);
     setEditCaps(s.capabilities||getDefaultCapabilities(s.badge||'mechanic'));
+    setEditStore(s.store||'honten');
   };
 
   const handleUpdate=()=>{
@@ -1796,7 +1798,7 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
     if(!target)return;
     // 番号重複チェック（自分以外）
     if(allStaff.some(s=>s.uid!==selUid&&s.myNumber===editNumber)){alert('そのマイナンバーはすでに使用されています');return;}
-    onUpdate({...target,name:editName.trim(),badge:editBadge,myNumber:editNumber,capabilities:editCaps});
+    onUpdate({...target,name:editName.trim(),badge:editBadge,myNumber:editNumber,capabilities:editCaps,store:editStore});
     setSelUid(null);
   };
 
@@ -1989,6 +1991,23 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
               ):(
                 <div style={{display:'flex',flexDirection:'column',gap:14}}>
                   <div style={{fontWeight:800,fontSize:14,color:'#1e1b4b'}}>「{selectedStaff.name}」の設定</div>
+
+                  {/* 所属店舗 */}
+                  <div style={{marginBottom:12}}>
+                    <div style={{fontWeight:700,fontSize:12,color:'#374151',marginBottom:6}}>🏪 所属店舗</div>
+                    <div style={{display:'flex',gap:8}}>
+                      {STORES.map(s=>(
+                        <button key={s.id} onClick={()=>setEditStore(s.id)}
+                          style={{flex:1,padding:'9px 8px',borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer',
+                            border:`2px solid ${editStore===s.id?s.color:'#e5e7eb'}`,
+                            background:editStore===s.id?s.color:'white',
+                            color:editStore===s.id?'white':'#374151',
+                            transition:'all .12s'}}>
+                          {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
                   {/* 名前 */}
                   <div>
