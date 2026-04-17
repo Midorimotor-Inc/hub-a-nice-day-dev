@@ -1517,6 +1517,15 @@ const syncCustStatus=async(custId,newStatus,extraFields={},matchName,matchNo)=>{
               localStorage.setItem(lsKey,JSON.stringify({...parsed,customers:updatedCustomers}));
             }
           }catch(e){}
+          // チャンク書き換え成功 → cust-updatesキューから削除（二重適用防止）
+          try{
+            const curQ=await sGet(STOR+'cust-updates')||[];
+            const filteredQ=curQ.filter(u=>
+              !(custId&&u.custId===custId)&&
+              !(matchName&&matchNo&&u.name===matchName&&String(u.no)===String(matchNo))
+            );
+            await sSet(STOR+'cust-updates',filteredQ);
+          }catch(e2){}
           break; // 見つかったファイルで終了
         }
       }

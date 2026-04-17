@@ -1141,8 +1141,10 @@ const App=()=>{
       try{
         const updates=await sGet(STOR+'cust-updates');
         if(!Array.isArray(updates)||updates.length===0)return;
+        // まずキューを先にクリア（再適用を防ぐ）
+        await sSet(STOR+'cust-updates',[]);
+        let changed=false;
         setFiles(prev=>{
-          let changed=false;
           const next=prev.map(f=>{
             const custs=f.customers.map(c=>{
               // custIdまたはname+noでマッチング
@@ -1151,14 +1153,15 @@ const App=()=>{
               );
               if(!upd)return c;
               changed=true;
-              return{...c,...upd};
+              // statusとextraFieldsのみ更新（他フィールドは保護）
+              const{custId:_,name:__,no:___,ts:____,...safeFields}=upd;
+              return{...c,...safeFields};
             });
             return{...f,customers:custs};
           });
           if(!changed)return prev;
-          // チャンクも更新してupdatesをクリア
+          // チャンクも更新
           next.forEach(f=>saveFileChunked(f));
-          sSet(STOR+'cust-updates',[]);
           return next;
         });
       }catch{}
