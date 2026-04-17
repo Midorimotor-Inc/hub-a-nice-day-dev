@@ -1062,6 +1062,7 @@ const App=()=>{
   const [gasLoading,setGasLoading]=useState(true);
   const [importing,setImporting]=useState(false);
   const [inspData,setInspData]=useState({});
+  const inspWriteRef=useRef(0); // 最後にローカル書き込みした時刻
   const [loanerResH,setLoanerResH]=useState({});
   const [loanerResS,setLoanerResS]=useState({});
   const [loanerListH,setLoanerListH]=useState([]);
@@ -1106,7 +1107,8 @@ const App=()=>{
           sGet(storKey('overrideOpen','honten')),
           sGet(STOR+'insp-limits'),
         ]);
-        if(insp)setInspData(insp);
+        // 書き込み後5秒以内はGASからの上書きをしない（ローカル更新を保護）
+        if(insp&&(Date.now()-inspWriteRef.current)>5000)setInspData(insp);
         if(lh)setLoanerResH(lh);
         if(ls)setLoanerResS(ls);
         if(Array.isArray(llh)&&llh.length>0)setLoanerListH(llh);
@@ -1250,19 +1252,27 @@ const App=()=>{
     };
 
     // 顧客リスト更新（stateのみ即時反映）
+    // changedFileをsetFilesの外で確実に構築（Reactの非同期setState問題を回避）
     let changedFile=null;
-    setFiles(prev=>{
-      const next=prev.map((f,i)=>{
-        const ci=f.customers.findIndex(c=>c.custId===customer.custId);
-        if(ci<0)return f;
-        const custs=[...f.customers];
-        custs[ci]=updCustomer;
-        const updated={...f,customers:custs};
-        changedFile=updated; // 変更されたファイルを記録
-        return updated;
+    const currentFiles=await new Promise(resolve=>{
+      setFiles(prev=>{
+        const next=prev.map((f)=>{
+          const ci=f.customers.findIndex(c=>c.custId===customer.custId);
+          if(ci<0)return f;
+          const custs=[...f.customers];
+          custs[ci]=updCustomer;
+          const updated={...f,customers:custs};
+          if(!changedFile)changedFile=updated;
+          return updated;
+        });
+        resolve(next);
+        return next;
       });
-      return next;
     });
+    // changedFileが取れなかった場合の保険（currentFilesから探す）
+    if(!changedFile){
+      changedFile=currentFiles.find(f=>f.customers.some(c=>c.custId===customer.custId))||null;
+    }
 
     // 2. inspDataに予約追加（本予約・仮予約どちらも）
     if(entryDate||isTemp){
@@ -1313,6 +1323,7 @@ const App=()=>{
         const bKey=`insp-${dkFormatted}-${newIdx}`;
         newInspData[dkFormatted][newIdx]={...newRow,bookingKey:bKey};
         setInspData(newInspData);
+        inspWriteRef.current=Date.now(); // 書き込み時刻を記録
         // GAS保存とファイル保存を並列で実行（awaitしない→モーダルを即閉じ）
         Promise.all([
           sSet(STOR+'insp',newInspData),
