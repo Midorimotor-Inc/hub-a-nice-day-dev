@@ -1503,6 +1503,20 @@ const syncCustStatus=async(custId,newStatus,extraFields={},matchName,matchNo)=>{
         });
         if(changed){
           await sSet(STOR+'cf-'+sn+'-chunk-'+ci2,newChunk);
+          // localStorageも即時更新（preloadによる上書きを防ぐ）
+          try{
+            const lsKey='hub-cf-'+sn;
+            const lsData=localStorage.getItem(lsKey);
+            if(lsData){
+              const parsed=JSON.parse(lsData);
+              const updatedCustomers=(parsed.customers||[]).map(c=>{
+                const match=(custId&&c.custId===custId)||(matchName&&((!matchNo&&c.name===matchName)||(matchNo&&c.name===matchName&&String(c.no)===String(matchNo))));
+                if(!match)return c;
+                return{...c,status:newStatus,...extraFields};
+              });
+              localStorage.setItem(lsKey,JSON.stringify({...parsed,customers:updatedCustomers}));
+            }
+          }catch(e){}
           break; // 見つかったファイルで終了
         }
       }
@@ -5939,7 +5953,21 @@ function AppInner() {
           );
           const customers=chunks.filter(Boolean).flat();
           // チャンクデータをlocalStorageに保存
-          localStorage.setItem('hub-cf-'+sn,JSON.stringify({name:fi.name,customers}));
+          // cust-updatesキューの情報で上書き（キャンセル済みを保護）
+          try{
+            const pendingUpdates=await sGet(STOR+'cust-updates')||[];
+            const mergedCustomers=customers.map(c=>{
+              const pending=pendingUpdates.find(u=>
+                (u.custId&&u.custId===c.custId)||
+                (u.name&&u.no&&u.name===c.name&&String(u.no)===String(c.no))
+              );
+              if(pending){return{...c,status:pending.status,...(pending.entryDate!==undefined?{entryDate:pending.entryDate}:{})};}
+              return c;
+            });
+            localStorage.setItem('hub-cf-'+sn,JSON.stringify({name:fi.name,customers:mergedCustomers}));
+          }catch(e){
+            localStorage.setItem('hub-cf-'+sn,JSON.stringify({name:fi.name,customers}));
+          }
         }
       }catch(e){/* プリロード失敗は無視 */}
     };
