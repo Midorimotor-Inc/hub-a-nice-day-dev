@@ -1139,7 +1139,7 @@ const App=()=>{
     // cust-updatesポーリング（スケジュール側からの即時連動）
     const pollUpdates=async()=>{
       try{
-        const updates=await sGet('hub-v8-cust-updates');
+        const updates=await sGet(STOR+'cust-updates');
         if(!Array.isArray(updates)||updates.length===0)return;
         setFiles(prev=>{
           let changed=false;
