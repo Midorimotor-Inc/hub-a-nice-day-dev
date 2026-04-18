@@ -1113,7 +1113,7 @@ const App=()=>{
           sGet(STOR+'insp-limits'),
         ]);
         // 書き込み後5秒以内はGASからの上書きをしない（ローカル更新を保護）
-        if(insp&&(Date.now()-inspWriteRef.current)>3000)setInspData(insp);
+        if(insp&&(Date.now()-inspWriteRef.current)>8000)setInspData(insp);
         if(lh)setLoanerResH(lh);
         if(ls)setLoanerResS(ls);
         if(Array.isArray(llh)&&llh.length>0)setLoanerListH(llh);
@@ -1148,6 +1148,11 @@ const App=()=>{
       try{
         const updates=await sGet(STOR+'cust-updates');
         if(!Array.isArray(updates)||updates.length===0)return;
+        // 処理済みのものはスキップ
+        if(!window.__lastPollTs) window.__lastPollTs=0;
+        const fresh=updates.filter(u=>!u.ts||u.ts>window.__lastPollTs);
+        if(fresh.length===0){ await sSet(STOR+'cust-updates',[]); return; }
+        window.__lastPollTs=Math.max(...fresh.map(u=>u.ts||0));
         // まずキューを先にクリア（再適用を防ぐ）
         await sSet(STOR+'cust-updates',[]);
         let changed=false;
@@ -1155,7 +1160,7 @@ const App=()=>{
           const next=prev.map(f=>{
             const custs=f.customers.map(c=>{
               // custIdまたはname+noでマッチング
-              const upd=updates.find(u=>
+              const upd=fresh.find(u=>
                 (u.custId&&u.custId===c.custId)||(u.name&&((!u.no&&u.name===c.name)||(u.no&&u.name===c.name&&String(u.no)===String(c.no))))
               );
               if(!upd)return c;
@@ -1175,7 +1180,7 @@ const App=()=>{
       }catch{}
     };
     pollUpdates(); // 開いた瞬間に即時適用
-    const pollTimer=setInterval(pollUpdates,1000);
+    const pollTimer=setInterval(pollUpdates,3000);
     return()=>clearInterval(pollTimer);
   },[]);
 
@@ -1253,7 +1258,7 @@ const App=()=>{
     const dmCol=calcDMCol(dm1,dm2,bookDate);
 
     // 1. 顧客リスト更新
-    const updCustomer={...customer,status,entryDate,store,bookingTime,course,tokuten,staff,note,
+    const updCustomer={...customer,status,entryDate,store,bookingTime,course:Number(course)||0,tokuten,staff,note,
       linkedInspDate:entryDate,
       ...(dmCol==='dm1'?{dm1Book:bookDate}:{dm2Book:bookDate}),
     };
@@ -1287,8 +1292,16 @@ const App=()=>{
         const parts=dk.split('-');
         const dkFormatted=parts.length===3?`${parts[0]}-${parseInt(parts[1])}-${parseInt(parts[2])}`:dk;
 
-        // inspDataはメモリ上のstateを使って即時更新（GAS取得はスキップして高速化）
-        const newInspData={...inspData};
+        // GASから最新のinspDataを取得してから予約を追加（上書き防止）
+        let newInspData;
+        try{
+          const latestInsp=await sGet(STOR+'insp');
+          newInspData=latestInsp&&typeof latestInsp==='object'?{...latestInsp}:{...inspData};
+        }catch(e){
+          newInspData={...inspData};
+        }
+        // 取得したデータでstateも更新
+        setInspData(newInspData);
         // 既存の同一custIdを削除（入庫日変更対応）
         for(const d of Object.keys(newInspData)){
           if(Array.isArray(newInspData[d])){
@@ -1330,10 +1343,13 @@ const App=()=>{
         setInspData(newInspData);
         inspWriteRef.current=Date.now(); // 書き込み時刻を記録
         // GAS保存とファイル保存を並列で実行（awaitしない→モーダルを即閉じ）
+        // GASへの保存（完了後にinspWriteRefを更新して保護を延長）
         Promise.all([
           sSet(STOR+'insp',newInspData),
           changedFile?saveFileChunked(changedFile):Promise.resolve(),
-        ]).catch(e=>console.error('保存エラー:',e));
+        ]).then(()=>{
+          inspWriteRef.current=Date.now(); // 保存完了後に再度更新（保護延長）
+        }).catch(e=>console.error('保存エラー:',e));
 
         // 4. custbk（カレンダー6枠）にも保存
         // キー形式: "氏名::2026-3-16"（ゼロなし）
