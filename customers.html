@@ -1055,6 +1055,7 @@ const App=()=>{
     try{const u=sessionStorage.getItem('hub_currentUser');return u?JSON.parse(u):null;}catch{return null;}
   },[]);
   const [files,setFiles]=useState([]);
+  const filesRef = useRef([]); // setFilesと同期して常に最新値を保持
   const [activeIdx,setActiveIdx]=useState(0);
   const [search,setSearch]=useState('');
   const [filterStatus,setFilterStatus]=useState('all');
@@ -1164,6 +1165,7 @@ const App=()=>{
           if(!changed)return prev;
           // チャンクも更新
           next.forEach(f=>saveFileChunked(f));
+          filesRef.current = next; // filesRef同期
           return next;
         });
       }catch{}
@@ -1186,6 +1188,7 @@ const App=()=>{
           const i=next.findIndex(f=>f.name===r.name);
           if(i>=0)next[i]=r;else next.push(r);
         });
+        filesRef.current = next; // filesRef同期
         // チャンク分割保存（GAS 50,000文字制限対策）
         saveFilesIndex(next);
         results.forEach(r=>saveFileChunked(r));
@@ -1251,28 +1254,26 @@ const App=()=>{
       ...(dmCol==='dm1'?{dm1Book:bookDate}:{dm2Book:bookDate}),
     };
 
-    // 顧客リスト更新（stateのみ即時反映）
-    // changedFileをsetFilesの外で確実に構築（Reactの非同期setState問題を回避）
-    let changedFile=null;
-    const currentFiles=await new Promise(resolve=>{
-      setFiles(prev=>{
-        const next=prev.map((f)=>{
-          const ci=f.customers.findIndex(c=>c.custId===customer.custId);
-          if(ci<0)return f;
-          const custs=[...f.customers];
-          custs[ci]=updCustomer;
-          const updated={...f,customers:custs};
-          if(!changedFile)changedFile=updated;
-          return updated;
-        });
-        resolve(next);
-        return next;
-      });
-    });
-    // changedFileが取れなかった場合の保険（currentFilesから探す）
-    if(!changedFile){
-      changedFile=currentFiles.find(f=>f.customers.some(c=>c.custId===customer.custId))||null;
+    // 顧客リスト更新
+    // filesRefから直接changedFileを作成（setFilesの非同期問題を回避）
+    const currentFiles = filesRef.current || [];
+    let changedFile = null;
+    const targetFile = currentFiles.find(f => f.customers.some(c => c.custId === customer.custId));
+    if(targetFile){
+      const custs = targetFile.customers.map(c => c.custId === customer.custId ? updCustomer : c);
+      changedFile = {...targetFile, customers: custs};
     }
+    setFiles(prev=>{
+      const next=prev.map((f)=>{
+        const ci=f.customers.findIndex(c=>c.custId===customer.custId);
+        if(ci<0)return f;
+        const custs=[...f.customers];
+        custs[ci]=updCustomer;
+        return {...f,customers:custs};
+      });
+      filesRef.current = next; // filesRefを同期
+      return next;
+    });
 
     // 2. inspDataに予約追加（本予約・仮予約どちらも）
     if(entryDate||isTemp){
