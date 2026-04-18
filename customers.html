@@ -202,8 +202,12 @@ const calcDMCol=(dm1Date,dm2Date,bookDate)=>{
 };
 
 // 固有番号生成（ファイル名＋行番号＋フルネーム＋ナンバー4桁）
-const makeCustId=(fileName,rowIdx,name,no)=>
-  `${fileName}__${rowIdx}__${name}__${no}`;
+const makeCustId=(fileName,rowIdx,name,no)=>{
+  // 全角スペース・スペースを除去、全角英数を半角に正規化
+  const normName=String(name||'').replace(/[\s　]/g,'').replace(/[Ａ-Ｚａ-ｚ０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));
+  const normNo=String(no||'').trim();
+  return `${fileName}__${rowIdx}__${normName}__${normNo}`;
+};
 
 // セル背景色 → ステータス変換
 const cellColorToStatus=hexColor=>{
@@ -374,7 +378,7 @@ const parseExcelFile=async(file)=>{
 
           customers.push({
             custId,rowIdx:i,
-            expiry,name,no,carType,
+            expiry,name,no:isNaN(Number(no))?no:Number(no),carType,
             phoneHome,phoneMobile,address,
             dm1Date,dm1Book,dm2Date,dm2Book,
             entryDate,tokuten,
