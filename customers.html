@@ -1109,7 +1109,7 @@ const App=()=>{
           sGet(STOR+'insp-limits'),
         ]);
         // 書き込み後5秒以内はGASからの上書きをしない（ローカル更新を保護）
-        if(insp&&(Date.now()-inspWriteRef.current)>5000)setInspData(insp);
+        if(insp&&(Date.now()-inspWriteRef.current)>3000)setInspData(insp);
         if(lh)setLoanerResH(lh);
         if(ls)setLoanerResS(ls);
         if(Array.isArray(llh)&&llh.length>0)setLoanerListH(llh);
@@ -1171,7 +1171,7 @@ const App=()=>{
       }catch{}
     };
     pollUpdates(); // 開いた瞬間に即時適用
-    const pollTimer=setInterval(pollUpdates,2000);
+    const pollTimer=setInterval(pollUpdates,1000);
     return()=>clearInterval(pollTimer);
   },[]);
 

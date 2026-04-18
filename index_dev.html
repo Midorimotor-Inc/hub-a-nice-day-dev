@@ -5724,10 +5724,10 @@ function AppInner() {
   const [schedCollapsed,setSchedCollapsed]=useState(false); // スケジュール畳む/開く（デフォルト：開く）
 
   // 車検は両店舗共通
-  const [inspData,   setInspData]  =useShared(STOR+'insp',{});
+  const [inspData,   setInspData]  =useShared(STOR+'insp',{},3000);
   // 顧客リストからの仮予約（スケジュール未登録）専用ストレージ
   // キー: "名前::YYYY-M-D"  値: {status:'provisional', formData:{...}, custMonth, custRowIdx, savedAt}
-  const [custBookings, setCustBookings]=useShared(STOR+'custbk',{});
+  const [custBookings, setCustBookings]=useShared(STOR+'custbk',{},3000);
   // 表示中の店舗（ログイン後に切り替え可能）
   const [viewStore,  setViewStore] =useState(()=>{
     // 初期値：ログイン済みユーザーの店舗を復元
@@ -5735,14 +5735,14 @@ function AppInner() {
   }); // 'honten' | 'sanda'
   const vsId = viewStore||'honten';
   // 店舗別データ（本店）
-  const [schedDataH, setSchedDataH]=useShared(storKey('sched','honten'),{});
+  const [schedDataH, setSchedDataH]=useShared(storKey('sched','honten'),{},3000);
   const [memoDataH,  setMemoDataH] =useShared(storKey('memo', 'honten'),{});
   const [loanerResH, setLoanerResH]=useShared(storKey('lres', 'honten'),{});
   const [closedDaysH,setClosedDaysH]=useShared(storKey('cdow', 'honten'),[],60000);
   const [closedDatesH,setClosedDatesH]=useShared(storKey('cdate','honten'),[],60000);
   const [dayOffDataH, setDayOffDataH] =useShared(storKey('dayoff','honten'),{},60000);
   // 店舗別データ（三田店）
-  const [schedDataS, setSchedDataS]=useShared(storKey('sched','sanda'),{});
+  const [schedDataS, setSchedDataS]=useShared(storKey('sched','sanda'),{},3000);
   const [memoDataS,  setMemoDataS] =useShared(storKey('memo', 'sanda'),{});
   const [loanerResS, setLoanerResS]=useShared(storKey('lres', 'sanda'),{});
   // 三田店：水曜(3)をデフォルト定休 ※-v2でリセット
@@ -6698,6 +6698,16 @@ function AppInner() {
       if(cancelCustId||cancelName){
         syncCustStatus(cancelCustId,'cancel',{entryDate:'',linkedInspDate:''},cancelName,cancelNo);
       }
+      // ★custbkからも即時削除（画面の見た目を即反映）
+      setCustBookings(prev=>{
+        const next={...prev};
+        Object.keys(next).forEach(k=>{
+          if(next[k]?.formData?.custId===cancelCustId||(cancelName&&next[k]?.formData?.name===cancelName)){
+            delete next[k];
+          }
+        });
+        return next;
+      });
     }else{
       setSchedData(prev=>{const d={...(prev[modalDk]||{})};delete d[modalSlot];return{...prev,[modalDk]:d};});
     }
