@@ -96,7 +96,7 @@ class ErrorBoundary extends React.Component {
       <div style={{padding:32,background:'#fef2f2',minHeight:'100vh',fontFamily:'monospace'}}>
         <h2 style={{color:'#dc2626'}}>レンダリングエラー（開発用表示）</h2>
         <pre style={{color:'#991b1b',fontSize:12,whiteSpace:'pre-wrap'}}>{this.state.error?.message}\n{this.state.error?.stack}</pre>
-        <button onClick={()=>this.setState({error:null})} style={{marginTop:16,padding:'8px 16px',background:'#4338ca',color:'white',border:'none',borderRadius:8,cursor:'pointer'}}>リセット</button>
+        <button onClick={()=>this.setState({error:null})} style={{marginTop:16,padding:'8px 16px',background:'#c2410c',color:'white',border:'none',borderRadius:8,cursor:'pointer'}}>リセット</button>
       </div>
     );
     return this.props.children;
@@ -576,7 +576,7 @@ const CustLoanerDatePicker = ({isOpen, onClose, initFrom, initTo, selectedId, lo
                   const isMonthStart=i===0||(dateRange[i-1]&&dateRange[i-1].month!==d.month);
                   const isHol=isHoliday(d.year,d.month,d.day);
                   return <th key={i} style={{width:26,minWidth:26,maxWidth:26,textAlign:'center',padding:'2px 0',border:'1px solid #e5e7eb',fontSize:8,background:isToday?'#fef08a':isMonthStart?'#ddd6fe':'#e0f2fe',color:dow===0||isHol?'#dc2626':dow===6?'#1d4ed8':'#374151',fontWeight:isToday?800:600,boxSizing:'border-box'}}>
-                    {isMonthStart&&<div style={{fontSize:7,fontWeight:800,color:'#4338ca'}}>{d.month+1}月</div>}
+                    {isMonthStart&&<div style={{fontSize:7,fontWeight:800,color:'#c2410c'}}>{d.month+1}月</div>}
                     <div>{d.day}</div><div style={{fontSize:7}}>{DOW[dow]}</div>
                   </th>;
                 })}
@@ -757,9 +757,9 @@ const CustListModal = memo(({isOpen, onClose, mode:initMode, cust, existingData,
       <div onClick={e=>e.stopPropagation()} className="slide-in booking-modal-inner"
         style={{background:'white',width:'clamp(360px,90vw,560px)',height:'100vh',
           overflowY:'auto',boxShadow:'-8px 0 32px rgba(0,0,0,0.22)',
-          borderLeft:'3px solid #4338ca',display:'flex',flexDirection:'column'}}>
+          borderLeft:'3px solid #c2410c',display:'flex',flexDirection:'column'}}>
 
-        <div style={{background:'linear-gradient(135deg,#4338ca,#3730a3)',padding:'14px 20px',display:'flex',
+        <div style={{background:'linear-gradient(135deg,#c2410c,#9a3412)',padding:'14px 20px',display:'flex',
           justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:10,flexShrink:0}}>
           <div>
             <div style={{color:'white',fontWeight:900,fontSize:17}}>📋 車検予約</div>
@@ -833,7 +833,7 @@ const CustListModal = memo(({isOpen, onClose, mode:initMode, cust, existingData,
                 {STAFF.map(s=>(
                   <button key={s.id} onClick={()=>{setStaffInput(s.name);F('staff',s.name);setShowStaff(false);}}
                     style={{padding:'3px 9px',fontSize:11,borderRadius:5,border:'1px solid #e5e7eb',cursor:'pointer',
-                      background:form.staff===s.name?'#4338ca':'white',color:form.staff===s.name?'white':'#374151',fontWeight:600}}>
+                      background:form.staff===s.name?'#c2410c':'white',color:form.staff===s.name?'white':'#374151',fontWeight:600}}>
                     {s.id}.{s.name}
                   </button>
                 ))}
@@ -1668,7 +1668,7 @@ const StaffRegisterModal=memo(({isOpen,onClose,staffListH,staffListS,onSave})=>{
         style={{background:'white',borderRadius:18,width:'min(520px,96vw)',maxHeight:'94vh',overflowY:'auto',boxShadow:'0 32px 80px rgba(0,0,0,0.45)'}}>
 
         {/* ヘッダー */}
-        <div style={{padding:'16px 22px',background:'linear-gradient(135deg,#1e1b4b,#4338ca)',display:'flex',justifyContent:'space-between',alignItems:'center',borderRadius:'18px 18px 0 0'}}>
+        <div style={{padding:'16px 22px',background:'linear-gradient(135deg,#7c2d12,#c2410c)',display:'flex',justifyContent:'space-between',alignItems:'center',borderRadius:'18px 18px 0 0'}}>
           <div style={{color:'white',fontWeight:800,fontSize:16}}>👤 新規スタッフ登録</div>
           <button onClick={onClose} style={{background:'rgba(255,255,255,0.15)',border:'none',borderRadius:'50%',width:30,height:30,cursor:'pointer',color:'white',display:'flex',alignItems:'center',justifyContent:'center'}}><X size={14}/></button>
         </div>
@@ -1704,7 +1704,7 @@ const StaffRegisterModal=memo(({isOpen,onClose,staffListH,staffListS,onSave})=>{
               <input value={name} onChange={e=>setName(e.target.value)}
                 placeholder="例：山田次郎"
                 style={{width:'100%',padding:'10px 12px',border:'2px solid #e5e7eb',borderRadius:8,fontSize:15,outline:'none',boxSizing:'border-box'}}
-                onFocus={e=>e.target.style.borderColor='#4338ca'}
+                onFocus={e=>e.target.style.borderColor='#c2410c'}
                 onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
             </div>
 
@@ -1834,7 +1834,7 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
       <div onClick={e=>e.stopPropagation()} className="modal-box"
         style={{background:'white',borderRadius:18,width:'min(620px,97vw)',maxHeight:'94vh',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'0 32px 80px rgba(0,0,0,0.45)'}}>
 
-        <div style={{padding:'16px 22px',background:'linear-gradient(135deg,#374151,#1e1b4b)',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+        <div style={{padding:'16px 22px',background:'linear-gradient(135deg,#374151,#7c2d12)',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
           <div style={{color:'white',fontWeight:800,fontSize:16}}>⚙️ スタッフ設定</div>
           <div style={{display:'flex',gap:8,alignItems:'center'}}>
             <button onClick={()=>{onClose();setTimeout(()=>document.dispatchEvent(new CustomEvent('openRegister')),100);}}
@@ -2031,7 +2031,7 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
                     <div style={{fontWeight:700,fontSize:12,color:'#374151',marginBottom:6}}>📝 名前</div>
                     <input value={editName} onChange={e=>setEditName(e.target.value)}
                       style={{width:'100%',padding:'9px 11px',border:'2px solid #e5e7eb',borderRadius:8,fontSize:14,outline:'none',boxSizing:'border-box'}}
-                      onFocus={e=>e.target.style.borderColor='#4338ca'}
+                      onFocus={e=>e.target.style.borderColor='#c2410c'}
                       onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                   </div>
 
@@ -2471,7 +2471,7 @@ const HolidayModal=memo(({isOpen,onClose,closedDays,setClosedDays,closedDates,se
                         onMouseEnter={()=>{if(isDragging)setDragEnd(ds);}}
                       >
                         <span style={{fontSize:12,fontWeight:isToday?900:600,color:isToday?'white':dow===0||isHol?'#dc2626':dow===6?'#1d4ed8':'#374151',
-                          ...(isToday?{background:'#4338ca',borderRadius:'50%',width:20,height:20,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11}:{})}}>
+                          ...(isToday?{background:'#c2410c',borderRadius:'50%',width:20,height:20,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11}:{})}}>
                           {day}
                         </span>
                         {isManualClosed&&!isWeeklyClosed&&<span style={{fontSize:7,color:'#dc2626',fontWeight:700,lineHeight:1}}>休</span>}
@@ -2570,12 +2570,12 @@ const SearchModal=memo(({isOpen,onClose,inspData,schedData,closedDays,closedDate
         </div>
         <div style={{display:'flex',gap:9,marginBottom:14}}>
           {[{v:'insp',l:'🚗 車検'},{v:'sched',l:'⏰ スケジュール'}].map(t=>(
-            <button key={t.v} onClick={()=>{setSType(t.v);setSearched(false);}} style={{flex:1,padding:'9px',borderRadius:7,border:`2px solid ${sType===t.v?'#4338ca':'#e5e7eb'}`,background:sType===t.v?'#eef2ff':'white',color:sType===t.v?'#4338ca':'#374151',fontWeight:700,cursor:'pointer'}}>{t.l}</button>
+            <button key={t.v} onClick={()=>{setSType(t.v);setSearched(false);}} style={{flex:1,padding:'9px',borderRadius:7,border:`2px solid ${sType===t.v?'#c2410c':'#e5e7eb'}`,background:sType===t.v?'#eef2ff':'white',color:sType===t.v?'#c2410c':'#374151',fontWeight:700,cursor:'pointer'}}>{t.l}</button>
           ))}
         </div>
         <p style={{fontSize:12,fontWeight:700,color:'#374151',marginBottom:7}}>希望曜日（未選択=全日）</p>
         <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:13}}>
-          {DOW.map((n,i)=><button key={i} onClick={()=>setDows(p=>p.includes(i)?p.filter(x=>x!==i):[...p,i])} style={{padding:'6px 11px',borderRadius:6,border:`2px solid ${dows.includes(i)?'#4338ca':'#e5e7eb'}`,background:dows.includes(i)?'#eef2ff':'white',color:dows.includes(i)?'#4338ca':'#374151',fontWeight:700,cursor:'pointer',fontSize:12}}>{n}</button>)}
+          {DOW.map((n,i)=><button key={i} onClick={()=>setDows(p=>p.includes(i)?p.filter(x=>x!==i):[...p,i])} style={{padding:'6px 11px',borderRadius:6,border:`2px solid ${dows.includes(i)?'#c2410c':'#e5e7eb'}`,background:dows.includes(i)?'#eef2ff':'white',color:dows.includes(i)?'#c2410c':'#374151',fontWeight:700,cursor:'pointer',fontSize:12}}>{n}</button>)}
         </div>
         {sType==='sched'&&(
           <div style={{marginBottom:13}}>
@@ -2591,7 +2591,7 @@ const SearchModal=memo(({isOpen,onClose,inspData,schedData,closedDays,closedDate
             </div>
           </div>
         )}
-        <button onClick={doSearch} style={{width:'100%',padding:'11px 0',background:'linear-gradient(135deg,#4338ca,#6d28d9)',color:'white',border:'none',borderRadius:9,fontWeight:700,cursor:'pointer',marginBottom:14}}>
+        <button onClick={doSearch} style={{width:'100%',padding:'11px 0',background:'linear-gradient(135deg,#c2410c,#ea580c)',color:'white',border:'none',borderRadius:9,fontWeight:700,cursor:'pointer',marginBottom:14}}>
           🔍 検索（3ヶ月先・最大30件）
         </button>
         {searched&&(
@@ -2604,10 +2604,10 @@ const SearchModal=memo(({isOpen,onClose,inspData,schedData,closedDays,closedDate
                   {results.map((r,i)=>(
                     <button key={i} onClick={()=>{onNavigate(r);onClose();}}
                       style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 13px',background:'#f8fafc',border:'2px solid #e2e8f0',borderRadius:8,cursor:'pointer',textAlign:'left'}}
-                      onMouseEnter={e=>{e.currentTarget.style.background='#eef2ff';e.currentTarget.style.borderColor='#4338ca';}}
+                      onMouseEnter={e=>{e.currentTarget.style.background='#eef2ff';e.currentTarget.style.borderColor='#c2410c';}}
                       onMouseLeave={e=>{e.currentTarget.style.background='#f8fafc';e.currentTarget.style.borderColor='#e2e8f0';}}>
                       <div><span style={{fontWeight:700,color:'white',marginRight:9}}>{r.label}</span><span style={{fontSize:12,color:'#6b7280'}}>{r.detail}</span></div>
-                      <span style={{fontSize:12,color:'#4338ca',fontWeight:700}}>→ 移動</span>
+                      <span style={{fontSize:12,color:'#c2410c',fontWeight:700}}>→ 移動</span>
                     </button>
                   ))}
                 </div>
@@ -2972,7 +2972,7 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,
             <span style={{fontSize:11,fontWeight:700,color:'#374151',flexShrink:0}}>スタッフ：</span>
             <button onClick={()=>setSelStaff(null)}
               style={{padding:'4px 10px',borderRadius:6,border:`2px solid ${!selStaff?'#6366f1':'#d1d5db'}`,
-                background:!selStaff?'#eef2ff':'white',color:!selStaff?'#4338ca':'#6b7280',
+                background:!selStaff?'#eef2ff':'white',color:!selStaff?'#c2410c':'#6b7280',
                 fontWeight:!selStaff?700:500,fontSize:11,cursor:'pointer'}}>
               全員表示
             </button>
@@ -3059,7 +3059,7 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,
                       onMouseEnter={e=>{if(selStaff&&!isCl)e.currentTarget.style.opacity='0.75';}}
                       onMouseLeave={e=>{e.currentTarget.style.opacity='1';}}>
                       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:3}}>
-                        <span style={isToday?{background:'#4338ca',color:'white',borderRadius:'50%',width:20,height:20,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800}:{fontWeight:700,fontSize:13,color:numCol}}>
+                        <span style={isToday?{background:'#c2410c',color:'white',borderRadius:'50%',width:20,height:20,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800}:{fontWeight:700,fontSize:13,color:numCol}}>
                           {day}
                         </span>
                         <span style={{display:'flex',gap:2,alignItems:'center'}}>
@@ -3101,7 +3101,7 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,
                     <span style={{fontWeight:700,color:'#374151'}}>{name}</span>
                     {offs>0&&<span style={{color:'#ea580c',fontWeight:700,display:'flex',alignItems:'center',gap:2}}><span style={{width:8,height:8,borderRadius:2,background:'#f97316',display:'inline-block'}}/>休{offs}日</span>}
                     {leaves>0&&<span style={{color:'#059669',fontWeight:700,display:'flex',alignItems:'center',gap:2}}><span style={{width:8,height:8,borderRadius:2,background:'#10b981',display:'inline-block'}}/>有{leaves}日</span>}
-                    <span style={{color:'#4338ca',fontWeight:800,fontSize:10}}>計{offs+leaves}日</span>
+                    <span style={{color:'#c2410c',fontWeight:800,fontSize:10}}>計{offs+leaves}日</span>
                   </span>
                 ))}
               </div>
@@ -3118,11 +3118,11 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,
             <span style={{width:13,height:13,borderRadius:2,background:'#10b981',display:'inline-block'}}/>📋 有給（グリーン）
           </span>
           {selStaff
-            ?<span style={{color:'#4338ca',fontWeight:600}}>← {selStaff}さんの日付をクリックして設定・解除</span>
+            ?<span style={{color:'#c2410c',fontWeight:600}}>← {selStaff}さんの日付をクリックして設定・解除</span>
             :<span>スタッフを選択すると日付を設定できます</span>
           }
           <button onClick={onClose}
-            style={{marginLeft:'auto',padding:'8px 22px',background:'linear-gradient(135deg,#4338ca,#6d28d9)',color:'white',border:'none',borderRadius:8,fontWeight:900,fontSize:13,cursor:'pointer',boxShadow:'0 3px 10px rgba(67,56,202,0.35)',whiteSpace:'nowrap'}}>
+            style={{marginLeft:'auto',padding:'8px 22px',background:'linear-gradient(135deg,#c2410c,#ea580c)',color:'white',border:'none',borderRadius:8,fontWeight:900,fontSize:13,cursor:'pointer',boxShadow:'0 3px 10px rgba(67,56,202,0.35)',whiteSpace:'nowrap'}}>
             ✅ 確定して閉じる
           </button>
         </div>
@@ -3543,7 +3543,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
   const ORDER=isInsp?INSP_ORDER:SCHED_ORDER;
   // フォーカスリング
   const KB=(key)=>kbField===key
-    ?{outline:`3px solid ${isInsp?'#4338ca':'#0891b2'}`,outlineOffset:'2px',boxShadow:`0 0 0 4px rgba(${isInsp?'67,56,202':'8,145,178'},0.15)`}
+    ?{outline:`3px solid ${isInsp?'#c2410c':'#0891b2'}`,outlineOffset:'2px',boxShadow:`0 0 0 4px rgba(${isInsp?'67,56,202':'8,145,178'},0.15)`}
     :{};
   // 次/前のフィールドへ
   const TIME_VALS=Array.from({length:19},(_,i)=>{const h=Math.floor(i/2)+9,m=i%2===0?'00':'30';return`${String(h).padStart(2,'0')}:${m}`;});
@@ -3675,9 +3675,9 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.35)',zIndex:1000,display:'flex',alignItems:'stretch',justifyContent:'flex-start'}} onClick={onClose}>
       <div onClick={e=>e.stopPropagation()} className="slide-in booking-modal-inner"
-        style={{background:'white',width:'clamp(360px,90vw,560px)',height:'100vh',overflowY:'auto',boxShadow:'8px 0 32px rgba(0,0,0,0.22)',borderRight:`3px solid ${isInsp?'#3730a3':'#0891b2'}`}}>
+        style={{background:'white',width:'clamp(360px,90vw,560px)',height:'100vh',overflowY:'auto',boxShadow:'8px 0 32px rgba(0,0,0,0.22)',borderRight:`3px solid ${isInsp?'#9a3412':'#0891b2'}`}}>
         {/* パネルヘッダー */}
-        <div style={{background:isInsp?'linear-gradient(135deg,#3730a3,#6d28d9)':'linear-gradient(135deg,#0e7490,#0891b2)',padding:'16px 20px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:20}}>
+        <div style={{background:isInsp?'linear-gradient(135deg,#9a3412,#ea580c)':'linear-gradient(135deg,#0e7490,#0891b2)',padding:'16px 20px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:20}}>
           <div>
             <div style={{color:'white',fontWeight:800,fontSize:16}}>{isInsp?'🚗 車検予約':'📋 一般予約'}</div>
             <div style={{color:'rgba(255,255,255,0.75)',fontSize:12,marginTop:2}}>{dateLabel}{timeSlot?` / ${timeSlot}`:''}</div>
@@ -3769,7 +3769,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
               }}
               placeholder="担当者名 or 番号" style={{...INP,...KB('staff')}}/>
             {showStaff&&<div style={{display:'flex',gap:4,marginTop:5,flexWrap:'wrap'}}>
-              {STAFF.map(s=><button key={s.id} onClick={()=>{setStaffInput(s.name);setForm(p=>({...p,staff:s.name}));setShowStaff(false);carRef.current?.focus();}} style={{padding:'2px 8px',fontSize:11,borderRadius:4,border:'1px solid #e5e7eb',cursor:'pointer',background:form.staff===s.name?'#4338ca':'white',color:form.staff===s.name?'white':'#374151'}}>{s.id}.{s.name}</button>)}
+              {STAFF.map(s=><button key={s.id} onClick={()=>{setStaffInput(s.name);setForm(p=>({...p,staff:s.name}));setShowStaff(false);carRef.current?.focus();}} style={{padding:'2px 8px',fontSize:11,borderRadius:4,border:'1px solid #e5e7eb',cursor:'pointer',background:form.staff===s.name?'#c2410c':'white',color:form.staff===s.name?'white':'#374151'}}>{s.id}.{s.name}</button>)}
             </div>}
           </div>
           {/* 車種 */}
@@ -3853,7 +3853,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
                   :getLoanerLabel(loanerRes,modalDk,form.name,bk2);
                 const dynamicLoanerId=pendingLoanerId??getLoanerIdForRow(loanerRes,modalDk,form.name,bk2);
                 return(<>
-                  <input value={dynamicLoaner} readOnly placeholder="管理表で選択" style={{...INP,flex:1,cursor:'pointer',background:'#fef9c3',color:dynamicLoaner?'#1e1b4b':'#9ca3af'}} onClick={()=>onOpenLoanerPicker({...form,loaner:dynamicLoaner,loanerId:dynamicLoanerId})}/>
+                  <input value={dynamicLoaner} readOnly placeholder="管理表で選択" style={{...INP,flex:1,cursor:'pointer',background:'#fef9c3',color:dynamicLoaner?'#7c2d12':'#9ca3af'}} onClick={()=>onOpenLoanerPicker({...form,loaner:dynamicLoaner,loanerId:dynamicLoanerId})}/>
                   <button onClick={()=>onOpenLoanerPicker({...form,loaner:dynamicLoaner,loanerId:dynamicLoanerId})} style={{padding:'0 12px',background:'#0891b2',color:'white',border:'none',borderRadius:7,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',fontSize:12}}>選択</button>
                   {dynamicLoaner&&<button onClick={()=>{
                     setForm({...form,loaner:'',loanerId:null});
@@ -3873,10 +3873,10 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
                 {TOKUENS.map(t=>(
                   <button key={t.id} tabIndex={-1} onClick={()=>setForm(p=>({...p,tokuten:t.id}))}
                     style={{flex:1,padding:'9px 4px',borderRadius:8,fontWeight:700,cursor:'pointer',fontSize:11,
-                      border:`2px solid ${form.tokuten===t.id?'#4338ca':'#e5e7eb'}`,
+                      border:`2px solid ${form.tokuten===t.id?'#c2410c':'#e5e7eb'}`,
                       background:form.tokuten===t.id?'#ede9fe':'white',
-                      color:form.tokuten===t.id?'#4338ca':'#6b7280',
-                      outline:kbField==='tokuten'&&form.tokuten===t.id?'3px solid #4338ca':'none',
+                      color:form.tokuten===t.id?'#c2410c':'#6b7280',
+                      outline:kbField==='tokuten'&&form.tokuten===t.id?'3px solid #c2410c':'none',
                       outlineOffset:'2px'}}>
                     {t.id} {t.name}
                   </button>
@@ -4009,7 +4009,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
 
                 <button onClick={handleSave}
                   style={{width:'100%',padding:'14px 0',
-                    background:isInsp?'linear-gradient(135deg,#4338ca,#6d28d9)':'linear-gradient(135deg,#0e7490,#0891b2)',
+                    background:isInsp?'linear-gradient(135deg,#c2410c,#ea580c)':'linear-gradient(135deg,#0e7490,#0891b2)',
                     color:'white',border:'none',borderRadius:10,fontWeight:900,fontSize:15,
                     cursor:'pointer',boxShadow:'0 4px 15px rgba(0,0,0,.2)',letterSpacing:'.5px'}}>
                   {isInsp?(isNew?'📋 仮予約として登録':'💾 内容を保存する'):'✅ 予約確定'}
@@ -4101,7 +4101,7 @@ const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,loanerResH
          :isEmpty?<div style={{color:'#d1d5db',fontSize:11,padding:'5px 7px',fontStyle:'italic',display:'flex',alignItems:'center',gap:4}}><span style={{width:18,height:18,border:'2px dashed #d1d5db',borderRadius:3,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11}}>+</span>クリックして追加</div>
          :<div style={{padding:'3px 5px'}}>
               <div style={{display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
-                <span style={{fontWeight:700,color:pending?'#9ca3af':'#1e1b4b',whiteSpace:'nowrap'}}>{row.name}</span>
+                <span style={{fontWeight:700,color:pending?'#9ca3af':'#7c2d12',whiteSpace:'nowrap'}}>{row.name}</span>
                 {row.store&&<span style={{padding:'1px 6px',borderRadius:20,fontSize:10,fontWeight:800,background:row.store==='honten'?'#2563eb':'#dc2626',color:'white',flexShrink:0,whiteSpace:'nowrap'}}>
                   {row.store==='honten'?'本店':'三田店'}
                 </span>}
@@ -4491,7 +4491,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
   const INP_S={width:'100%',padding:'7px 10px',border:'2px solid #e5e7eb',borderRadius:7,fontSize:12,outline:'none',fontFamily:'inherit',boxSizing:'border-box'};
 
   return(
-    <div style={{background:'white',borderRadius:13,boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:'4px solid #4338ca',display:'flex',flexDirection:'column',height:'calc(100vh - var(--header-h,90px) - 40px)',overflow:'hidden'}}>
+    <div style={{background:'white',borderRadius:13,boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:'4px solid #c2410c',display:'flex',flexDirection:'column',height:'calc(100vh - var(--header-h,90px) - 40px)',overflow:'hidden'}}>
 
       {/* ヘッダー */}
       <div style={{padding:'12px 18px',borderBottom:'2px solid #e5e7eb',display:'flex',alignItems:'center',gap:10,flexShrink:0,flexWrap:'wrap'}}>
@@ -4517,7 +4517,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
 
       {/* フィルター */}
       <div style={{padding:'8px 18px',borderBottom:'1px solid #f1f5f9',display:'flex',gap:5,flexWrap:'wrap',flexShrink:0,background:'#fafafa',alignItems:'center'}}>
-        <button onClick={()=>setFilterCat('all')} style={{padding:'3px 10px',borderRadius:20,border:`1.5px solid ${filterCat==='all'?'#4338ca':'#e5e7eb'}`,background:filterCat==='all'?'#eef2ff':'white',color:filterCat==='all'?'#4338ca':'#6b7280',fontSize:11,fontWeight:filterCat==='all'?700:400,cursor:'pointer'}}>全て</button>
+        <button onClick={()=>setFilterCat('all')} style={{padding:'3px 10px',borderRadius:20,border:`1.5px solid ${filterCat==='all'?'#c2410c':'#e5e7eb'}`,background:filterCat==='all'?'#eef2ff':'white',color:filterCat==='all'?'#c2410c':'#6b7280',fontSize:11,fontWeight:filterCat==='all'?700:400,cursor:'pointer'}}>全て</button>
         {VEHICLE_CATS.map(cat=>{
           const cnt=list.filter(v=>v.category===cat.id).length;
           if(cnt===0)return null;
@@ -4547,7 +4547,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
                   <input type="number" value={addForm.inspDays} onChange={e=>setAddForm(p=>({...p,inspDays:e.target.value}))} placeholder="登録日から何日後？（例：30）" style={INP_S} onFocus={e=>e.target.style.borderColor='#059669'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                 </div>
                 <div style={{display:'flex',gap:5}}>
-                  <button onClick={addVehicle} disabled={!addForm.name.trim()} style={{flex:1,padding:'7px 0',background:addForm.name.trim()?'#4338ca':'#e5e7eb',color:addForm.name.trim()?'white':'#9ca3af',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:addForm.name.trim()?'pointer':'default'}}>追加</button>
+                  <button onClick={addVehicle} disabled={!addForm.name.trim()} style={{flex:1,padding:'7px 0',background:addForm.name.trim()?'#c2410c':'#e5e7eb',color:addForm.name.trim()?'white':'#9ca3af',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:addForm.name.trim()?'pointer':'default'}}>追加</button>
                   <button onClick={()=>setShowAddVehicle(false)} style={{padding:'7px 12px',background:'#f3f4f6',border:'none',borderRadius:7,fontSize:11,cursor:'pointer'}}>×</button>
                 </div>
               </div>
@@ -4568,7 +4568,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
             const urgentInsp=(v.inspections||[]).filter(ins=>!ins.completed&&getInspStatus(ins).level>0);
             return(
               <div key={v.id} onClick={()=>setSelId(isSelected?null:v.id)}
-                style={{padding:'10px 14px',borderBottom:'1px solid #f1f5f9',background:isSelected?'#eef2ff':alertLv>=3?'#fff5f5':alertLv>=1?'#fffbeb':'white',cursor:'pointer',borderLeft:`3px solid ${isSelected?'#4338ca':alertLv>=3?'#dc2626':alertLv>=1?'#f59e0b':'transparent'}`,transition:'all .1s'}}>
+                style={{padding:'10px 14px',borderBottom:'1px solid #f1f5f9',background:isSelected?'#eef2ff':alertLv>=3?'#fff5f5':alertLv>=1?'#fffbeb':'white',cursor:'pointer',borderLeft:`3px solid ${isSelected?'#c2410c':alertLv>=3?'#dc2626':alertLv>=1?'#f59e0b':'transparent'}`,transition:'all .1s'}}>
                 <div style={{display:'flex',alignItems:'center',gap:6}}>
                   <span style={{fontSize:16}}>{cat?.icon||'🚗'}</span>
                   <div style={{flex:1,minWidth:0}}>
@@ -4607,20 +4607,20 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
                   <div style={{flex:1}}>
                     {isEditing?(
                       <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                        <input value={editVehicle.name} onChange={e=>setEditVehicle(p=>({...p,name:e.target.value}))} style={{...INP_S,fontSize:16,fontWeight:700}} onFocus={e=>e.target.style.borderColor='#4338ca'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
+                        <input value={editVehicle.name} onChange={e=>setEditVehicle(p=>({...p,name:e.target.value}))} style={{...INP_S,fontSize:16,fontWeight:700}} onFocus={e=>e.target.style.borderColor='#c2410c'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                         <div style={{display:'flex',gap:6}}>
-                          <input value={editVehicle.num} onChange={e=>setEditVehicle(p=>({...p,num:e.target.value}))} placeholder="ナンバー" style={{...INP_S,flex:1}} onFocus={e=>e.target.style.borderColor='#4338ca'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
+                          <input value={editVehicle.num} onChange={e=>setEditVehicle(p=>({...p,num:e.target.value}))} placeholder="ナンバー" style={{...INP_S,flex:1}} onFocus={e=>e.target.style.borderColor='#c2410c'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                           <select value={editVehicle.category} onChange={e=>setEditVehicle(p=>({...p,category:e.target.value}))} style={{...INP_S,flex:1,background:'white'}}>
                             {VEHICLE_CATS.map(c=><option key={c.id} value={c.id}>{c.icon}{c.label}</option>)}
                           </select>
                         </div>
                         <div style={{display:'flex',gap:6,alignItems:'center'}}>
                           <label style={{fontSize:11,color:'#374151',fontWeight:600,whiteSpace:'nowrap'}}>登録日</label>
-                          <input type="date" value={editVehicle.regDate||''} onChange={e=>setEditVehicle(p=>({...p,regDate:e.target.value}))} style={INP_S} onFocus={e=>e.target.style.borderColor='#4338ca'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
+                          <input type="date" value={editVehicle.regDate||''} onChange={e=>setEditVehicle(p=>({...p,regDate:e.target.value}))} style={INP_S} onFocus={e=>e.target.style.borderColor='#c2410c'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                         </div>
-                        <textarea value={editVehicle.note||''} onChange={e=>setEditVehicle(p=>({...p,note:e.target.value}))} placeholder="メモ" rows={2} style={{...INP_S,resize:'vertical'}} onFocus={e=>e.target.style.borderColor='#4338ca'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
+                        <textarea value={editVehicle.note||''} onChange={e=>setEditVehicle(p=>({...p,note:e.target.value}))} placeholder="メモ" rows={2} style={{...INP_S,resize:'vertical'}} onFocus={e=>e.target.style.borderColor='#c2410c'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                         <div style={{display:'flex',gap:6}}>
-                          <button onClick={()=>saveVehicleEdit(selVehicle.id,{name:editVehicle.name,num:editVehicle.num,category:editVehicle.category,regDate:editVehicle.regDate,note:editVehicle.note})} style={{flex:1,padding:'7px',background:'#4338ca',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>✓ 保存</button>
+                          <button onClick={()=>saveVehicleEdit(selVehicle.id,{name:editVehicle.name,num:editVehicle.num,category:editVehicle.category,regDate:editVehicle.regDate,note:editVehicle.note})} style={{flex:1,padding:'7px',background:'#c2410c',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>✓ 保存</button>
                           <button onClick={()=>setEditVehicle(null)} style={{padding:'7px 12px',background:'#f3f4f6',border:'none',borderRadius:7,fontSize:11,cursor:'pointer'}}>キャンセル</button>
                         </div>
                       </div>
@@ -4639,7 +4639,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
                   </div>
                   {!isEditing&&(
                     <div style={{display:'flex',gap:4,flexShrink:0}}>
-                      <button onClick={()=>setEditVehicle({...selVehicle})} style={{padding:'5px 10px',background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:6,fontSize:11,color:'#4338ca',fontWeight:700,cursor:'pointer'}}>編集</button>
+                      <button onClick={()=>setEditVehicle({...selVehicle})} style={{padding:'5px 10px',background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:6,fontSize:11,color:'#c2410c',fontWeight:700,cursor:'pointer'}}>編集</button>
                       <button onClick={()=>deleteVehicle(selVehicle.id)} style={{padding:'5px 8px',background:'#fef2f2',border:'1px solid #fecaca',borderRadius:6,fontSize:11,color:'#dc2626',cursor:'pointer'}}>削除</button>
                     </div>
                   )}
@@ -4689,7 +4689,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
                         <div style={{fontSize:11,color:'#6b7280',marginTop:2,display:'flex',gap:8,flexWrap:'wrap'}}>
                           {ins.scheduledDate&&<span>予定日：{fmtDate(ins.scheduledDate)}</span>}
                           {ins.completed&&ins.completedAt&&<span style={{color:'#059669'}}>✓ {fmtDate(ins.completedAt)}完了</span>}
-                          {ins.note&&<span style={{color:'#4338ca'}}>📝 {ins.note}</span>}
+                          {ins.note&&<span style={{color:'#c2410c'}}>📝 {ins.note}</span>}
                         </div>
                       </div>
                       <span style={{padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:700,background:st.bg,color:st.color,whiteSpace:'nowrap',border:`1px solid ${st.color}44`}}>{st.label}</span>
@@ -4807,10 +4807,10 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
 
   const TAB_S = (active) => ({
     padding:'7px 16px', borderRadius:'7px 7px 0 0', fontWeight:700, fontSize:12, cursor:'pointer',
-    border:`2px solid ${active?'#4338ca':'#e5e7eb'}`,
+    border:`2px solid ${active?'#c2410c':'#e5e7eb'}`,
     borderBottom: active?'2px solid white':'2px solid #e5e7eb',
     background: active?'white':'#f8fafc',
-    color: active?'#4338ca':'#6b7280',
+    color: active?'#c2410c':'#6b7280',
     marginBottom: active?'-2px':0,
   });
 
@@ -4870,7 +4870,7 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
                     placeholder="ナンバー"
                     style={{flex:1,padding:'5px 8px',border:'2px solid #6366f1',borderRadius:6,fontSize:12,outline:'none',fontFamily:'inherit'}}/>
                   <button onClick={()=>saveEdit(i)}
-                    style={{padding:'5px 10px',background:'#4338ca',color:'white',border:'none',borderRadius:6,fontWeight:700,fontSize:11,cursor:'pointer',flexShrink:0}}>✓</button>
+                    style={{padding:'5px 10px',background:'#c2410c',color:'white',border:'none',borderRadius:6,fontWeight:700,fontSize:11,cursor:'pointer',flexShrink:0}}>✓</button>
                   <button onClick={()=>setEditIdx(null)}
                     style={{padding:'5px 8px',background:'#f3f4f6',border:'none',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0}}>×</button>
                 </>
@@ -4882,7 +4882,7 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
                     <div style={{fontSize:10,color:'#9ca3af'}}>{car.num||'—'}</div>
                   </div>
                   <button onClick={()=>startEdit(i)}
-                    style={{padding:'4px 10px',background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:6,fontSize:11,fontWeight:700,color:'#4338ca',cursor:'pointer',flexShrink:0}}>編集</button>
+                    style={{padding:'4px 10px',background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:6,fontSize:11,fontWeight:700,color:'#c2410c',cursor:'pointer',flexShrink:0}}>編集</button>
                   <button onClick={()=>remove(i)}
                     style={{padding:'4px 9px',background:'#fef2f2',border:'1px solid #fecaca',borderRadius:6,fontSize:11,fontWeight:700,color:'#dc2626',cursor:'pointer',flexShrink:0}}>削除</button>
                 </>
@@ -4916,7 +4916,7 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
             ※ 保存後は予約データのcarIdが変わる場合があります
           </div>
           <button onClick={handleSave}
-            style={{padding:'10px 24px',background:'linear-gradient(135deg,#4338ca,#6d28d9)',color:'white',border:'none',borderRadius:9,fontWeight:800,fontSize:13,cursor:'pointer'}}>
+            style={{padding:'10px 24px',background:'linear-gradient(135deg,#c2410c,#ea580c)',color:'white',border:'none',borderRadius:9,fontWeight:800,fontSize:13,cursor:'pointer'}}>
             ✓ 保存
           </button>
           <button onClick={onClose}
@@ -5163,7 +5163,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
           </button>
           <button onClick={onOpenSettings} title="代車・レンタカー設定"
             style={{padding:'6px 10px',background:'#f3f4f6',border:'2px solid #d1d5db',borderRadius:6,cursor:'pointer',display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:700,color:'#374151'}}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor='#4338ca';e.currentTarget.style.color='#4338ca';}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor='#c2410c';e.currentTarget.style.color='#c2410c';}}
             onMouseLeave={e=>{e.currentTarget.style.borderColor='#d1d5db';e.currentTarget.style.color='#374151';}}>
             <Settings size={13}/>設定
           </button>
@@ -5188,7 +5188,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
                 // 月が変わるタイミング
                 const isMonthStart=i===0||(dateRange[i-1]&&dateRange[i-1].month!==month);
                 return <th key={i} style={{width:44,minWidth:44,maxWidth:44,textAlign:'center',padding:'3px 0',border:'1px solid #e5e7eb',fontSize:9,background:h2?'#fef08a':isMonthStart?'#ddd6fe':'#eef2ff',color:dow===0||isHol?'#dc2626':dow===6?'#1d4ed8':'#374151',fontWeight:h2?800:600,boxSizing:'border-box'}}>
-                  {isMonthStart&&<div style={{fontSize:7,fontWeight:800,color:'#4338ca'}}>{month+1}月</div>}
+                  {isMonthStart&&<div style={{fontSize:7,fontWeight:800,color:'#c2410c'}}>{month+1}月</div>}
                   <div>{day}</div><div style={{fontSize:7}}>{DOW[dow]}</div>
                 </th>;
               })}
@@ -5298,9 +5298,9 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
 
       {/* 固定編集パネル（予約済みバーをクリックで開く） */}
       {!pickMode&&pinnedRes&&pinnedRes.res&&(
-        <div style={{position:'fixed',bottom:24,right:24,zIndex:2000,background:'white',border:`2px solid ${pinnedRes.res._rental?'#059669':'#4338ca'}`,borderRadius:12,padding:'16px 18px',boxShadow:'0 8px 40px rgba(0,0,0,0.25)',minWidth:260}}>
+        <div style={{position:'fixed',bottom:24,right:24,zIndex:2000,background:'white',border:`2px solid ${pinnedRes.res._rental?'#059669':'#c2410c'}`,borderRadius:12,padding:'16px 18px',boxShadow:'0 8px 40px rgba(0,0,0,0.25)',minWidth:260}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-            <div style={{fontSize:13,fontWeight:800,color:pinnedRes.res._rental?'#065f46':'#1e1b4b'}}>
+            <div style={{fontSize:13,fontWeight:800,color:pinnedRes.res._rental?'#065f46':'#7c2d12'}}>
               {pinnedRes.res._rental?'🔑':'🚙'} {pinnedRes.car.name}
             </div>
             <button onClick={()=>setPinnedRes(null)}
@@ -5312,7 +5312,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
           <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>👤 {pinnedRes.res.user}</div>
           <div style={{display:'flex',gap:8}}>
             <button onClick={()=>{openEdit(pinnedRes.car,pinnedRes.res);setPinnedRes(null);}}
-              style={{flex:1,padding:'8px 0',background:'#4338ca',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>✎ 編集</button>
+              style={{flex:1,padding:'8px 0',background:'#c2410c',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>✎ 編集</button>
             <button onClick={()=>{
               if(window.confirm(`「${pinnedRes.car.name}」の予約（${pinnedRes.res.fm+1}/${pinnedRes.res.fd}〜${pinnedRes.res.tm+1}/${pinnedRes.res.td} ${pinnedRes.res.user}）を削除しますか？`)){
                 if(pinnedRes.res._rental){
@@ -5601,7 +5601,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
               </div>
             </div>
             <div style={{display:'flex',gap:8,marginTop:18}}>
-              <button onClick={saveEdit} style={{flex:1,padding:'11px 0',background:'linear-gradient(135deg,#4338ca,#6d28d9)',color:'white',border:'none',borderRadius:9,fontWeight:700,cursor:'pointer'}}>✓ 更新</button>
+              <button onClick={saveEdit} style={{flex:1,padding:'11px 0',background:'linear-gradient(135deg,#c2410c,#ea580c)',color:'white',border:'none',borderRadius:9,fontWeight:700,cursor:'pointer'}}>✓ 更新</button>
               <button onClick={()=>{onDeleteRes(editModal.carId,editModal.resId);setEditModal(null);}} style={{padding:'11px 14px',background:'#fee2e2',color:'#dc2626',border:'2px solid #fca5a5',borderRadius:9,fontWeight:700,cursor:'pointer'}}>🗑</button>
               <button onClick={()=>setEditModal(null)} style={{padding:'11px 14px',background:'#f3f4f6',border:'none',borderRadius:9,fontWeight:600,cursor:'pointer'}}>戻る</button>
             </div>
@@ -6075,7 +6075,7 @@ function AppInner() {
   table { width: 100%; border-collapse: collapse; }
   th { padding: 4px 5px; font-weight: 700; font-size: 8px; text-align: left; color: white; }
   td { padding: 3px 5px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; font-size: 9px; }
-  .insp-head { background: #3730a3; }
+  .insp-head { background: #9a3412; }
   .sched-head { background: #0e7490; }
   .memo-head { background: #7c3aed; }
   .store-my { border-left: 3px solid ${storeColor}; }
@@ -6955,7 +6955,7 @@ function AppInner() {
           <div style={{maxWidth:1700,margin:'0 auto',display:'flex',flexDirection:'column',gap:4}}>
             {/* 1行目：ロゴ左 ＋ スタッフ右 */}
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-              <div style={{display:'flex',alignItems:'center',gap:7,fontSize:16,fontWeight:800,color:'#3730a3'}}>
+              <div style={{display:'flex',alignItems:'center',gap:7,fontSize:16,fontWeight:800,color:'#9a3412'}}>
                 <Car size={22}/> Hub a Nice day
                 <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,background:'#eff6ff',color:'#1d4ed8',border:'1px solid #bfdbfe',cursor:'default'}}>v{APP_VERSION}</span>
                 {/* GAS接続ステータスバッジ */}
@@ -6980,13 +6980,13 @@ function AppInner() {
                   {currentUser?.badge&&<BadgeIcon badge={currentUser.badge} size={18}/>}
                   <button onClick={()=>document.dispatchEvent(new CustomEvent('openStaffSettings'))} title="スタッフ管理"
                     style={{background:'none',border:'none',cursor:'pointer',color:'#6b7280',display:'flex',alignItems:'center',padding:'1px',borderRadius:3}}
-                    onMouseEnter={e=>e.currentTarget.style.color='#4338ca'}
+                    onMouseEnter={e=>e.currentTarget.style.color='#c2410c'}
                     onMouseLeave={e=>e.currentTarget.style.color='#6b7280'}>
                     <Users size={14}/>
                   </button>
                   <button onClick={()=>setShowHoliday(true)} title="休業日設定・バックアップ"
                     style={{background:'none',border:'none',cursor:'pointer',color:'#6b7280',display:'flex',alignItems:'center',padding:'1px',borderRadius:3}}
-                    onMouseEnter={e=>e.currentTarget.style.color='#4338ca'}
+                    onMouseEnter={e=>e.currentTarget.style.color='#c2410c'}
                     onMouseLeave={e=>e.currentTarget.style.color='#6b7280'}>
                     <Settings size={14}/>
                   </button>
@@ -7028,13 +7028,13 @@ function AppInner() {
                     });
                   }).length:0;
                   return(
-                    <button onClick={()=>setView('vehicle')} style={{display:'flex',alignItems:'center',gap:4,padding:'6px 14px',borderRadius:7,fontWeight:700,fontSize:12,border:`2px solid ${view==='vehicle'?'#4338ca':alertCnt>0?'#fca5a5':'#d1d5db'}`,background:view==='vehicle'?'#4338ca':alertCnt>0?'#fee2e2':'white',color:view==='vehicle'?'white':alertCnt>0?'#dc2626':'#374151',cursor:'pointer',position:'relative'}}>
+                    <button onClick={()=>setView('vehicle')} style={{display:'flex',alignItems:'center',gap:4,padding:'6px 14px',borderRadius:7,fontWeight:700,fontSize:12,border:`2px solid ${view==='vehicle'?'#c2410c':alertCnt>0?'#fca5a5':'#d1d5db'}`,background:view==='vehicle'?'#c2410c':alertCnt>0?'#fee2e2':'white',color:view==='vehicle'?'white':alertCnt>0?'#dc2626':'#374151',cursor:'pointer',position:'relative'}}>
                       🔔 車両管理
                       {alertCnt>0&&<span style={{position:'absolute',top:-6,right:-6,width:16,height:16,borderRadius:'50%',background:'#dc2626',color:'white',fontSize:9,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',border:'1.5px solid white'}}>{alertCnt}</span>}
                     </button>
                   );
                 })()}
-                <button onClick={()=>setShowSearch(true)} style={{display:'flex',alignItems:'center',gap:4,padding:'6px 14px',borderRadius:7,fontWeight:700,fontSize:12,border:'2px solid #6d28d9',background:'#6d28d9',color:'white',cursor:'pointer'}}>
+                <button onClick={()=>setShowSearch(true)} style={{display:'flex',alignItems:'center',gap:4,padding:'6px 14px',borderRadius:7,fontWeight:700,fontSize:12,border:'2px solid #ea580c',background:'#ea580c',color:'white',cursor:'pointer'}}>
                   <Search size={12}/> 空き枠検索
                 </button>
                 <a href="./customers.html" style={{display:'flex',alignItems:'center',gap:4,padding:'6px 14px',borderRadius:7,fontWeight:700,fontSize:12,border:'2px solid #16a34a',background:'#dcfce7',color:'#15803d',textDecoration:'none',cursor:'pointer'}}>
@@ -7130,7 +7130,7 @@ function AppInner() {
                     </button>
                     {(vsId==='honten'?dynStaffH:dynStaffS).filter(s=>s.badge!=='president'&&s.myNumber!==0).map(s=>(
                       <button key={s.id} onClick={()=>setCalStaffFilter(calStaffFilter===s.name?null:s.name)}
-                        style={{padding:'3px 9px',borderRadius:6,border:`2px solid ${calStaffFilter===s.name?'#4338ca':'#d1d5db'}`,background:calStaffFilter===s.name?'#eef2ff':'white',color:calStaffFilter===s.name?'#4338ca':'#374151',fontWeight:calStaffFilter===s.name?700:500,fontSize:11,cursor:'pointer'}}>
+                        style={{padding:'3px 9px',borderRadius:6,border:`2px solid ${calStaffFilter===s.name?'#c2410c':'#d1d5db'}`,background:calStaffFilter===s.name?'#eef2ff':'white',color:calStaffFilter===s.name?'#c2410c':'#374151',fontWeight:calStaffFilter===s.name?700:500,fontSize:11,cursor:'pointer'}}>
                         {s.name}
                       </button>
                     ))}
@@ -7177,7 +7177,7 @@ function AppInner() {
                   {/* 歯車設定ポップオーバー */}
                   <div style={{position:'relative'}}>
                     <button onClick={()=>setShowCalSettings(p=>!p)} title="カレンダー設定"
-                      style={{display:'flex',alignItems:'center',gap:4,padding:'5px 9px',background:showCalSettings?'#eef2ff':'#f3f4f6',border:`2px solid ${showCalSettings?'#4338ca':'#d1d5db'}`,borderRadius:7,cursor:'pointer',color:showCalSettings?'#4338ca':'#374151',transition:'all 0.12s'}}>
+                      style={{display:'flex',alignItems:'center',gap:4,padding:'5px 9px',background:showCalSettings?'#eef2ff':'#f3f4f6',border:`2px solid ${showCalSettings?'#c2410c':'#d1d5db'}`,borderRadius:7,cursor:'pointer',color:showCalSettings?'#c2410c':'#374151',transition:'all 0.12s'}}>
                       <Settings size={14}/><span style={{fontSize:11,fontWeight:700}}>設定</span>
                     </button>
                     {showCalSettings&&(
@@ -7237,7 +7237,7 @@ function AppInner() {
                           onMouseLeave={e=>{e.currentTarget.style.background=cellBg;}}>
                           {isCl&&<div style={{position:'absolute',top:2,right:3,fontSize:8,color:isSecTue?'#d97706':'#9ca3af',fontWeight:700}}>{isSecTue?'第2火':'定休'}</div>}
                           <div style={{fontWeight:800,fontSize:15,marginBottom:3,color:numCol,display:'flex',alignItems:'center',gap:3}}>
-                            <span style={isToday?{background:'#4338ca',color:'white',borderRadius:'50%',width:22,height:22,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:12,flexShrink:0}:{flexShrink:0}}>{day}</span>
+                            <span style={isToday?{background:'#c2410c',color:'white',borderRadius:'50%',width:22,height:22,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:12,flexShrink:0}:{flexShrink:0}}>{day}</span>
                             {isHol&&<span style={{fontSize:8,color:'#dc2626',flexShrink:0}}>祝</span>}
                           </div>
                           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:2,position:'relative'}}>
@@ -7335,7 +7335,7 @@ function AppInner() {
                               <div key={di} style={{minHeight:120,padding:'5px 4px',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:highlightBg,outline:highlightOutline,position:'relative',opacity:dimmed?0.28:1,transition:'opacity 0.15s,background 0.15s'}}>
                                 {isCl&&<div style={{position:'absolute',top:2,right:3,fontSize:8,color:isSecTue2?'#d97706':'#9ca3af',fontWeight:700}}>{isSecTue2?'第2火':'定休'}</div>}
                                 <div style={{fontWeight:800,fontSize:14,marginBottom:4,color:numCol,display:'flex',alignItems:'center',gap:3}}>
-                                  <span style={isToday?{background:'#4338ca',color:'white',borderRadius:'50%',width:21,height:21,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,flexShrink:0}:{flexShrink:0}}>{day}</span>
+                                  <span style={isToday?{background:'#c2410c',color:'white',borderRadius:'50%',width:21,height:21,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,flexShrink:0}:{flexShrink:0}}>{day}</span>
                                   {isHol&&<span style={{fontSize:8,color:'#dc2626'}}>祝</span>}
                                   {cellIsOff&&<span style={{marginLeft:'auto',fontSize:13}}>🏖</span>}
                                   {cellIsLeave&&<span style={{marginLeft:'auto',fontSize:13}}>📋</span>}
@@ -7384,7 +7384,7 @@ function AppInner() {
                             <span style={{width:10,height:10,borderRadius:2,background:'#10b981',display:'inline-block'}}/>
                             📋 有給&nbsp;<span style={{fontSize:18,fontWeight:900}}>{staffMonthStats.leaves}</span>&nbsp;日
                           </span>
-                          <span style={{fontSize:12,color:'#4338ca',fontWeight:800,padding:'5px 10px',background:'#eef2ff',border:'1px solid #a5b4fc',borderRadius:16}}>
+                          <span style={{fontSize:12,color:'#c2410c',fontWeight:800,padding:'5px 10px',background:'#eef2ff',border:'1px solid #a5b4fc',borderRadius:16}}>
                             合計 {staffMonthStats.offs+staffMonthStats.leaves} 日
                           </span>
                         </div>
@@ -7416,7 +7416,7 @@ function AppInner() {
                       <div style={{position:'relative',display:'inline-flex',alignItems:'center'}}>
                         <span
                           onClick={()=>{const el=document.getElementById('sched-date-input');if(el){try{el.showPicker();}catch{el.click();}}}}
-                          style={{fontWeight:900,fontSize:15,color:'white',padding:'4px 14px',minWidth:130,textAlign:'center',background:'#f0f4ff',border:'2px solid #a5b4fc',borderRadius:8,cursor:'pointer',userSelect:'none',display:'inline-block'}}>
+                          style={{fontWeight:900,fontSize:15,color:'white',padding:'4px 14px',minWidth:130,textAlign:'center',background:'#7c2d12',border:'2px solid #a5b4fc',borderRadius:8,cursor:'pointer',userSelect:'none',display:'inline-block'}}>
                           {_selDate?`${_selDate.getMonth()+1}月${_selDate.getDate()}日（${['日','月','火','水','木','金','土'][_selDate.getDay()]}）`:''}
                         </span>
                         <input id="sched-date-input" type="date"
@@ -7587,7 +7587,7 @@ function AppInner() {
               {/* -- 車検セクション（台数集計なし） -- */}
               <div id={SEC_INSP} style={{marginBottom:26,fontSize:`${scale}%`,scrollMarginTop:'var(--header-h,60px)'}}>
                 <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                  <h3 style={SEC_TITLE('#3730a3')}>🚗 車検</h3>
+                  <h3 style={SEC_TITLE('#9a3412')}>🚗 車検</h3>
                   {/* 台数制限バッジ（設定中の日のみ表示） */}
                   {inspLimits[dk]!=null&&(
                     <div style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',background:'#fee2e2',border:'2px solid #ef4444',borderRadius:6}}>
@@ -7610,7 +7610,7 @@ function AppInner() {
                 </div>
                 <div style={{overflowX:'auto'}}>
                   <table style={TBL}>
-                    <thead><tr style={{background:'linear-gradient(90deg,#3730a3,#6d28d9)',color:'white'}}>
+                    <thead><tr style={{background:'linear-gradient(90deg,#9a3412,#ea580c)',color:'white'}}>
                       {['No','氏名','車種','コース','代車','特典','入庫','備考'].map(h=><th key={h} style={{padding:'7px 8px',textAlign:'left',fontSize:12,fontWeight:600,whiteSpace:'nowrap'}}>{h}</th>)}
                     </tr></thead>
                     <tbody>
@@ -7777,7 +7777,7 @@ function AppInner() {
                       title="左右を均等に戻す"
                       style={{display:'flex',alignItems:'center',gap:3,padding:'4px 9px',
                         background:'#eef2ff',border:'2px solid #6366f1',borderRadius:5,
-                        cursor:'pointer',fontWeight:700,fontSize:10,color:'#4338ca',
+                        cursor:'pointer',fontWeight:700,fontSize:10,color:'#c2410c',
                         flexShrink:0,whiteSpace:'nowrap'}}>
                       ⇔ リセット
                     </button>
@@ -8124,7 +8124,7 @@ function AppInner() {
 function App(){return <ErrorBoundary><AppInner/></ErrorBoundary>;}
 
 // - スタイル定数 -
-const NAV_S    ={background:'#4338ca',color:'white',border:'none',borderRadius:7,padding:7,cursor:'pointer',display:'flex',alignItems:'center'};
+const NAV_S    ={background:'#c2410c',color:'white',border:'none',borderRadius:7,padding:7,cursor:'pointer',display:'flex',alignItems:'center'};
 const BACK_S   ={display:'flex',alignItems:'center',gap:4,padding:'5px 11px',background:'#f3f4f6',border:'none',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:12,color:'#374151'};
 const TBL      ={width:'100%',borderCollapse:'collapse',border:'1px solid #e5e7eb',borderRadius:8,overflow:'hidden',tableLayout:'auto'};
 const TD       ={padding:'7px 9px',borderBottom:'1px solid #f3f4f6',borderRight:'1px solid #f3f4f6'};
