@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Hub a Nice Day v1.0</title>
+  <title>Hub a Nice Day v1.0 [DEV]</title>
   <meta name="theme-color" content="#1E3A5F" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -1676,7 +1676,7 @@ const StaffRegisterModal=memo(({isOpen,onClose,staffListH,staffListS,onSave})=>{
         {lockedBy?(
           <div style={{padding:32,textAlign:'center'}}>
             <div style={{fontSize:36,marginBottom:12}}>🔒</div>
-            <div style={{fontWeight:800,fontSize:16,color:'#1e1b4b',marginBottom:8}}>現在登録できません</div>
+            <div style={{fontWeight:800,fontSize:16,color:'white',marginBottom:8}}>現在登録できません</div>
             <div style={{padding:'8px 16px',background:'#fef2f2',border:'2px solid #fca5a5',borderRadius:20,display:'inline-flex',alignItems:'center',gap:6,color:'#dc2626',fontWeight:800,marginBottom:12}}>
               🔴 {lockedBy} が操作中
             </div>
@@ -1848,7 +1848,7 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
         {lockedBy?(
           <div style={{padding:32,textAlign:'center'}}>
             <div style={{fontSize:36,marginBottom:12}}>🔒</div>
-            <div style={{fontWeight:800,fontSize:16,color:'#1e1b4b',marginBottom:8}}>現在操作できません</div>
+            <div style={{fontWeight:800,fontSize:16,color:'white',marginBottom:8}}>現在操作できません</div>
             <div style={{padding:'8px 16px',background:'#fef2f2',border:'2px solid #fca5a5',borderRadius:20,display:'inline-flex',alignItems:'center',gap:6,color:'#dc2626',fontWeight:800,marginBottom:20}}>
               🔴 {lockedBy} が操作中
             </div>
@@ -2007,7 +2007,7 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
                 </div>
               ):(
                 <div style={{display:'flex',flexDirection:'column',gap:14}}>
-                  <div style={{fontWeight:800,fontSize:14,color:'#1e1b4b'}}>「{selectedStaff.name}」の設定</div>
+                  <div style={{fontWeight:800,fontSize:14,color:'white'}}>「{selectedStaff.name}」の設定</div>
 
                   {/* 所属店舗 */}
                   <div style={{marginBottom:12}}>
@@ -2166,11 +2166,11 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
     const store=STORES.find(s=>s.id===deskSel.store)||STORES[0];
     const staffList=deskSel.store==='honten'?staffListH:staffListS;
     return(
-      <div style={{minHeight:'100vh',background:'linear-gradient(140deg,#1e1b4b,#4338ca,#0e7490)',display:'flex',alignItems:'flex-start',justifyContent:'center',fontFamily:'system-ui,sans-serif',padding:'24px 16px',overflowY:'auto'}}>
+      <div style={{minHeight:'100vh',background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)',display:'flex',alignItems:'flex-start',justifyContent:'center',fontFamily:'system-ui,sans-serif',padding:'24px 16px',overflowY:'auto'}}>
         <div style={{background:'white',borderRadius:20,padding:'28px 32px',maxWidth:480,width:'100%',boxShadow:'0 30px 80px rgba(0,0,0,0.4)'}}>
           <div style={{textAlign:'center',marginBottom:20}}>
             <div style={{fontSize:36,marginBottom:4}}>🖥️</div>
-            <div style={{fontWeight:800,fontSize:16,color:'#1e1b4b'}}>{deskSel.name}</div>
+            <div style={{fontWeight:800,fontSize:16,color:'white'}}>{deskSel.name}</div>
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>操作するスタッフを選んでください</div>
           </div>
           <div style={{textAlign:'center',marginBottom:14}}>
@@ -2212,11 +2212,11 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
 
   // ステップ1：通常ログイン画面
   return (
-    <div style={{minHeight:'100vh',background:'linear-gradient(140deg,#1e1b4b,#4338ca,#0e7490)',display:'flex',alignItems:'flex-start',justifyContent:'center',fontFamily:'system-ui,sans-serif',padding:'24px 16px',overflowY:'auto'}}>
+    <div style={{minHeight:'100vh',background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)',display:'flex',alignItems:'flex-start',justifyContent:'center',fontFamily:'system-ui,sans-serif',padding:'24px 16px',overflowY:'auto'}}>
       <div style={{background:'white',borderRadius:20,padding:'32px 36px',maxWidth:680,width:'100%',boxShadow:'0 30px 80px rgba(0,0,0,0.4)'}}>
         <div style={{textAlign:'center',marginBottom:24}}>
           <div style={{fontSize:44,marginBottom:6}}>🚗</div>
-          <h1 style={{fontSize:22,fontWeight:900,color:'#1e1b4b',margin:0}}>Hub a Nice day</h1>
+          <h1 style={{fontSize:22,fontWeight:900,color:'white',margin:0}}>Hub a Nice day</h1>
           <p style={{fontSize:12,color:'#6b7280',marginTop:4}}>統合管理システム</p>
           <span style={{display:'inline-block',marginTop:6,padding:'2px 10px',borderRadius:20,background:'#eff6ff',border:'1px solid #bfdbfe',color:'#1d4ed8',fontSize:11,fontWeight:700}}>v{APP_VERSION}</span>
         </div>
@@ -2419,7 +2419,7 @@ const HolidayModal=memo(({isOpen,onClose,closedDays,setClosedDays,closedDates,se
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
               <div style={{fontSize:12,fontWeight:800,color:'#374151',flex:1}}>📆 日付指定（ドラッグで連休選択）</div>
               <button onClick={()=>{const d=new Date(cy,cm-1,1);setViewYear(d.getFullYear());setViewMonth(d.getMonth());}} style={{width:26,height:26,borderRadius:6,border:'1px solid #e5e7eb',background:'white',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><ChevronLeft size={14}/></button>
-              <span style={{fontWeight:800,fontSize:13,color:'#1e1b4b',minWidth:72,textAlign:'center'}}>{cy}年{cm+1}月</span>
+              <span style={{fontWeight:800,fontSize:13,color:'white',minWidth:72,textAlign:'center'}}>{cy}年{cm+1}月</span>
               <button onClick={()=>{const d=new Date(cy,cm+1,1);setViewYear(d.getFullYear());setViewMonth(d.getMonth());}} style={{width:26,height:26,borderRadius:6,border:'1px solid #e5e7eb',background:'white',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><ChevronRight size={14}/></button>
             </div>
 
@@ -2565,7 +2565,7 @@ const SearchModal=memo(({isOpen,onClose,inspData,schedData,closedDays,closedDate
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:2500,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
       <div onClick={e=>e.stopPropagation()} className="modal-box" style={{background:'white',borderRadius:16,padding:'26px 26px',width:'min(600px,95vw)',maxHeight:'90vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
-          <h2 style={{fontSize:17,fontWeight:800,color:'#1e1b4b',margin:0}}>🔍 空き枠検索</h2>
+          <h2 style={{fontSize:17,fontWeight:800,color:'white',margin:0}}>🔍 空き枠検索</h2>
           <button onClick={onClose} style={{background:'#f3f4f6',border:'none',borderRadius:'50%',width:32,height:32,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><X size={16}/></button>
         </div>
         <div style={{display:'flex',gap:9,marginBottom:14}}>
@@ -2606,7 +2606,7 @@ const SearchModal=memo(({isOpen,onClose,inspData,schedData,closedDays,closedDate
                       style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 13px',background:'#f8fafc',border:'2px solid #e2e8f0',borderRadius:8,cursor:'pointer',textAlign:'left'}}
                       onMouseEnter={e=>{e.currentTarget.style.background='#eef2ff';e.currentTarget.style.borderColor='#4338ca';}}
                       onMouseLeave={e=>{e.currentTarget.style.background='#f8fafc';e.currentTarget.style.borderColor='#e2e8f0';}}>
-                      <div><span style={{fontWeight:700,color:'#1e1b4b',marginRight:9}}>{r.label}</span><span style={{fontSize:12,color:'#6b7280'}}>{r.detail}</span></div>
+                      <div><span style={{fontWeight:700,color:'white',marginRight:9}}>{r.label}</span><span style={{fontSize:12,color:'#6b7280'}}>{r.detail}</span></div>
                       <span style={{fontSize:12,color:'#4338ca',fontWeight:700}}>→ 移動</span>
                     </button>
                   ))}
@@ -2718,7 +2718,7 @@ const DayOffModal=memo(({isOpen,onClose,dateLabel,staffList,selected,onSave})=>{
         style={{background:'white',borderRadius:16,padding:'24px 26px',width:'min(420px,94vw)',boxShadow:'0 20px 60px rgba(0,0,0,0.28)'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
           <div>
-            <div style={{fontWeight:800,fontSize:16,color:'#1e1b4b'}}>🏖 休日スタッフ</div>
+            <div style={{fontWeight:800,fontSize:16,color:'white'}}>🏖 休日スタッフ</div>
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{dateLabel}</div>
           </div>
           <button onClick={onClose} style={{background:'#f3f4f6',border:'none',borderRadius:'50%',width:32,height:32,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><X size={16}/></button>
@@ -2795,7 +2795,7 @@ const RestrictionModal=memo(({isOpen,onClose,dateLabel,dk,restriction,onSave})=>
         style={{background:'white',borderRadius:16,padding:'24px 26px',width:'min(480px,94vw)',boxShadow:'0 20px 60px rgba(0,0,0,0.28)',maxHeight:'90vh',overflowY:'auto'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
           <div>
-            <div style={{fontWeight:800,fontSize:16,color:'#1e1b4b'}}>🚫 入庫制限設定</div>
+            <div style={{fontWeight:800,fontSize:16,color:'white'}}>🚫 入庫制限設定</div>
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>{dateLabel}</div>
           </div>
           <button onClick={onClose} style={{background:'#f3f4f6',border:'none',borderRadius:'50%',width:32,height:32,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><X size={16}/></button>
@@ -3017,7 +3017,7 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,
           {/* 月ナビ */}
           <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:14,marginBottom:12}}>
             <button onClick={()=>setCalMonth(new Date(cy,cm-1,1))} style={NAV_S}><ChevronLeft size={16}/></button>
-            <span style={{fontWeight:800,fontSize:17,color:'#1e1b4b'}}>{cy}年{cm+1}月</span>
+            <span style={{fontWeight:800,fontSize:17,color:'white'}}>{cy}年{cm+1}月</span>
             <button onClick={()=>setCalMonth(new Date(cy,cm+1,1))} style={NAV_S}><ChevronRight size={16}/></button>
           </div>
 
@@ -3187,7 +3187,7 @@ const InspLimitModal=memo(({isOpen,onClose,curMonth,inspLimits,onSave})=>{
         style={{background:'white',borderRadius:16,padding:'24px 28px',width:'min(480px,94vw)',boxShadow:'0 20px 60px rgba(0,0,0,0.3)',maxHeight:'90vh',overflowY:'auto'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
           <div>
-            <div style={{fontWeight:800,fontSize:16,color:'#1e1b4b'}}>🚗 車検台数制限設定</div>
+            <div style={{fontWeight:800,fontSize:16,color:'white'}}>🚗 車検台数制限設定</div>
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>通常は6台/日。スタッフ数が少ない日に制限を設定できます</div>
           </div>
           <button onClick={onClose} style={{background:'#f3f4f6',border:'none',borderRadius:'50%',width:32,height:32,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><X size={16}/></button>
@@ -3416,7 +3416,7 @@ const InspCalendarPicker=memo(({form,setForm,bmInspData,bmClosedDays,bmClosedDat
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',background:'#f8fafc',borderBottom:'1px solid #e5e7eb'}}>
         <button onClick={()=>setCalMonth(new Date(cy,cm-1,1))}
           style={{padding:'3px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',cursor:'pointer',fontSize:13}}>‹</button>
-        <span style={{fontWeight:800,color:'#1e1b4b',fontSize:13}}>{cy}年{cm+1}月</span>
+        <span style={{fontWeight:800,color:'white',fontSize:13}}>{cy}年{cm+1}月</span>
         <button onClick={()=>setCalMonth(new Date(cy,cm+1,1))}
           style={{padding:'3px 10px',border:'1px solid #d1d5db',borderRadius:6,background:'white',cursor:'pointer',fontSize:13}}>›</button>
       </div>
@@ -4166,7 +4166,7 @@ const SchedRow=memo(({row,slot,baseSlot,isFirstSub,dk,onOpenModal,lockInfo,loane
          :isEmpty?<div style={{color:'#d1d5db',fontSize:11,padding:'5px 7px',fontStyle:'italic',display:'flex',alignItems:'center',gap:4}}><span style={{width:18,height:18,border:'2px dashed #d1d5db',borderRadius:3,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11}}>+</span>クリックして追加</div>
          :<div style={{padding:'3px 5px'}}>
               <div style={{display:'flex',alignItems:'center',gap:5,flexWrap:'nowrap'}}>
-                <span style={{fontWeight:600,color:'#1e1b4b',whiteSpace:'nowrap'}}>{row.name}</span>
+                <span style={{fontWeight:600,color:'white',whiteSpace:'nowrap'}}>{row.name}</span>
                 {row.store&&<span style={{padding:'1px 6px',borderRadius:20,fontSize:10,fontWeight:800,background:row.store==='honten'?'#2563eb':'#dc2626',color:'white',flexShrink:0,whiteSpace:'nowrap'}}>
                   {row.store==='honten'?'本店':'三田店'}
                 </span>}
@@ -4231,7 +4231,7 @@ const TireEditModal=memo(({isOpen,onClose,allCarsH,allCarsS,rentalCars,tireData,
                 return(
                   <div key={car.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',marginBottom:5,background:'#f8fafc',borderRadius:8,border:'1px solid #e5e7eb'}}>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontWeight:700,fontSize:13,color:'#1e1b4b'}}>{car.name}</div>
+                      <div style={{fontWeight:700,fontSize:13,color:'white'}}>{car.name}</div>
                       <div style={{fontSize:10,color:'#9ca3af'}}>{car.num||'—'}</div>
                     </div>
                     <div style={{display:'flex',gap:5,flexShrink:0}}>
@@ -4497,7 +4497,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
       <div style={{padding:'12px 18px',borderBottom:'2px solid #e5e7eb',display:'flex',alignItems:'center',gap:10,flexShrink:0,flexWrap:'wrap'}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <span style={{fontSize:20}}>🔔</span>
-          <span style={{fontWeight:900,fontSize:16,color:'#1e1b4b'}}>車両管理</span>
+          <span style={{fontWeight:900,fontSize:16,color:'white'}}>車両管理</span>
           {alertTotal>0&&<span style={{padding:'2px 10px',borderRadius:20,background:'#fee2e2',color:'#dc2626',fontSize:11,fontWeight:700}}>⚠️ {alertTotal}台アラート</span>}
           <span style={{fontSize:11,color:'#9ca3af'}}>{list.length}台登録</span>
         </div>
@@ -4647,7 +4647,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
 
                 {/* 点検リスト */}
                 <div style={{marginBottom:8,display:'flex',alignItems:'center',gap:8}}>
-                  <span style={{fontWeight:800,fontSize:13,color:'#1e1b4b'}}>🔧 点検スケジュール</span>
+                  <span style={{fontWeight:800,fontSize:13,color:'white'}}>🔧 点検スケジュール</span>
                   <button onClick={()=>setShowAddInsp(p=>!p)} style={{padding:'3px 10px',background:'#f0fdf4',border:'1.5px solid #86efac',borderRadius:6,fontSize:11,color:'#065f46',fontWeight:700,cursor:'pointer'}}>＋ 追加</button>
                 </div>
 
@@ -4823,7 +4823,7 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
         {/* ヘッダー */}
         <div style={{padding:'18px 22px 10px',borderBottom:'1px solid #e5e7eb',flexShrink:0}}>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
-            <h2 style={{margin:0,fontSize:16,fontWeight:800,color:'#1e1b4b'}}>⚙️ 代車・レンタカー設定</h2>
+            <h2 style={{margin:0,fontSize:16,fontWeight:800,color:'white'}}>⚙️ 代車・レンタカー設定</h2>
             <button onClick={onClose} style={{background:'#f3f4f6',border:'none',borderRadius:'50%',width:30,height:30,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,color:'#6b7280'}}>×</button>
           </div>
           {/* タブ */}
@@ -4878,7 +4878,7 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
                 /* 表示モード */
                 <>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontWeight:700,fontSize:13,color:'#1e1b4b'}}>{car.name}</div>
+                    <div style={{fontWeight:700,fontSize:13,color:'white'}}>{car.name}</div>
                     <div style={{fontSize:10,color:'#9ca3af'}}>{car.num||'—'}</div>
                   </div>
                   <button onClick={()=>startEdit(i)}
@@ -5143,7 +5143,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
       {/* ヘッダー */}
       <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:14,flexWrap:'wrap'}}>
         <button onClick={onBack} style={BACK_S}><ChevronLeft size={16}/>{pickMode?'モーダルに戻る':'カレンダーへ'}</button>
-        <h2 style={{fontSize:18,fontWeight:800,color:'#1e1b4b',margin:0}}>
+        <h2 style={{fontSize:18,fontWeight:800,color:'white',margin:0}}>
           🚗 代車管理
           {!pickMode&&<span style={{fontSize:12,color:'#6b7280',marginLeft:8,fontWeight:500}}>（閲覧専用）</span>}
         </h2>
@@ -5206,7 +5206,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
                         <div style={{display:'flex',alignItems:'center',gap:5}}>
                           {tireInfo&&<span title={tireInfo.label} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:22,height:18,borderRadius:4,background:tireInfo.bg,color:tireInfo.color,fontSize:9,fontWeight:900,flexShrink:0,letterSpacing:'-0.5px'}}>{tireInfo.icon}</span>}
                           <div>
-                            <div style={{fontWeight:700,color:'#1e1b4b'}}>{car.name}</div>
+                            <div style={{fontWeight:700,color:'white'}}>{car.name}</div>
                             <div style={{color:'#9ca3af',fontSize:9}}>{car.num}</div>
                           </div>
                         </div>
@@ -5578,7 +5578,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setEditModal(null)}>
           <div onClick={e=>e.stopPropagation()} className="modal-box" style={{background:'white',borderRadius:15,padding:'24px 28px',width:'min(420px,92vw)',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-              <h2 style={{fontSize:16,fontWeight:800,color:'#1e1b4b',margin:0}}>✎ 代車予約の編集 - {editModal.carName}</h2>
+              <h2 style={{fontSize:16,fontWeight:800,color:'white',margin:0}}>✎ 代車予約の編集 - {editModal.carName}</h2>
               <button onClick={()=>setEditModal(null)} style={{background:'#f3f4f6',border:'none',borderRadius:'50%',width:30,height:30,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><X size={14}/></button>
             </div>
             <div style={{display:'grid',gap:12}}>
@@ -6708,6 +6708,16 @@ function AppInner() {
         });
         return next;
       });
+      // ★custbkからも即時削除（画面の見た目を即反映）
+      setCustBookings(prev=>{
+        const next={...prev};
+        Object.keys(next).forEach(k=>{
+          if(next[k]?.formData?.custId===cancelCustId||(cancelName&&next[k]?.formData?.name===cancelName)){
+            delete next[k];
+          }
+        });
+        return next;
+      });
     }else{
       setSchedData(prev=>{const d={...(prev[modalDk]||{})};delete d[modalSlot];return{...prev,[modalDk]:d};});
     }
@@ -6934,11 +6944,11 @@ function AppInner() {
   const dayMemos=dk?memoData[dk]||[]:[];
 
   return (
-    <div style={{minHeight:'100vh',background:'linear-gradient(140deg,#1e1b4b,#4338ca,#0e7490)',fontFamily:'system-ui,-apple-system,sans-serif'}}>
+    <div style={{minHeight:'100vh',background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)',fontFamily:'system-ui,-apple-system,sans-serif'}}>
       <style>{GCSS}</style>
 
       {/* -- ヘッダー -- */}
-      <header ref={headerRef} style={{background:'rgba(255,255,255,0.97)',borderBottom:`3px solid ${vsStore.color}`,padding:'9px 18px',position:'fixed',top:0,left:0,right:0,zIndex:500,boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}}>
+      <header ref={headerRef} style={{background:'#EA580C',borderBottom:`3px solid ${vsStore.color}`,padding:'9px 18px',position:'fixed',top:0,left:0,right:0,zIndex:500,boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}}>
         {(()=>{
           const userStore=STORES.find(s=>s.id===(currentUser?.store?.id||'honten'))||STORES[0];
           return(
@@ -7046,6 +7056,11 @@ function AppInner() {
         {exportStatus==='err'&&(<div style={{position:'fixed',top:70,right:20,zIndex:9999,background:'#dc2626',color:'white',borderRadius:10,padding:'12px 18px',fontSize:13,fontWeight:700,boxShadow:'0 4px 20px rgba(0,0,0,0.25)'}}>✕ コピーに失敗しました<br/><span style={{fontWeight:400,fontSize:11,opacity:0.9}}>ブラウザのクリップボード権限を確認してください</span></div>)}
       </header>
 
+      {/* ===== DEV版警告バナー ===== */}
+      <div style={{background:'#FFF7ED',borderBottom:'2px solid #EA580C',padding:'5px 16px',textAlign:'center',fontSize:12,color:'#9A3412',fontWeight:500,position:'sticky',top:headerH||48,zIndex:99}}>
+        ⚠ テスト版（DEV）です。本番データには影響しません
+      </div>
+
       <main style={{maxWidth:1700,margin:'0 auto',
         ...(view==='schedule'
           ? {height:'100vh',overflow:'hidden',padding:'0',paddingTop:headerH,display:'flex',flexDirection:'column'}
@@ -7135,7 +7150,7 @@ function AppInner() {
                   </button>
                   <div style={{width:8}}/>
                   <button onClick={()=>setCurMonth(new Date(cy,cm-1,1))} style={NAV_S} title="前月"><ChevronLeft size={18}/></button>
-                  <h2 style={{fontSize:20,fontWeight:800,color:'#1e1b4b',margin:'0 8px',whiteSpace:'nowrap'}}>{cy}年{cm+1}月</h2>
+                  <h2 style={{fontSize:20,fontWeight:800,color:'white',margin:'0 8px',whiteSpace:'nowrap'}}>{cy}年{cm+1}月</h2>
                   <button onClick={()=>setCurMonth(new Date(cy,cm+1,1))} style={NAV_S} title="翌月"><ChevronRight size={18}/></button>
                   <div style={{width:8}}/>
                   <button onClick={()=>setCurMonth(new Date(cy+1,cm,1))} style={NAV_S} title="翌年">
@@ -7357,7 +7372,7 @@ function AppInner() {
                     {/* -- 個人選択時：月間合計バー -- */}
                     {staffMonthStats&&(
                       <div style={{marginTop:10,padding:'11px 16px',background:'linear-gradient(90deg,#f0f9ff,#fafafa)',borderRadius:9,border:'1px solid #e5e7eb',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-                        <span style={{fontSize:12,fontWeight:800,color:'#1e1b4b',flexShrink:0}}>
+                        <span style={{fontSize:12,fontWeight:800,color:'white',flexShrink:0}}>
                           📅 {calStaffFilter}さん {cy}年{cm+1}月の集計
                         </span>
                         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
@@ -7401,7 +7416,7 @@ function AppInner() {
                       <div style={{position:'relative',display:'inline-flex',alignItems:'center'}}>
                         <span
                           onClick={()=>{const el=document.getElementById('sched-date-input');if(el){try{el.showPicker();}catch{el.click();}}}}
-                          style={{fontWeight:900,fontSize:15,color:'#1e1b4b',padding:'4px 14px',minWidth:130,textAlign:'center',background:'#f0f4ff',border:'2px solid #a5b4fc',borderRadius:8,cursor:'pointer',userSelect:'none',display:'inline-block'}}>
+                          style={{fontWeight:900,fontSize:15,color:'white',padding:'4px 14px',minWidth:130,textAlign:'center',background:'#f0f4ff',border:'2px solid #a5b4fc',borderRadius:8,cursor:'pointer',userSelect:'none',display:'inline-block'}}>
                           {_selDate?`${_selDate.getMonth()+1}月${_selDate.getDate()}日（${['日','月','火','水','木','金','土'][_selDate.getDay()]}）`:''}
                         </span>
                         <input id="sched-date-input" type="date"
@@ -8115,7 +8130,7 @@ const TBL      ={width:'100%',borderCollapse:'collapse',border:'1px solid #e5e7e
 const TD       ={padding:'7px 9px',borderBottom:'1px solid #f3f4f6',borderRight:'1px solid #f3f4f6'};
 const LBL      ={display:'block',fontSize:13,fontWeight:700,color:'#374151',marginBottom:5};
 const INP      ={width:'100%',padding:'9px 12px',border:'2px solid #e5e7eb',borderRadius:8,fontSize:14,outline:'none',transition:'border .15s',boxSizing:'border-box'};
-const SEC_TITLE=(color)=>({fontSize:15,fontWeight:800,marginBottom:0,paddingBottom:5,borderBottom:`3px solid ${color}`,color:'#1e1b4b',margin:0});
+const SEC_TITLE=(color)=>({fontSize:15,fontWeight:800,marginBottom:0,paddingBottom:5,borderBottom:`3px solid ${color}`,color:'white',margin:0});
 const JUMP_BTN =(color)=>({display:'flex',alignItems:'center',gap:3,padding:'5px 10px',borderRadius:6,border:`2px solid ${color}`,background:'white',color,fontWeight:700,fontSize:12,cursor:'pointer'});
 
 
