@@ -5309,7 +5309,6 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
           </tbody>
         </table>
       </div>
-      </div>{/* /スクロールコンテナ */}
 
       {/* ホバープレビュー（軽量・消えやすい） */}
       {!pickMode&&hoverRes&&!pinnedRes&&(
@@ -5353,6 +5352,8 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
 
 
       {/* -- 画面下部fixed固定パネル群 -- */}
+
+      </div>{/* /スクロールコンテナ */}
 
       {/* ドラッグ中バナー：bottom center */}
       {pickMode&&drag&&(()=>{
