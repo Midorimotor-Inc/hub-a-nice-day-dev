@@ -5170,6 +5170,25 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
         </div>}
       </div>
 
+      {/* 月ナビゲーション */}
+      {!pickMode&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:10}}>
+        <button onClick={()=>setLoanerMonth(new Date(loanerMonth.getFullYear(),loanerMonth.getMonth()-1,1))}
+          style={{padding:'5px 14px',background:'#c2410c',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontWeight:700,fontSize:13}}>
+          ◀ 前月
+        </button>
+        <span style={{fontWeight:800,fontSize:15,color:'white',minWidth:100,textAlign:'center'}}>
+          {loanerMonth.getFullYear()}年{loanerMonth.getMonth()+1}月
+        </span>
+        <button onClick={()=>setLoanerMonth(new Date(loanerMonth.getFullYear(),loanerMonth.getMonth()+1,1))}
+          style={{padding:'5px 14px',background:'#c2410c',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontWeight:700,fontSize:13}}>
+          翌月 ▶
+        </button>
+        <button onClick={()=>setLoanerMonth(new Date(nowDate.getFullYear(),nowDate.getMonth(),1))}
+          style={{padding:'5px 12px',background:'#374151',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:12,marginLeft:6}}>
+          今月
+        </button>
+      </div>}
+
       {/* グリッド：overflow:hiddenでズレ防止 */}
       <div ref={gridRef} 
         style={{overflowX:'auto',userSelect:'none',WebkitUserSelect:'none',willChange:'scroll-position',transform:'translateZ(0)'}}
