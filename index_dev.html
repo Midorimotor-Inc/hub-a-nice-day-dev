@@ -7912,7 +7912,7 @@ function AppInner() {
 
         {/* -- 代車管理 -- */}
         {view==='loaner'&&(
-          <div style={{background:'white',borderRadius:13,padding:'4px 4px',boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:`4px solid ${vsStore.color}`,maxHeight:'calc(100vh - var(--header-h,90px) - 40px)',overflowY:'auto'}}>
+          <div style={{background:'white',borderRadius:13,padding:'4px 4px',boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:`4px solid ${vsStore.color}`,height:'calc(100vh - var(--header-h,90px) - 40px)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
             <LoanerGrid
               loanerRes={loanerRes} loanerMonth={loanerMonth} setLoanerMonth={setLoanerMonth}
               onAddRes={addLoanerRes} onDeleteRes={deleteLoanerRes} onUndo={undoLoanerRes}
