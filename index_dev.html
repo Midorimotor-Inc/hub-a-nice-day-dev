@@ -5192,6 +5192,9 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
         </button>
       </div>}
 
+      {/* スクロールコンテナ（代車+レンタカー共通） */}
+      <div style={{flex:1,minHeight:0,overflowY:'auto',overflowX:'auto'}}>
+
       {/* グリッド：overflow:hiddenでズレ防止 */}
       <div ref={gridRef} 
         style={{overflowX:'auto',overflowY:'auto',flex:1,minHeight:0,userSelect:'none',WebkitUserSelect:'none'}}
@@ -5665,6 +5668,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
           </div>
         </div>
       )}
+      </div>{/* /スクロールラッパー */}
     </div>
   );
 });
