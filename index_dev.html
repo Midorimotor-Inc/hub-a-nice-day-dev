@@ -5742,6 +5742,11 @@ function AppInner() {
   const [loanerMonth,setLoanerMonth]=useState(new Date(nowDate.getFullYear(),nowDate.getMonth(),1));
   const [selDate,setSelDate]=useState(new Date(nowDate.getFullYear(),nowDate.getMonth(),nowDate.getDate()));
   const [view,setView]=useState('schedule');
+  React.useEffect(()=>{
+    document.body.style.overflow = view==='loaner' ? '' : 'hidden';
+    document.documentElement.style.overflow = view==='loaner' ? '' : 'hidden';
+    return ()=>{ document.body.style.overflow=''; document.documentElement.style.overflow=''; };
+  },[view]);
   const [scale,setScale]=useState(100);
   const [schedCollapsed,setSchedCollapsed]=useState(false); // スケジュール畳む/開く（デフォルト：開く）
 
