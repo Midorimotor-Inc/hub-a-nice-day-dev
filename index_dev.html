@@ -5186,10 +5186,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
           style={{padding:'5px 14px',background:'#c2410c',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontWeight:700,fontSize:13}}>
           翌月 ▶
         </button>
-        <button onClick={()=>setLoanerMonth(new Date(nowDate.getFullYear(),nowDate.getMonth(),1))}
-          style={{padding:'5px 12px',background:'#374151',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:12,marginLeft:6}}>
-          今月
-        </button>
+
       </div>}
 
       {/* グリッド：overflow:hiddenでズレ防止 */}
