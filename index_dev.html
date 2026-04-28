@@ -2169,7 +2169,7 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
     const store=STORES.find(s=>s.id===deskSel.store)||STORES[0];
     const staffList=deskSel.store==='honten'?staffListH:staffListS;
     return(
-      <div style={{minHeight:'100vh',background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)',display:'flex',alignItems:'flex-start',justifyContent:'center',fontFamily:'system-ui,sans-serif',padding:'24px 16px',overflowY:'auto'}}>
+      <div style={{position:'fixed',inset:0,background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)',display:'flex',alignItems:'flex-start',justifyContent:'center',fontFamily:'system-ui,sans-serif',padding:'24px 16px',overflowY:'auto',zIndex:9999}}>
         <div style={{background:'white',borderRadius:20,padding:'28px 32px',maxWidth:480,width:'100%',boxShadow:'0 30px 80px rgba(0,0,0,0.4)'}}>
           <div style={{textAlign:'center',marginBottom:20}}>
             <div style={{fontSize:36,marginBottom:4}}>🖥️</div>
@@ -2215,7 +2215,7 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
 
   // ステップ1：通常ログイン画面
   return (
-    <div style={{minHeight:'100vh',background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)',display:'flex',alignItems:'flex-start',justifyContent:'center',fontFamily:'system-ui,sans-serif',padding:'24px 16px',overflowY:'auto'}}>
+    <div style={{position:'fixed',inset:0,background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)',display:'flex',alignItems:'flex-start',justifyContent:'center',fontFamily:'system-ui,sans-serif',padding:'24px 16px',overflowY:'auto',zIndex:9999}}>
       <div style={{background:'white',borderRadius:20,padding:'32px 36px',maxWidth:680,width:'100%',boxShadow:'0 30px 80px rgba(0,0,0,0.4)'}}>
         <div style={{textAlign:'center',marginBottom:24}}>
           <div style={{fontSize:44,marginBottom:6}}>🚗</div>
