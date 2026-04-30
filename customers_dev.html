@@ -1166,9 +1166,15 @@ const App=()=>{
           const next=prev.map(f=>{
             const custs=f.customers.map(c=>{
               // custIdまたはname+noでマッチング
-              const upd=fresh.find(u=>
-                (u.custId&&u.custId===c.custId)||(u.name&&((!u.no&&u.name===c.name)||(u.no&&u.name===c.name&&String(u.no)===String(c.no))))
-              );
+              const upd=fresh.find(u=>{
+                // custIdが両方あればcustIdで一致確認（最優先）
+                if(u.custId&&c.custId)return u.custId===c.custId;
+                // custIdがない場合はname+noで一致確認
+                if(!u.name||u.name!==c.name)return false;
+                if(u.no&&c.no)return String(u.no)===String(c.no);
+                // noが片方ない場合は名前だけで一致（後方互換）
+                return !u.no&&!c.no;
+              });
               if(!upd)return c;
               changed=true;
               // statusとextraFieldsのみ更新（他フィールドは保護）
@@ -1186,8 +1192,14 @@ const App=()=>{
       }catch{}
     };
     pollUpdates(); // 開いた瞬間に即時適用
+    // 画面切り替え時（index.htmlから戻った瞬間）に即時反映
+    const onVisible=()=>{ if(document.visibilityState==='visible') pollUpdates(); };
+    document.addEventListener('visibilitychange',onVisible);
     const pollTimer=setInterval(pollUpdates,3000);
-    return()=>clearInterval(pollTimer);
+    return()=>{
+      clearInterval(pollTimer);
+      document.removeEventListener('visibilitychange',onVisible);
+    };
   },[]);
 
   // Excelインポート
@@ -1245,15 +1257,42 @@ const App=()=>{
       });
       return next;
     });
-    // cust-updatesからキャンセル通知を削除（ポーリングで再cancelされないよう）
-    sGet(STOR+'cust-updates').then(updates=>{
-      if(!Array.isArray(updates)||updates.length===0)return;
-      const filtered=updates.filter(u=>
-        !(u.custId&&u.custId===customer.custId)&&
-        !(u.name&&u.name===customer.name&&String(u.no||'')===String(customer.no||''))
-      );
-      if(filtered.length!==updates.length)sSet(STOR+'cust-updates',filtered);
-    }).catch(()=>{});
+    // cust-updatesからキャンセル通知を削除し、GAS側も'none'で上書き
+    (async()=>{
+      try{
+        const updates=await sGet(STOR+'cust-updates')||[];
+        const filtered=updates.filter(u=>
+          !(u.custId&&u.custId===customer.custId)&&
+          !(u.name&&u.name===customer.name&&String(u.no||'')===String(customer.no||''))
+        );
+        await sSet(STOR+'cust-updates',filtered);
+        const SAFE=n=>n.replace(/[^a-zA-Z0-9　-鿿゠-ヿ぀-ゟ]/g,'_').slice(0,30);
+        const cfIdx=await sGet(STOR+'cf-index');
+        if(!Array.isArray(cfIdx))return;
+        for(const fi of cfIdx){
+          const sn=SAFE(fi.name);
+          const chunkMeta=await sGet(STOR+'cf-'+sn+'-index');
+          if(!chunkMeta)continue;
+          for(let ci2=0;ci2<chunkMeta.chunks;ci2++){
+            const chunk=await sGet(STOR+'cf-'+sn+'-chunk-'+ci2);
+            if(!Array.isArray(chunk))continue;
+            let changed=false;
+            const newChunk=chunk.map(c=>{
+              const match=(customer.custId&&c.custId===customer.custId)||
+                          (c.name===customer.name&&String(c.no||'')===String(customer.no||''));
+              if(!match)return c;
+              changed=true;
+              return{...c,status:'none',entryDate:'',linkedInspDate:'',
+                bookingTime:'',course:'',tokuten:'',staff:'',note:''};
+            });
+            if(changed){
+              await sSet(STOR+'cf-'+sn+'-chunk-'+ci2,newChunk);
+              break;
+            }
+          }
+        }
+      }catch(e){console.error('handleRevive sync error:',e);}
+    })();
   },[]);
 
   const handleBookingSave=useCallback(async(form,customer)=>{
