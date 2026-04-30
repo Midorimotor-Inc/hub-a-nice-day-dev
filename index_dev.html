@@ -18,8 +18,6 @@
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; overflow: hidden; }
-    html, body { height: 100%; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     @media print {
       body * { visibility: hidden; }
@@ -27,7 +25,6 @@
       #print-area { position: fixed; top: 0; left: 0; width: 100%; }
       @page { size: A4 landscape; margin: 8mm; }
     }
-      #root { height: 100%; }
   </style>
 </head>
 <body>
@@ -558,7 +555,7 @@ const CustLoanerDatePicker = ({isOpen, onClose, initFrom, initTo, selectedId, lo
   return(
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:3100,display:'flex',alignItems:'center',justifyContent:'center',padding:12}} onClick={onClose}>
       <div onClick={e=>e.stopPropagation()}
-        style={{background:'white',borderRadius:14,width:'min(96vw,860px)',maxHeight:'88vh',boxShadow:'0 24px 64px rgba(0,0,0,.4)',border:'3px solid #0284c7'}}>
+        style={{background:'white',borderRadius:14,width:'min(96vw,860px)',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 64px rgba(0,0,0,.4)',border:'3px solid #0284c7'}}>
         <div style={{background:'linear-gradient(135deg,#0284c7,#075985)',padding:'13px 18px',borderRadius:'11px 11px 0 0',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
           <div>
             <div style={{color:'white',fontWeight:900,fontSize:16}}>🚗 代車カレンダー</div>
@@ -566,7 +563,7 @@ const CustLoanerDatePicker = ({isOpen, onClose, initFrom, initTo, selectedId, lo
           </div>
           <button onClick={onClose} style={{background:'rgba(255,255,255,.22)',border:'none',borderRadius:'50%',width:30,height:30,color:'white',fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900}}>✕</button>
         </div>
-        <div ref={gridRef} style={{overflowX:'auto',userSelect:'none',WebkitUserSelect:'none'}}
+        <div ref={gridRef} style={{overflowX:'auto',overflowY:'auto',flex:1,maxHeight:'calc(100vh - 280px)',userSelect:'none',WebkitUserSelect:'none'}}
           onMouseUp={handleMU}
           onMouseLeave={()=>{if(isDragging.current){isDragging.current=false;setDrag(null);}}}>
           <table style={{borderCollapse:'collapse',tableLayout:'fixed',width:'max-content',fontSize:11}}>
@@ -4494,7 +4491,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
   const INP_S={width:'100%',padding:'7px 10px',border:'2px solid #e5e7eb',borderRadius:7,fontSize:12,outline:'none',fontFamily:'inherit',boxSizing:'border-box'};
 
   return(
-    <div style={{background:'white',borderRadius:13,boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:'4px solid #c2410c',display:'flex',flexDirection:'column',maxHeight:'calc(100vh - var(--header-h,90px) - 40px)',overflowY:'auto'}}>
+    <div style={{background:'white',borderRadius:13,boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:'4px solid #c2410c',display:'flex',flexDirection:'column',height:'calc(100vh - var(--header-h,90px) - 40px)',overflow:'hidden'}}>
 
       {/* ヘッダー */}
       <div style={{padding:'12px 18px',borderBottom:'2px solid #e5e7eb',display:'flex',alignItems:'center',gap:10,flexShrink:0,flexWrap:'wrap'}}>
@@ -4996,7 +4993,8 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
     if(targetIndex===-1)return;
     const targetX=thWidth+targetIndex*cellWidth;
     const containerW=gridRef.current.clientWidth;
-    gridRef.current.scrollLeft=targetX-containerW/2+cellWidth/2;
+    // 本日が左端から3列目に来るよう設定（左に2日分の余白）
+    gridRef.current.scrollLeft=targetX-thWidth-cellWidth*2;
     scrollLock.current=true;
   },[selDate]); // dateRangeを削除（selDateから計算されるため不要）
 
@@ -5142,9 +5140,9 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
   };
 
   return (
-    <div>
+    <div style={{display:'flex',flexDirection:'column',flex:1,minHeight:0,overflow:'hidden'}}>
       {/* ヘッダー */}
-      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:14,flexWrap:'wrap'}}>
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:6,flexWrap:'wrap',flexShrink:0}}>
         <button onClick={onBack} style={BACK_S}><ChevronLeft size={16}/>{pickMode?'モーダルに戻る':'カレンダーへ'}</button>
         <h2 style={{fontSize:18,fontWeight:800,color:'white',margin:0}}>
           🚗 代車管理
@@ -5174,7 +5172,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
       </div>
 
       {/* 月ナビゲーション */}
-      {!pickMode&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:10}}>
+      {!pickMode&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:8,flexShrink:0}}>
         <button onClick={()=>setLoanerMonth(new Date(loanerMonth.getFullYear(),loanerMonth.getMonth()-1,1))}
           style={{padding:'5px 14px',background:'#c2410c',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontWeight:700,fontSize:13}}>
           ◀ 前月
@@ -5186,18 +5184,24 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
           style={{padding:'5px 14px',background:'#c2410c',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontWeight:700,fontSize:13}}>
           翌月 ▶
         </button>
-
+        <button onClick={()=>setLoanerMonth(new Date(nowDate.getFullYear(),nowDate.getMonth(),1))}
+          style={{padding:'5px 12px',background:'#374151',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:12,marginLeft:6}}>
+          今月
+        </button>
       </div>}
+
+      {/* スクロールコンテナ（代車+レンタカー共通） */}
+      <div style={{flex:1,minHeight:0,overflowY:'auto',overflowX:'auto'}}>
 
       {/* グリッド：overflow:hiddenでズレ防止 */}
       <div ref={gridRef} 
-        style={{overflowX:'auto',overflowY:'auto',flex:1,minHeight:0,userSelect:'none',WebkitUserSelect:'none'}}
+        style={{overflowX:'auto',userSelect:'none',WebkitUserSelect:'none'}}
         onMouseUp={handleMU}
         onMouseLeave={()=>{if(isDragging.current){isDragging.current=false;setDrag(null);}}}>
         <table style={{borderCollapse:'collapse',fontSize:12,tableLayout:'fixed',width:'max-content'}}>
           <thead>
             <tr>
-              <th style={{width:100,minWidth:100,maxWidth:100,background:'#eef2ff',padding:'7px 9px',textAlign:'left',fontWeight:700,border:'1px solid #e5e7eb',position:'sticky',left:0,top:0,zIndex:20,fontSize:11,boxSizing:'border-box'}}>代車</th>
+              <th style={{width:100,minWidth:100,maxWidth:100,background:'#eef2ff',padding:'7px 9px',textAlign:'left',fontWeight:700,border:'1px solid #e5e7eb',position:'sticky',left:0,top:0,zIndex:20,fontSize:11,boxSizing:'border-box',transform:'translateZ(0)',backfaceVisibility:'hidden'}}>代車</th>
               {dateRange.map((dateObj,i)=>{
                 if(!dateObj)return null;
                 const {year,month,day}=dateObj;
@@ -5306,6 +5310,8 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
           </tbody>
         </table>
       </div>
+
+      </div>{/* /スクロールコンテナ */}
 
       {/* ホバープレビュー（軽量・消えやすい） */}
       {!pickMode&&hoverRes&&!pinnedRes&&(
@@ -5475,7 +5481,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
               <span style={{padding:'2px 8px',borderRadius:12,background:'#d1fae5',color:'#065f46',fontSize:10,fontWeight:700}}>{RENTAL_LOCAL.length}台</span>
               {pickMode&&<span style={{fontSize:11,color:'#059669',fontWeight:600}}></span>}
             </div>
-            <div style={{overflowX:'auto',overflowY:'auto',maxHeight:'calc(100vh - 260px)',userSelect:'none',WebkitUserSelect:'none'}}>
+            <div style={{overflowX:'auto',userSelect:'none',WebkitUserSelect:'none'}}>
               <table style={{borderCollapse:'collapse',fontSize:12,tableLayout:'fixed',width:'max-content'}}>
                 <thead>
                   <tr>
@@ -5739,11 +5745,19 @@ function AppInner() {
   const [loanerMonth,setLoanerMonth]=useState(new Date(nowDate.getFullYear(),nowDate.getMonth(),1));
   const [selDate,setSelDate]=useState(new Date(nowDate.getFullYear(),nowDate.getMonth(),nowDate.getDate()));
   const [view,setView]=useState('schedule');
+  // viewが変わるたびにbodyのスクロールを制御
   React.useEffect(()=>{
-    document.body.style.overflow = view==='loaner' ? '' : 'hidden';
-    document.documentElement.style.overflow = view==='loaner' ? '' : 'hidden';
-    return ()=>{ document.body.style.overflow=''; document.documentElement.style.overflow=''; };
-  },[view]);
+    // 代車管理のみbodyスクロール許可（カード内スクロール）
+    // それ以外はbodyスクロール禁止（余白・ズレ防止）
+    const isLoaner = view === 'loaner';
+    document.body.style.overflow = isLoaner ? '' : 'hidden';
+    document.documentElement.style.overflow = isLoaner ? '' : 'hidden';
+    // クリーンアップ
+    return () => {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    };
+  }, [view]);
   const [scale,setScale]=useState(100);
   const [schedCollapsed,setSchedCollapsed]=useState(false); // スケジュール畳む/開く（デフォルト：開く）
 
@@ -7121,7 +7135,7 @@ function AppInner() {
           }
           const total=cnt[1]+cnt[2]+cnt[3];
           return (
-            <div style={{background:'white',borderRadius:13,boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:`4px solid ${vsStore.color}`,height:'calc(100vh - var(--header-h,90px) - 40px)',overflowY:'auto'}}>
+            <div style={{background:'white',borderRadius:13,boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:`4px solid ${vsStore.color}`,height:'calc(100vh - var(--header-h,90px) - 40px)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
               {/* -- ナビ＋集計を1行に統合 -- */}
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:0,gap:8,flexWrap:'wrap',flexShrink:0,padding:'14px 18px 10px',borderBottom:'1px solid #e5e7eb'}}>
                 {/* 左：月集計 or スタッフフィルター */}
@@ -7917,7 +7931,7 @@ function AppInner() {
 
         {/* -- 代車管理 -- */}
         {view==='loaner'&&(
-          <div style={{background:'white',borderRadius:13,padding:'4px 4px',boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:`4px solid ${vsStore.color}`,height:'calc(100vh - var(--header-h,90px) - 40px)',overflowY:'auto'}}>
+          <div style={{background:'white',borderRadius:13,padding:'4px 4px',boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:`4px solid ${vsStore.color}`,height:'calc(100vh - var(--header-h,90px) - 40px)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
             <LoanerGrid
               loanerRes={loanerRes} loanerMonth={loanerMonth} setLoanerMonth={setLoanerMonth}
               onAddRes={addLoanerRes} onDeleteRes={deleteLoanerRes} onUndo={undoLoanerRes}
