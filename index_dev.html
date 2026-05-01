@@ -4994,7 +4994,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
     const targetX=thWidth+targetIndex*cellWidth;
     const containerW=gridRef.current.clientWidth;
     // 本日が左端から3列目に来るよう設定（左に2日分の余白）
-    gridRef.current.scrollLeft=targetX-thWidth-cellWidth*2;
+    gridRef.current.scrollLeft=targetIndex*cellWidth-cellWidth*2;
     scrollLock.current=true;
   },[selDate]); // dateRangeを削除（selDateから計算されるため不要）
 
@@ -5140,7 +5140,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
   };
 
   return (
-    <div style={{display:'flex',flexDirection:'column',flex:1,minHeight:0,overflow:'hidden'}}>
+    <div>
       {/* ヘッダー */}
       <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:6,flexWrap:'wrap',flexShrink:0}}>
         <button onClick={onBack} style={BACK_S}><ChevronLeft size={16}/>{pickMode?'モーダルに戻る':'カレンダーへ'}</button>
@@ -5311,7 +5311,6 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
         </table>
       </div>
 
-      </div>{/* /スクロールコンテナ */}
 
       {/* ホバープレビュー（軽量・消えやすい） */}
       {!pickMode&&hoverRes&&!pinnedRes&&(
@@ -5668,6 +5667,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 });
