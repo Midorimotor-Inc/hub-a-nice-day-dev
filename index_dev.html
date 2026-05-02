@@ -4947,7 +4947,8 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
   const [pickUser,setPickUser]=useState('');
   const isDragging=useRef(false);
   const gridRef=useRef(null);
-  const scrollLock=useRef(false); // 自動スクロール済みフラグ
+  const scrollLock=useRef(false);
+  const rentalScrollRef=useRef(null); // 自動スクロール済みフラグ
 
   // 表示範囲：selDateから-2日〜+31日（月をまたぐ）
   const dateRange=useMemo(()=>{
@@ -4995,7 +4996,8 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
     const containerW=gridRef.current.clientWidth;
     // 本日が左端から3列目に来るよう設定（左に2日分の余白）
     gridRef.current.scrollLeft=targetIndex*cellWidth-cellWidth*2;
-    scrollLock.current=true;
+          if(rentalScrollRef.current){rentalScrollRef.current.scrollLeft=targetIndex*cellWidth-cellWidth*2;}
+      scrollLock.current=true;
   },[selDate]); // dateRangeを削除（selDateから計算されるため不要）
 
   const getRes=(cid,y,m,d)=>{const num=toNum(y,m,d);return(loanerRes[cid]||[]).find(r=>num>=toNum(r.fy,r.fm,r.fd)&&num<=toNum(r.ty,r.tm,r.td));};
@@ -5749,9 +5751,8 @@ function AppInner() {
   React.useEffect(()=>{
     // 代車管理のみbodyスクロール許可（カード内スクロール）
     // それ以外はbodyスクロール禁止（余白・ズレ防止）
-    const isLoaner = view === 'loaner';
-    document.body.style.overflow = isLoaner ? '' : 'hidden';
-    document.documentElement.style.overflow = isLoaner ? '' : 'hidden';
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
     // クリーンアップ
     return () => {
       document.body.style.overflow = '';
