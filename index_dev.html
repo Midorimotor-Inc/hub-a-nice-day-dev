@@ -1663,7 +1663,7 @@ const StaffRegisterModal=memo(({isOpen,onClose,staffListH,staffListS,onSave})=>{
   };
 
   return(
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
       <div onClick={e=>e.stopPropagation()} className="modal-box"
         style={{background:'white',borderRadius:18,width:'min(520px,96vw)',maxHeight:'94vh',overflowY:'auto',boxShadow:'0 32px 80px rgba(0,0,0,0.45)'}}>
 
@@ -1830,7 +1830,7 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
   const selectedStaff=allStaff.find(s=>s.uid===selUid);
 
   return(
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
       <div onClick={e=>e.stopPropagation()} className="modal-box"
         style={{background:'white',borderRadius:18,width:'min(620px,97vw)',maxHeight:'94vh',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'0 32px 80px rgba(0,0,0,0.45)'}}>
 
@@ -2394,7 +2394,7 @@ const HolidayModal=memo(({isOpen,onClose,closedDays,setClosedDays,closedDates,se
           <button onClick={onClose} style={{background:'rgba(255,255,255,0.2)',border:'none',borderRadius:'50%',width:30,height:30,cursor:'pointer',color:'white',display:'flex',alignItems:'center',justifyContent:'center'}}><X size={14}/></button>
         </div>
 
-        <div style={{flex:1,overflowY:'auto',padding:'14px 18px'}}>
+        <div style={{flex:1,overflowY:'auto',padding:'14px 18px 0'}}>
           {/* 毎週定休 */}
           <div style={{marginBottom:16}}>
             <div style={{fontSize:12,fontWeight:800,color:'#374151',marginBottom:8}}>📅 毎週の定休曜日</div>
@@ -2419,7 +2419,7 @@ const HolidayModal=memo(({isOpen,onClose,closedDays,setClosedDays,closedDates,se
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
               <div style={{fontSize:12,fontWeight:800,color:'#374151',flex:1}}>📆 日付指定（ドラッグで連休選択）</div>
               <button onClick={()=>{const d=new Date(cy,cm-1,1);setViewYear(d.getFullYear());setViewMonth(d.getMonth());}} style={{width:26,height:26,borderRadius:6,border:'1px solid #e5e7eb',background:'white',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><ChevronLeft size={14}/></button>
-              <span style={{fontWeight:800,fontSize:13,color:'white',minWidth:72,textAlign:'center'}}>{cy}年{cm+1}月</span>
+              <span style={{fontWeight:800,fontSize:13,color:'#1e1b4b',minWidth:72,textAlign:'center'}}>{cy}年{cm+1}月</span>
               <button onClick={()=>{const d=new Date(cy,cm+1,1);setViewYear(d.getFullYear());setViewMonth(d.getMonth());}} style={{width:26,height:26,borderRadius:6,border:'1px solid #e5e7eb',background:'white',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><ChevronRight size={14}/></button>
             </div>
 
@@ -2509,11 +2509,13 @@ const HolidayModal=memo(({isOpen,onClose,closedDays,setClosedDays,closedDates,se
           )}
         </div>
 
+          </div>{/* /カレンダーセクション */}
+        </div>{/* /スクロールコンテナ */}
         <div style={{padding:'12px 18px',borderTop:'1px solid #e5e7eb',flexShrink:0}}>
           <button onClick={onClose} style={{width:'100%',padding:'13px 0',background:vsStore?`linear-gradient(135deg,${vsStore.color},${vsStore.accent})`:'linear-gradient(135deg,#dc2626,#b91c1c)',color:'white',border:'none',borderRadius:10,fontWeight:900,cursor:'pointer',fontSize:15,boxShadow:`0 4px 12px ${vsStore?vsStore.color+'4d':'rgba(220,38,38,0.3)'}`,letterSpacing:'0.5px'}}>✅ 確定して閉じる</button>
         </div>
       </div>
-    </div>
+    
   );
 });
 
@@ -7096,7 +7098,7 @@ function AppInner() {
       </header>
 
       {/* ===== DEV版警告バナー ===== */}
-      <div style={{background:'#FFF7ED',borderBottom:'2px solid #EA580C',padding:'5px 16px',textAlign:'center',fontSize:12,color:'#9A3412',fontWeight:500,position:'sticky',top:headerH||48,zIndex:99}}>
+      <div style={{background:'#FFF7ED',borderBottom:'2px solid #EA580C',padding:'5px 16px',textAlign:'center',fontSize:12,color:'#9A3412',fontWeight:500,position:'sticky',top:'var(--header-h,90px)',zIndex:99}}>
         ⚠ テスト版（DEV）です。本番データには影響しません
       </div>
 
