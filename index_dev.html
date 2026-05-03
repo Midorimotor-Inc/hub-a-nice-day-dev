@@ -4491,7 +4491,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
   const INP_S={width:'100%',padding:'7px 10px',border:'2px solid #e5e7eb',borderRadius:7,fontSize:12,outline:'none',fontFamily:'inherit',boxSizing:'border-box'};
 
   return(
-    <div style={{background:'white',borderRadius:13,boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:'4px solid #c2410c',display:'flex',flexDirection:'column',overflowY:'auto',maxHeight:'calc(100vh - var(--header-h,90px) - 8px)',overflow:'hidden'}}>
+    <div style={{background:'white',borderRadius:13,boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:'4px solid #c2410c',display:'flex',flexDirection:'column',position:'fixed',top:'var(--header-h,90px)',left:'8px',right:'8px',bottom:'8px',overflowY:'auto',zIndex:10,borderRadius:13,overflow:'hidden'}}>
 
       {/* ヘッダー */}
       <div style={{padding:'12px 18px',borderBottom:'2px solid #e5e7eb',display:'flex',alignItems:'center',gap:10,flexShrink:0,flexWrap:'wrap'}}>
@@ -7136,7 +7136,7 @@ function AppInner() {
           }
           const total=cnt[1]+cnt[2]+cnt[3];
           return (
-            <div style={{background:'white',borderRadius:13,boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:`4px solid ${vsStore.color}`,overflowY:'auto',maxHeight:'calc(100vh - var(--header-h,90px) - 8px)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+            <div style={{background:'white',borderRadius:13,boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:`4px solid ${vsStore.color}`,position:'fixed',top:'var(--header-h,90px)',left:'8px',right:'8px',bottom:'8px',overflowY:'auto',zIndex:10,borderRadius:13,display:'flex',flexDirection:'column',overflow:'hidden'}}>
               {/* -- ナビ＋集計を1行に統合 -- */}
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:0,gap:8,flexWrap:'wrap',flexShrink:0,padding:'14px 18px 10px',borderBottom:'1px solid #e5e7eb'}}>
                 {/* 左：月集計 or スタッフフィルター */}
@@ -7932,7 +7932,7 @@ function AppInner() {
 
         {/* -- 代車管理 -- */}
         {view==='loaner'&&(
-          <div style={{background:'white',borderRadius:13,padding:'4px 4px',boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:`4px solid ${vsStore.color}`,overflowY:'auto',maxHeight:'calc(100vh - var(--header-h,90px) - 8px)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+          <div style={{background:'white',borderRadius:13,padding:'4px 4px',boxShadow:'0 10px 40px rgba(0,0,0,.18)',borderTop:`4px solid ${vsStore.color}`,position:'fixed',top:'var(--header-h,90px)',left:'8px',right:'8px',bottom:'8px',overflowY:'auto',zIndex:10,borderRadius:13,display:'flex',flexDirection:'column',overflow:'hidden'}}>
             <LoanerGrid
               loanerRes={loanerRes} loanerMonth={loanerMonth} setLoanerMonth={setLoanerMonth}
               onAddRes={addLoanerRes} onDeleteRes={deleteLoanerRes} onUndo={undoLoanerRes}
