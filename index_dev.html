@@ -939,6 +939,9 @@ const CustListModal = memo(({isOpen, onClose, mode:initMode, cust, existingData,
         </div>
       </div>
     </div>
+    </div>
+    </div>
+  </div>
   );
 });
 
@@ -2509,7 +2512,6 @@ const HolidayModal=memo(({isOpen,onClose,closedDays,setClosedDays,closedDates,se
             </div>
           )}
         </div>
-
         </div>
         <div style={{padding:'12px 18px',borderTop:'1px solid #e5e7eb',flexShrink:0}}>
           <button onClick={onClose} style={{width:'100%',padding:'13px 0',background:vsStore?`linear-gradient(135deg,${vsStore.color},${vsStore.accent})`:'linear-gradient(135deg,#dc2626,#b91c1c)',color:'white',border:'none',borderRadius:10,fontWeight:900,cursor:'pointer',fontSize:15,boxShadow:`0 4px 12px ${vsStore?vsStore.color+'4d':'rgba(220,38,38,0.3)'}`,letterSpacing:'0.5px'}}>✅ 確定して閉じる</button>
