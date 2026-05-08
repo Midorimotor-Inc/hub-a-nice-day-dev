@@ -6947,7 +6947,7 @@ function AppInner() {
     <>
       <style>{GCSS}</style>
       <LoginScreen
-        onLogin={u=>{setCurrentUserPersist(u);setViewStore(u.store?.id||'honten');setTimeout(()=>window.scrollTo({top:0,behavior:'instant'}),50);}}
+        onLogin={u=>{setCurrentUserPersist(u);setViewStore(u.store?.id||'honten');setView('schedule');setTimeout(()=>window.scrollTo({top:0,behavior:'instant'}),50);}}
         staffListH={dynStaffH} staffListS={dynStaffS}
         desktopListH={desktopListH} desktopListS={desktopListS}
         onRegister={()=>setShowStaffRegister(true)}
@@ -7011,6 +7011,7 @@ function AppInner() {
                 {gasStatus==='error'&&(
                   <span title="GAS接続エラー：URLを確認してください" style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,background:'#fef2f2',color:'#dc2626',border:'1px solid #fca5a5',cursor:'default'}}>✕ 接続エラー</span>
                 )}
+                <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#FFF7ED',color:'#9A3412',border:'2px solid #EA580C',flexShrink:0}}>⚠ テスト版（DEV）</span>
 
               </div>
               <div style={{display:'flex',alignItems:'center',gap:5}}>
@@ -7097,9 +7098,7 @@ function AppInner() {
       </header>
 
       {/* ===== DEV版警告バナー ===== */}
-      <div style={{background:'#FFF7ED',borderBottom:'2px solid #EA580C',padding:'5px 16px',textAlign:'center',fontSize:12,color:'#9A3412',fontWeight:500,position:'sticky',top:'var(--header-h,90px)',zIndex:99}}>
-        ⚠ テスト版（DEV）です。本番データには影響しません
-      </div>
+      
 
       <main style={{maxWidth:1700,margin:'0 auto',
         ...(view==='schedule'
@@ -7339,8 +7338,9 @@ function AppInner() {
                   return{offs,leaves};
                 })():null;
                 return(
-                  <div>
-                    <div style={{border:'2px solid #e5e7eb',borderRadius:9,overflow:'hidden'}}>
+                  <div style={{display:'flex',flexDirection:'column',flex:1,minHeight:0,overflow:'hidden',margin:'0 18px 18px',border:'2px solid #e5e7eb',borderRadius:9}}>
+                    <div style={{overflowY:'auto',flex:1}}>
+                    <div style={{border:'none'}}>
                       <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',background:'linear-gradient(90deg,#fff7ed,#fef9f0)',borderBottom:'2px solid #fed7aa'}}>
                         {DOW.map((d,i)=>(
                           <div key={i} style={{padding:'9px 0',textAlign:'center',fontWeight:700,fontSize:13,color:i===0?'#dc2626':i===6?'#1d4ed8':'#374151'}}>{d}</div>
@@ -7430,6 +7430,8 @@ function AppInner() {
                         </div>
                       </div>
                     )}
+                  </div>
+                    </div>{/* scroll container */}
                   </div>
                 );
               })()
