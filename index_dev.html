@@ -5865,6 +5865,7 @@ function AppInner() {
   const [modalOpen,  setModalOpen] =useState(false);
   const [modalType,  setModalType] =useState('insp');
   const [modalDk,    setModalDk]   =useState('');
+  const modalDkRef=useRef('');
   const [modalIdx,   setModalIdx]  =useState(0);
   const [modalSlot,  setModalSlot] =useState('');
   const [modalData,  setModalData] =useState(blankInsp());
@@ -6641,11 +6642,12 @@ function AppInner() {
       } else {
         // ── 本予約（またはスケジュール画面から）：inspDataに書く ──
         setInspData(prev=>{
-          const prev_rows=(prev[modalDk]||[]).map(r=>r||blankInsp());
+          const targetDk=modalDkRef.current||modalDk;
+          const prev_rows=(prev[targetDk]||[]).map(r=>r||blankInsp());
           const rows=[...prev_rows];
           while(rows.length<=modalIdx)rows.push(blankInsp());
           const approvedCount=rows.filter((r,i)=>i!==modalIdx&&r.name&&r.course&&!r.pendingApproval).length;
-          const dayLimit=inspLimits[modalDk]??6;
+          const dayLimit=inspLimits[targetDk]??6;
           if(approvedCount>=dayLimit){
             cleanWithStore.pendingApproval=true;
             alert(`⚠️ 1日の車検台数が制限台数（${dayLimit}台）を超えました。\n本店での承認が必要です。`);
@@ -6659,7 +6661,11 @@ function AppInner() {
             }
           }
           rows[modalIdx]={...cleanWithStore,bookingStatus:'confirmed'};
-          return{...prev,[modalDk]:rows};
+          const result={...prev,[targetDk]:rows};
+          if(targetDk!==modalDk&&prev[modalDk]){
+            const oldRows=[...(prev[modalDk]||[])];if(oldRows[modalIdx])oldRows[modalIdx]=blankInsp();result[modalDk]=oldRows;
+          }
+          return result;
         });
         // 本予約確定 → custBookingsの仮予約エントリを削除
         if(fromCustList && custModalMeta?.bkKey){
@@ -6824,9 +6830,11 @@ function AppInner() {
   const handleOpenLoanerPicker=useCallback((formData)=>{
     setSavedModalData(formData);setModalOpen(false);
     setPendingRentalId(null);setPendingRentalRec(null); // レンタカー選択リセット
+    const targetDk=modalDkRef.current||modalDk;
+    if(targetDk!==modalDk){setModalDk(targetDk);}
     if(selDate)setLoanerMonth(new Date(selDate.getFullYear(),selDate.getMonth(),1));
     setPickMode(true);setView('loaner');
-  },[selDate]);
+  },[selDate,modalDk]);
 
   const handlePickLoaner=useCallback((carId,startDay,endDay,user,startYear,startMonth)=>{
     setPendingLoanerId(carId);setPickMode(false);
