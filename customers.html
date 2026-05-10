@@ -1435,9 +1435,9 @@ const App=()=>{
     if(search){
       const q=search.toLowerCase();
       list=list.filter(c=>
-        c.name.toLowerCase().includes(q)||
-        c.no.includes(q)||
-        c.carType.toLowerCase().includes(q)||
+        (c.name||'').toLowerCase().includes(q)||
+        String(c.no||'').includes(q)||
+        (c.carType||'').toLowerCase().includes(q)||
         (c.staff||'').includes(q)
       );
     }
