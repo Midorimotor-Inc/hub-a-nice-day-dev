@@ -3481,7 +3481,7 @@ const InspCalendarPicker=memo(({form,setForm,bmInspData,bmClosedDays,bmClosedDat
   );
 });
 
-const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSlot,onSave,onDelete,onOpenLoanerPicker,pendingLoanerId,pendingRentalId,pendingRentalRec,rentalCarsData,loanerRes,modalDk,modalIdx:modalIdxProp,onDeleteLoaner,currentUser,setItems,onOpenSetItemEdit,allCars,fromCustList,savedModalData,inspData:bmInspData,closedDays:bmClosedDays,closedDates:bmClosedDates,overrideOpenDates:bmOverrideOpen,inspLimits:bmInspLimits})=>{
+const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSlot,onSave,onDelete,onDateChange,onOpenLoanerPicker,pendingLoanerId,pendingRentalId,pendingRentalRec,rentalCarsData,loanerRes,modalDk,modalIdx:modalIdxProp,onDeleteLoaner,currentUser,setItems,onOpenSetItemEdit,allCars,fromCustList,savedModalData,inspData:bmInspData,closedDays:bmClosedDays,closedDates:bmClosedDates,overrideOpenDates:bmOverrideOpen,inspLimits:bmInspLimits})=>{
   const [form,setForm]=useState(initialData);
   const [staffInput,setStaffInput]=useState('');
   const [showStaff,setShowStaff]=useState(false);
@@ -3500,6 +3500,8 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
   const [showTmPk,setShowTmPk]=useState(false);
   const [showWkPk,setShowWkPk]=useState(false);
   const [showShPk,setShowShPk]=useState(false);
+  const [showDatePicker,setShowDatePicker]=useState(false);
+  const [pickerMonth,setPickerMonth]=useState(null);
 
   // 同じ予約かどうかをキーで判定（代車ピッカー往復などでリセットしないため）
   const makeKey=(d)=>d?`${d._idx??'none'}|${d._slot??'none'}|${d.name??''}`:'';
@@ -6575,7 +6577,12 @@ function AppInner() {
     setFromCustList(false);setCustModalMeta(null);
   },[curLockKey,releaseLock]);
 
-  const handleSaveModal=useCallback((formData)=>{
+  const handleDateChangeModal=useCallback((newDk)=>{
+    setSelDate(newDk);
+    setModalDk(newDk);
+  },[]);
+
+    const handleSaveModal=useCallback((formData)=>{
     // _idx/_slot/_slotNewは内部管理フィールドなので保存データから除去
     const {_idx,_slot,...cleanData}=formData;
 
@@ -8097,7 +8104,7 @@ function AppInner() {
         initialData={modalData} isNew={modalIsNew}
         savedModalData={savedModalData}
         dateLabel={dateLabel} timeSlot={modalSlot}
-        onSave={handleSaveModal} onDelete={handleDeleteModal}
+        onSave={handleSaveModal} onDelete={handleDeleteModal} onDateChange={handleDateChangeModal}
         modalIdx={modalIdx} onOpenLoanerPicker={handleOpenLoanerPicker} pendingLoanerId={pendingLoanerId}
         pendingRentalId={pendingRentalId} pendingRentalRec={pendingRentalRec}
         rentalCarsData={dynRentalCars}
