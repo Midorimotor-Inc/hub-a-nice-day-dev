@@ -4013,7 +4013,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
                     background:isInsp?'linear-gradient(135deg,#c2410c,#ea580c)':'linear-gradient(135deg,#0e7490,#0891b2)',
                     color:'white',border:'none',borderRadius:10,fontWeight:900,fontSize:15,
                     cursor:'pointer',boxShadow:'0 4px 15px rgba(0,0,0,.2)',letterSpacing:'.5px'}}>
-                  {isInsp?(isNew?'📋 仮予約として登録':'💾 内容を保存する'):'✅ 予約確定'}
+                  {isInsp?(isNew?'📋 確定して登録':'💾 内容を保存する'):'✅ 予約確定'}
                 </button>
               </>
             )}
