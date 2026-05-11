@@ -6583,7 +6583,9 @@ function AppInner() {
     setModalDk(newDk);
   },[]);
 
-    const handleSaveModal=useCallback((formData)=>{
+    useEffect(()=>{if(modalDk)modalDkRef.current=modalDk;},[modalDk]);
+
+  const handleSaveModal=useCallback((formData)=>{
     // _idx/_slot/_slotNewは内部管理フィールドなので保存データから除去
     const {_idx,_slot,...cleanData}=formData;
 
