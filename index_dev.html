@@ -6319,7 +6319,8 @@ function AppInner() {
     if(!currentUser)return;
     // 削除モード
     if(isNew==='delete'){
-      setInspData(prev=>{
+      console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
+        setInspData(prev=>{
         const rows=[...(prev[dk]||[])].map(r=>r||blankInsp());
         rows.splice(idx,1); // 行を完全削除
         return{...prev,[dk]:rows.length>0?rows:[]};
@@ -6402,7 +6403,8 @@ function AppInner() {
     if(parts.length<3||isNaN(parts[0]))return;
     const [y,m,d]=parts;
     const dk=`${y}-${m}-${d}`;
-    setInspData(prev=>{
+    console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
+        setInspData(prev=>{
       const rows=[...(prev[dk]||[])].map(r=>r||blankInsp());
       if(rows[rowIdx]) rows[rowIdx]={...rows[rowIdx],bookingStatus:newStatus};
       return {...prev,[dk]:rows};
@@ -6433,6 +6435,7 @@ function AppInner() {
         // キャンセルするinspの行を取得
         const cancelledRow=(inspData[dk]||[])[meta.existingIdx];
         const custId=cancelledRow?.custId;
+        console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
         setInspData(prev=>{
           const rows=[...(prev[dk]||[])].map(r=>r||blankInsp());
           // キャンセル = 行を完全削除（空行に戻す）
@@ -6509,7 +6512,8 @@ function AppInner() {
       // キャンセル済みスロットは再利用せず、本当に空のスロットを使う。
       const existIdx=(meta&&meta.existingDk===dk&&meta.existingIdx!=null&&meta.existingIdx>=0)
         ?meta.existingIdx:-1;
-      setInspData(prev=>{
+      console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
+        setInspData(prev=>{
         const prev_rows=(prev[dk]||[]).map(r=>r||blankInsp());
         const rows=[...prev_rows];
         const ui=existIdx>=0?existIdx:(()=>{
@@ -6645,6 +6649,7 @@ function AppInner() {
         }
       } else {
         // ── 本予約（またはスケジュール画面から）：inspDataに書く ──
+        console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
         setInspData(prev=>{
           const sd=selDateRef.current||selDate;
           console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
@@ -6757,7 +6762,8 @@ function AppInner() {
       const cancelCustId=cancelledRow?.custId;
       const cancelName=cancelledRow?.name;
       const cancelNo=cancelledRow?.no;
-      setInspData(prev=>{
+      console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
+        setInspData(prev=>{
         const rows=(prev[modalDk]||[]).map(r=>r||blankInsp());
         const existing=rows[modalIdx];
         // 名前がある行はキャンセル済みとしてマーク（顧客リストとの同期のため）
@@ -6820,7 +6826,8 @@ function AppInner() {
 
   // 承認ハンドラー
   const handleApprove=useCallback((dk,idx)=>{
-    setInspData(prev=>{
+    console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
+        setInspData(prev=>{
       const rows=(prev[dk]||[]).map(r=>r||blankInsp());
       if(rows[idx]){
         const updated={...rows[idx]};
@@ -6909,6 +6916,7 @@ function AppInner() {
       const m=bk.match(/^insp-(.+)-(\d+)$/);
       if(m){
         const dk=m[1], idx=Number(m[2]);
+        console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
         setInspData(prev=>{
           const rows=[...(prev[dk]||[])];
           if(rows[idx]&&(rows[idx].loaner||rows[idx].loanerId)){
