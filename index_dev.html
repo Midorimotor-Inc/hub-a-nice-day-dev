@@ -5866,6 +5866,7 @@ function AppInner() {
   const [modalType,  setModalType] =useState('insp');
   const [modalDk,    setModalDk]   =useState('');
   const modalDkRef=useRef('');
+  const selDateRef=useRef(null);
   const [modalIdx,   setModalIdx]  =useState(0);
   const [modalSlot,  setModalSlot] =useState('');
   const [modalData,  setModalData] =useState(blankInsp());
@@ -6579,11 +6580,12 @@ function AppInner() {
   },[curLockKey,releaseLock]);
 
   const handleDateChangeModal=useCallback((newDk)=>{
-    setSelDate(newDk);
+    const newDate=new Date(newDk+'T00:00:00');setSelDate(newDate);selDateRef.current=newDate;
     setModalDk(newDk);
   },[]);
 
     useEffect(()=>{if(modalDk)modalDkRef.current=modalDk;},[modalDk]);
+  useEffect(()=>{selDateRef.current=selDate;},[selDate]);
 
   const handleSaveModal=useCallback((formData)=>{
     // _idx/_slot/_slotNewは内部管理フィールドなので保存データから除去
@@ -6644,7 +6646,8 @@ function AppInner() {
       } else {
         // ── 本予約（またはスケジュール画面から）：inspDataに書く ──
         setInspData(prev=>{
-          const targetDk=modalDkRef.current||(selDate instanceof Date?`${selDate.getFullYear()}-${String(selDate.getMonth()+1).padStart(2,'0')}-${String(selDate.getDate()).padStart(2,'0')}`:modalDk);
+          const sd=selDateRef.current||selDate;
+          const targetDk=modalDkRef.current||(sd instanceof Date?`${sd.getFullYear()}-${String(sd.getMonth()+1).padStart(2,'0')}-${String(sd.getDate()).padStart(2,'0')}`:modalDk);
           const prev_rows=(prev[targetDk]||[]).map(r=>r||blankInsp());
           const rows=[...prev_rows];
           while(rows.length<=modalIdx)rows.push(blankInsp());
