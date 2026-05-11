@@ -3687,7 +3687,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
               {(!isNew&&isInsp)?(<span onClick={()=>{if(!pickerMonth){const m=dateLabel.match(/(\d+)月(\d+)日/),now=new Date();setPickerMonth({year:now.getFullYear(),month:m?parseInt(m[1])-1:now.getMonth()});}setShowDatePicker(p=>!p);}} style={{cursor:'pointer',borderBottom:'1px dashed rgba(255,255,255,0.6)',paddingBottom:1}} title="クリックで日付変更">{dateLabel}</span>):dateLabel}
               {timeSlot?` / ${timeSlot}`:''}
               {showDatePicker&&pickerMonth&&(
-                <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,zIndex:9999,background:'white',borderRadius:10,boxShadow:'0 8px 30px rgba(0,0,0,0.25)',padding:12,minWidth:240}} onClick={e=>e.stopPropagation()}>
+                <div style={{position:'fixed',top:'100px',left:'20px',zIndex:9999,background:'white',borderRadius:10,boxShadow:'0 8px 30px rgba(0,0,0,0.25)',padding:12,minWidth:240}} onClick={e=>e.stopPropagation()}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
                     <button onClick={()=>setPickerMonth(p=>{const d=new Date(p.year,p.month-1,1);return{year:d.getFullYear(),month:d.getMonth()};})} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'#374151',lineHeight:1}}>‹</button>
                     <span style={{fontWeight:700,fontSize:13,color:'#1f2937'}}>{pickerMonth.year}年{pickerMonth.month+1}月</span>
