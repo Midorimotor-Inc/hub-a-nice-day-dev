@@ -6647,6 +6647,7 @@ function AppInner() {
         // ── 本予約（またはスケジュール画面から）：inspDataに書く ──
         setInspData(prev=>{
           const sd=selDateRef.current||selDate;
+          console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
           const targetDk=modalDkRef.current||(sd instanceof Date?`${sd.getFullYear()}-${String(sd.getMonth()+1).padStart(2,'0')}-${String(sd.getDate()).padStart(2,'0')}`:modalDk);
           const prev_rows=(prev[targetDk]||[]).map(r=>r||blankInsp());
           const rows=[...prev_rows];
