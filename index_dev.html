@@ -3501,8 +3501,11 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
   const [showWkPk,setShowWkPk]=useState(false);
   const [showShPk,setShowShPk]=useState(false);
   const [showDatePicker,setShowDatePicker]=useState(false);
+  // モーダルオープン時に元のdkを保持
+  useEffect(()=>{ if(isOpen){ originalDkRef.current=''; localTargetDkRef.current=''; } },[isOpen]);
   const [pickerMonth,setPickerMonth]=useState(null);
   const localTargetDkRef=useRef('');
+  const originalDkRef=useRef('');
 
   // 同じ予約かどうかをキーで判定（代車ピッカー往復などでリセットしないため）
   const makeKey=(d)=>d?`${d._idx??'none'}|${d._slot??'none'}|${d.name??''}`:'';
@@ -3643,7 +3646,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
     }else{
       if(!form.work){alert('作業内容を選択してください');workRef.current?.focus();return;}
     }
-    onSave({...form, _targetDk: localTargetDkRef.current||''});
+    onSave({...form, _targetDk: localTargetDkRef.current||'', _originalDk: originalDkRef.current||''});
   };
   // 顧客リストからの仮予約/本予約ボタン用
   const handleSaveAs=(status)=>{
@@ -3697,7 +3700,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
                   <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',marginBottom:2}}>
                     {['日','月','火','水','木','金','土'].map((d,i)=><div key={d} style={{textAlign:'center',fontSize:10,fontWeight:700,color:i===0?'#ef4444':i===6?'#2563eb':'#9ca3af',padding:'2px 0'}}>{d}</div>)}
                   </div>
-                  {(()=>{const yr=pickerMonth.year,mo=pickerMonth.month,first=new Date(yr,mo,1).getDay(),days=new Date(yr,mo+1,0).getDate(),cells=[];for(let i=0;i<first;i++)cells.push(<div key={'e'+i}/>);for(let d=1;d<=days;d++){const dow=new Date(yr,mo,d).getDay(),dk2=`${yr}-${mo+1}-${d}`;cells.push(<div key={d} onClick={()=>{localTargetDkRef.current=dk2;onDateChange&&onDateChange(dk2);setShowDatePicker(false);}} style={{textAlign:'center',padding:'4px 2px',cursor:'pointer',fontSize:12,borderRadius:4,color:dow===0?'#ef4444':dow===6?'#2563eb':'#1f2937',fontWeight:600}} onMouseOver={e=>e.currentTarget.style.background='#f3f4f6'} onMouseOut={e=>e.currentTarget.style.background=''}>{d}</div>);}return <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:1}}>{cells}</div>;})()}
+                  {(()=>{const yr=pickerMonth.year,mo=pickerMonth.month,first=new Date(yr,mo,1).getDay(),days=new Date(yr,mo+1,0).getDate(),cells=[];for(let i=0;i<first;i++)cells.push(<div key={'e'+i}/>);for(let d=1;d<=days;d++){const dow=new Date(yr,mo,d).getDay(),dk2=`${yr}-${mo+1}-${d}`;cells.push(<div key={d} onClick={()=>{if(!originalDkRef.current){const m=dateLabel.match(/(\d+)月(\d+)日/),now=new Date();const y=now.getFullYear(),mo=m?parseInt(m[1]):now.getMonth()+1,d=m?parseInt(m[2]):now.getDate();originalDkRef.current=`${y}-${mo}-${d}`;}localTargetDkRef.current=dk2;onDateChange&&onDateChange(dk2);setShowDatePicker(false);}} style={{textAlign:'center',padding:'4px 2px',cursor:'pointer',fontSize:12,borderRadius:4,color:dow===0?'#ef4444':dow===6?'#2563eb':'#1f2937',fontWeight:600}} onMouseOver={e=>e.currentTarget.style.background='#f3f4f6'} onMouseOut={e=>e.currentTarget.style.background=''}>{d}</div>);}return <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:1}}>{cells}</div>;})()}
                   <button onClick={()=>setShowDatePicker(false)} style={{marginTop:8,width:'100%',padding:'4px',background:'#f3f4f6',border:'none',borderRadius:6,cursor:'pointer',fontSize:11,color:'#6b7280'}}>キャンセル</button>
                 </div>
               )}
@@ -6670,8 +6673,9 @@ function AppInner() {
           rows[modalIdx]={...cleanWithStore,bookingStatus:'confirmed'};
           console.log('[SAVE]','targetDk=',targetDk,'modalDk=',modalDk,'prev keys=',Object.keys(prev).join(','));
           const result={...prev,[targetDk]:rows};
-          if(targetDk!==modalDk&&prev[modalDk]){
-            const oldRows=[...(prev[modalDk]||[])];if(oldRows[modalIdx])oldRows[modalIdx]=blankInsp();result[modalDk]=oldRows;
+          const origDk=formData._originalDk;
+          if(origDk&&origDk!==targetDk&&prev[origDk]){
+            const oldRows=[...(prev[origDk]||[])];if(oldRows[modalIdx])oldRows[modalIdx]=blankInsp();result[origDk]=oldRows;
           }
           return result;
         });
