@@ -3696,7 +3696,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
                   <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',marginBottom:2}}>
                     {['日','月','火','水','木','金','土'].map((d,i)=><div key={d} style={{textAlign:'center',fontSize:10,fontWeight:700,color:i===0?'#ef4444':i===6?'#2563eb':'#9ca3af',padding:'2px 0'}}>{d}</div>)}
                   </div>
-                  {(()=>{const yr=pickerMonth.year,mo=pickerMonth.month,first=new Date(yr,mo,1).getDay(),days=new Date(yr,mo+1,0).getDate(),cells=[];for(let i=0;i<first;i++)cells.push(<div key={'e'+i}/>);for(let d=1;d<=days;d++){const dow=new Date(yr,mo,d).getDay(),dk2=`${yr}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;cells.push(<div key={d} onClick={()=>{onDateChange&&onDateChange(dk2);setShowDatePicker(false);}} style={{textAlign:'center',padding:'4px 2px',cursor:'pointer',fontSize:12,borderRadius:4,color:dow===0?'#ef4444':dow===6?'#2563eb':'#1f2937',fontWeight:600}} onMouseOver={e=>e.currentTarget.style.background='#f3f4f6'} onMouseOut={e=>e.currentTarget.style.background=''}>{d}</div>);}return <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:1}}>{cells}</div>;})()}
+                  {(()=>{const yr=pickerMonth.year,mo=pickerMonth.month,first=new Date(yr,mo,1).getDay(),days=new Date(yr,mo+1,0).getDate(),cells=[];for(let i=0;i<first;i++)cells.push(<div key={'e'+i}/>);for(let d=1;d<=days;d++){const dow=new Date(yr,mo,d).getDay(),dk2=`${yr}-${mo+1}-${d}`;cells.push(<div key={d} onClick={()=>{onDateChange&&onDateChange(dk2);setShowDatePicker(false);}} style={{textAlign:'center',padding:'4px 2px',cursor:'pointer',fontSize:12,borderRadius:4,color:dow===0?'#ef4444':dow===6?'#2563eb':'#1f2937',fontWeight:600}} onMouseOver={e=>e.currentTarget.style.background='#f3f4f6'} onMouseOut={e=>e.currentTarget.style.background=''}>{d}</div>);}return <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:1}}>{cells}</div>;})()}
                   <button onClick={()=>setShowDatePicker(false)} style={{marginTop:8,width:'100%',padding:'4px',background:'#f3f4f6',border:'none',borderRadius:6,cursor:'pointer',fontSize:11,color:'#6b7280'}}>キャンセル</button>
                 </div>
               )}
@@ -6319,8 +6319,7 @@ function AppInner() {
     if(!currentUser)return;
     // 削除モード
     if(isNew==='delete'){
-      console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
-        setInspData(prev=>{
+      setInspData(prev=>{
         const rows=[...(prev[dk]||[])].map(r=>r||blankInsp());
         rows.splice(idx,1); // 行を完全削除
         return{...prev,[dk]:rows.length>0?rows:[]};
@@ -6403,8 +6402,7 @@ function AppInner() {
     if(parts.length<3||isNaN(parts[0]))return;
     const [y,m,d]=parts;
     const dk=`${y}-${m}-${d}`;
-    console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
-        setInspData(prev=>{
+    setInspData(prev=>{
       const rows=[...(prev[dk]||[])].map(r=>r||blankInsp());
       if(rows[rowIdx]) rows[rowIdx]={...rows[rowIdx],bookingStatus:newStatus};
       return {...prev,[dk]:rows};
@@ -6435,7 +6433,6 @@ function AppInner() {
         // キャンセルするinspの行を取得
         const cancelledRow=(inspData[dk]||[])[meta.existingIdx];
         const custId=cancelledRow?.custId;
-        console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
         setInspData(prev=>{
           const rows=[...(prev[dk]||[])].map(r=>r||blankInsp());
           // キャンセル = 行を完全削除（空行に戻す）
@@ -6512,8 +6509,7 @@ function AppInner() {
       // キャンセル済みスロットは再利用せず、本当に空のスロットを使う。
       const existIdx=(meta&&meta.existingDk===dk&&meta.existingIdx!=null&&meta.existingIdx>=0)
         ?meta.existingIdx:-1;
-      console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
-        setInspData(prev=>{
+      setInspData(prev=>{
         const prev_rows=(prev[dk]||[]).map(r=>r||blankInsp());
         const rows=[...prev_rows];
         const ui=existIdx>=0?existIdx:(()=>{
@@ -6649,11 +6645,9 @@ function AppInner() {
         }
       } else {
         // ── 本予約（またはスケジュール画面から）：inspDataに書く ──
-        console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
         setInspData(prev=>{
           const sd=selDateRef.current||selDate;
-          console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
-          const targetDk=modalDkRef.current||(sd instanceof Date?`${sd.getFullYear()}-${String(sd.getMonth()+1).padStart(2,'0')}-${String(sd.getDate()).padStart(2,'0')}`:modalDk);
+            const targetDk=modalDkRef.current||(sd instanceof Date?`${sd.getFullYear()}-${sd.getMonth()+1}-${sd.getDate()}`:modalDk);
           const prev_rows=(prev[targetDk]||[]).map(r=>r||blankInsp());
           const rows=[...prev_rows];
           while(rows.length<=modalIdx)rows.push(blankInsp());
@@ -6762,8 +6756,7 @@ function AppInner() {
       const cancelCustId=cancelledRow?.custId;
       const cancelName=cancelledRow?.name;
       const cancelNo=cancelledRow?.no;
-      console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
-        setInspData(prev=>{
+      setInspData(prev=>{
         const rows=(prev[modalDk]||[]).map(r=>r||blankInsp());
         const existing=rows[modalIdx];
         // 名前がある行はキャンセル済みとしてマーク（顧客リストとの同期のため）
@@ -6826,8 +6819,7 @@ function AppInner() {
 
   // 承認ハンドラー
   const handleApprove=useCallback((dk,idx)=>{
-    console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
-        setInspData(prev=>{
+    setInspData(prev=>{
       const rows=(prev[dk]||[]).map(r=>r||blankInsp());
       if(rows[idx]){
         const updated={...rows[idx]};
@@ -6916,7 +6908,6 @@ function AppInner() {
       const m=bk.match(/^insp-(.+)-(\d+)$/);
       if(m){
         const dk=m[1], idx=Number(m[2]);
-        console.log('[DEBUG] modalDkRef=',modalDkRef.current,'selDateRef=',selDateRef.current,'modalDk=',modalDk);
         setInspData(prev=>{
           const rows=[...(prev[dk]||[])];
           if(rows[idx]&&(rows[idx].loaner||rows[idx].loanerId)){
