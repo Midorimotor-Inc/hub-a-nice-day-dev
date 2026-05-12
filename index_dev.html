@@ -6584,7 +6584,7 @@ function AppInner() {
   },[curLockKey,releaseLock]);
 
   const handleDateChangeModal=useCallback((newDk)=>{
-    const newDate=new Date(newDk+'T00:00:00');setSelDate(newDate);selDateRef.current=newDate;
+    setSelDate(newDk);selDateRef.current=newDk;
     setModalDk(newDk);
   },[]);
 
@@ -6652,7 +6652,7 @@ function AppInner() {
         setInspData(prev=>{
           const sd=selDateRef.current||selDate;
             const _tdk=formData._targetDk;
-          const targetDk=_tdk||modalDkRef.current||(sd instanceof Date?`${sd.getFullYear()}-${sd.getMonth()+1}-${sd.getDate()}`:modalDk);
+          const targetDk=_tdk||modalDkRef.current||(sd instanceof Date?`${sd.getFullYear()}-${sd.getMonth()+1}-${sd.getDate()}`:(typeof sd==='string'&&sd?sd:modalDk));
           const prev_rows=(prev[targetDk]||[]).map(r=>r||blankInsp());
           const rows=[...prev_rows];
           while(rows.length<=modalIdx)rows.push(blankInsp());
