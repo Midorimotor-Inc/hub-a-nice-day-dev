@@ -6666,6 +6666,7 @@ function AppInner() {
             }
           }
           rows[modalIdx]={...cleanWithStore,bookingStatus:'confirmed'};
+          console.log('[SAVE]','targetDk=',targetDk,'modalDk=',modalDk,'prev keys=',Object.keys(prev).join(','));
           const result={...prev,[targetDk]:rows};
           if(targetDk!==modalDk&&prev[modalDk]){
             const oldRows=[...(prev[modalDk]||[])];if(oldRows[modalIdx])oldRows[modalIdx]=blankInsp();result[modalDk]=oldRows;
