@@ -3502,6 +3502,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
   const [showShPk,setShowShPk]=useState(false);
   const [showDatePicker,setShowDatePicker]=useState(false);
   const [pickerMonth,setPickerMonth]=useState(null);
+  const localTargetDkRef=useRef('');
 
   // 同じ予約かどうかをキーで判定（代車ピッカー往復などでリセットしないため）
   const makeKey=(d)=>d?`${d._idx??'none'}|${d._slot??'none'}|${d.name??''}`:'';
@@ -3642,7 +3643,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
     }else{
       if(!form.work){alert('作業内容を選択してください');workRef.current?.focus();return;}
     }
-    onSave(form);
+    onSave({...form, _targetDk: localTargetDkRef.current||''});
   };
   // 顧客リストからの仮予約/本予約ボタン用
   const handleSaveAs=(status)=>{
@@ -3696,7 +3697,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
                   <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',marginBottom:2}}>
                     {['日','月','火','水','木','金','土'].map((d,i)=><div key={d} style={{textAlign:'center',fontSize:10,fontWeight:700,color:i===0?'#ef4444':i===6?'#2563eb':'#9ca3af',padding:'2px 0'}}>{d}</div>)}
                   </div>
-                  {(()=>{const yr=pickerMonth.year,mo=pickerMonth.month,first=new Date(yr,mo,1).getDay(),days=new Date(yr,mo+1,0).getDate(),cells=[];for(let i=0;i<first;i++)cells.push(<div key={'e'+i}/>);for(let d=1;d<=days;d++){const dow=new Date(yr,mo,d).getDay(),dk2=`${yr}-${mo+1}-${d}`;cells.push(<div key={d} onClick={()=>{onDateChange&&onDateChange(dk2);setShowDatePicker(false);}} style={{textAlign:'center',padding:'4px 2px',cursor:'pointer',fontSize:12,borderRadius:4,color:dow===0?'#ef4444':dow===6?'#2563eb':'#1f2937',fontWeight:600}} onMouseOver={e=>e.currentTarget.style.background='#f3f4f6'} onMouseOut={e=>e.currentTarget.style.background=''}>{d}</div>);}return <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:1}}>{cells}</div>;})()}
+                  {(()=>{const yr=pickerMonth.year,mo=pickerMonth.month,first=new Date(yr,mo,1).getDay(),days=new Date(yr,mo+1,0).getDate(),cells=[];for(let i=0;i<first;i++)cells.push(<div key={'e'+i}/>);for(let d=1;d<=days;d++){const dow=new Date(yr,mo,d).getDay(),dk2=`${yr}-${mo+1}-${d}`;cells.push(<div key={d} onClick={()=>{localTargetDkRef.current=dk2;onDateChange&&onDateChange(dk2);setShowDatePicker(false);}} style={{textAlign:'center',padding:'4px 2px',cursor:'pointer',fontSize:12,borderRadius:4,color:dow===0?'#ef4444':dow===6?'#2563eb':'#1f2937',fontWeight:600}} onMouseOver={e=>e.currentTarget.style.background='#f3f4f6'} onMouseOut={e=>e.currentTarget.style.background=''}>{d}</div>);}return <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:1}}>{cells}</div>;})()}
                   <button onClick={()=>setShowDatePicker(false)} style={{marginTop:8,width:'100%',padding:'4px',background:'#f3f4f6',border:'none',borderRadius:6,cursor:'pointer',fontSize:11,color:'#6b7280'}}>キャンセル</button>
                 </div>
               )}
@@ -6647,7 +6648,8 @@ function AppInner() {
         // ── 本予約（またはスケジュール画面から）：inspDataに書く ──
         setInspData(prev=>{
           const sd=selDateRef.current||selDate;
-            const targetDk=modalDkRef.current||(sd instanceof Date?`${sd.getFullYear()}-${sd.getMonth()+1}-${sd.getDate()}`:modalDk);
+            const _tdk=formData._targetDk;
+          const targetDk=_tdk||modalDkRef.current||(sd instanceof Date?`${sd.getFullYear()}-${sd.getMonth()+1}-${sd.getDate()}`:modalDk);
           const prev_rows=(prev[targetDk]||[]).map(r=>r||blankInsp());
           const rows=[...prev_rows];
           while(rows.length<=modalIdx)rows.push(blankInsp());
