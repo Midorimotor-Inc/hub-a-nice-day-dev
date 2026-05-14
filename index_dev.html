@@ -1347,7 +1347,7 @@ const getLoanerLabel = (loanerRes, dk, rowName, bookingKey) => {
   const [y,m,d]=[parts[0],parts[1]-1,parts[2]];
   const dateNum=toNum(y,m,d);
   for(const cid of Object.keys(loanerRes)){
-    for(const r of (loanerRes[cid]||[])){
+    for(const r of Object.values(loanerRes[cid]||{})){
       if(dateNum>=toNum(r.fy,r.fm,r.fd)&&dateNum<=toNum(r.ty,r.tm,r.td)&&r.user===rowName){
         if(r.carName) return `${r.carName}${r.carNum?` (${r.carNum})`:''}`;
         const car=LOANERS.find(c=>c.id===Number(cid));
@@ -1368,7 +1368,7 @@ const getLoanerIdForRow = (loanerRes, dk, rowName, bookingKey) => {
   const [y,m,d]=[parts[0],parts[1]-1,parts[2]];
   const dateNum=toNum(y,m,d);
   for(const cid of Object.keys(loanerRes)){
-    for(const r of (loanerRes[cid]||[])){
+    for(const r of Object.values(loanerRes[cid]||{})){
       if(dateNum>=toNum(r.fy,r.fm,r.fd)&&dateNum<=toNum(r.ty,r.tm,r.td)&&r.user===rowName){
         return Number(cid);
       }
@@ -6086,7 +6086,7 @@ function AppInner() {
     const courseLabel = id => {const c=COURSES.find(c=>c.id===Number(id));return c?c.name:'';};
     const getLoanerLabel = (dk, name) => {
       for(const cid of Object.keys(loanerRes)){
-        for(const r of (loanerRes[cid]||[])){
+        for(const r of Object.values(loanerRes[cid]||{})){
           if(r.user===name){
             const car=LOANERS.find(c=>String(c.id)===String(cid));
             return car?car.name:'代車';
