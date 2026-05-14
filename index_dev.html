@@ -5870,6 +5870,7 @@ function AppInner() {
   const [modalType,  setModalType] =useState('insp');
   const [modalDk,    setModalDk]   =useState('');
   const modalDkRef=useRef('');
+  const originalModalDkRef=useRef('');
   const selDateRef=useRef(null);
   const [modalIdx,   setModalIdx]  =useState(0);
   const [modalSlot,  setModalSlot] =useState('');
@@ -6344,7 +6345,7 @@ function AppInner() {
     const lk=locks[key];
     if(lk&&Date.now()-lk.lockedAt<LOCK_TTL&&lk.lockedBy!==currentUser.name)return;
     acquireLock(key,currentUser.name);setCurLockKey(key);
-    setModalType(type);setModalDk(dk);setModalIdx(idx||0);setModalSlot(slot||'');
+    setModalType(type);setModalDk(dk);setModalIdx(idx||0);setModalSlot(slot||'');originalModalDkRef.current=dk;originalModalDkRef.current=dk;originalModalDkRef.current=dk;originalModalDkRef.current=dk;originalModalDkRef.current=dk;originalModalDkRef.current=dk;
     setModalIsNew(isNew);
     const data=isNew
       ?(type==='insp'?{...blankInsp(),_idx:idx||0}:{...blankSched(),_slot:slot||''})
@@ -6674,14 +6675,15 @@ function AppInner() {
           rows[modalIdx]={...cleanWithStore,bookingStatus:'confirmed'};
           console.log('[SAVE]','targetDk=',targetDk,'modalDk=',modalDk,'prev keys=',Object.keys(prev).join(','));
           const result={...prev,[targetDk]:rows};
-          const origDk=formData._originalDk||modalDk;
+          const origDk=formData._originalDk||originalModalDkRef.current;
           if(origDk&&origDk!==targetDk&&prev[origDk]){
             const oldRows=[...(prev[origDk]||[])];if(oldRows[modalIdx])oldRows[modalIdx]=blankInsp();result[origDk]=oldRows;
           }
           return result;
         });
         // 日付変更時：古い代車予約を削除（pendingLoanerDeleteBk または _originalDkから計算）
-        const _delBk=pendingLoanerDeleteBk||(formData._originalDk&&formData._originalDk!==formData._targetDk?`insp-${formData._originalDk}-${modalIdx}`:'');
+        const _origDkForDel=originalModalDkRef.current||formData._originalDk;
+        const _delBk=pendingLoanerDeleteBk||(_origDkForDel&&_origDkForDel!==formData._targetDk?`insp-${_origDkForDel}-${modalIdx}`:'');
         if(_delBk){
           const oldBk=_delBk;
           setLoanerRes(prev=>{
@@ -6865,7 +6867,7 @@ function AppInner() {
     const targetDk=modalDkRef.current||modalDk;
     // 日付変更がある場合、古い代車予約キーを削除予定としてセット
     if(targetDk&&targetDk!==modalDk){
-      setPendingLoanerDeleteBk(`insp-${modalDk}-${modalIdx}`);
+      setPendingLoanerDeleteBk(`insp-${originalModalDkRef.current||modalDk}-${modalIdx}`);
     } else {
       setPendingLoanerDeleteBk('');
     }
