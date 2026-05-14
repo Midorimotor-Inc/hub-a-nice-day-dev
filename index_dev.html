@@ -6863,7 +6863,6 @@ function AppInner() {
     setSavedModalData(formData);setModalOpen(false);
     setPendingRentalId(null);setPendingRentalRec(null); // レンタカー選択リセット
     const targetDk=modalDkRef.current||modalDk;
-    if(targetDk!==modalDk){setModalDk(targetDk);}
     // 日付変更がある場合、古い代車予約キーを削除予定としてセット
     if(targetDk&&targetDk!==modalDk){
       setPendingLoanerDeleteBk(`insp-${modalDk}-${modalIdx}`);
@@ -6872,7 +6871,7 @@ function AppInner() {
     }
     if(selDate){const _sd=typeof selDate==='string'?new Date(selDate+'T00:00:00'):selDate;if(_sd instanceof Date&&!isNaN(_sd))setLoanerMonth(new Date(_sd.getFullYear(),_sd.getMonth(),1));}
     setPickMode(true);setView('loaner');
-  },[selDate,modalDk]);
+  },[selDate,modalDk,modalDkRef,modalIdx,setPendingLoanerDeleteBk]);
 
   const handlePickLoaner=useCallback((carId,startDay,endDay,user,startYear,startMonth)=>{
     setPendingLoanerId(carId);setPickMode(false);
