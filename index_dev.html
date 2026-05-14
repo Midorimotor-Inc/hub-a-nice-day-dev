@@ -3501,7 +3501,6 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
   const [showWkPk,setShowWkPk]=useState(false);
   const [showShPk,setShowShPk]=useState(false);
   const [showDatePicker,setShowDatePicker]=useState(false);
-  const [pendingLoanerDeleteBk,setPendingLoanerDeleteBk]=useState(''); // 日付変更時の削除予定代車予約キー
   // モーダルオープン時に元のdkを保持
   useEffect(()=>{ if(isOpen){ originalDkRef.current=''; localTargetDkRef.current=''; } },[isOpen]);
   const [pickerMonth,setPickerMonth]=useState(null);
@@ -5882,6 +5881,7 @@ function AppInner() {
   const [pendingLoanerId,setPendingLoanerId]=useState(null);
   const [pendingLoanerData,setPendingLoanerData]=useState(null); // 一時保存（モーダル確定まで反映しない）
   const [pendingRentalId,setPendingRentalId]=useState(null);
+  const [pendingLoanerDeleteBk,setPendingLoanerDeleteBk]=useState('');
   const [pendingRentalRec,setPendingRentalRec]=useState(null);
   const [savedModalData, setSavedModalData] =useState(null);
   const [showHoliday,    setShowHoliday]    =useState(false);
