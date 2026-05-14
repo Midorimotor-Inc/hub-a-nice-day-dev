@@ -6679,6 +6679,23 @@ function AppInner() {
           }
           return result;
         });
+        // 日付変更時：古い代車予約を削除
+        if(formData._originalDk&&formData._originalDk!==formData._targetDk){
+          const oldBk=`insp-${formData._originalDk}-${modalIdx}`;
+          setLoanerRes(prev=>{
+            const next={...prev};
+            Object.keys(next).forEach(carId=>{
+              if(next[carId]){
+                const days={...next[carId]};
+                Object.keys(days).forEach(day=>{
+                  if(days[day]&&days[day].bookingKey===oldBk)delete days[day];
+                });
+                next[carId]=days;
+              }
+            });
+            return next;
+          });
+        }
         // 本予約確定 → custBookingsの仮予約エントリを削除
         if(fromCustList && custModalMeta?.bkKey){
           setCustBookings(prev=>{const n={...prev};delete n[custModalMeta.bkKey];return n;});
@@ -6844,7 +6861,7 @@ function AppInner() {
     setPendingRentalId(null);setPendingRentalRec(null); // レンタカー選択リセット
     const targetDk=modalDkRef.current||modalDk;
     if(targetDk!==modalDk){setModalDk(targetDk);}
-    if(selDate)setLoanerMonth(new Date(selDate.getFullYear(),selDate.getMonth(),1));
+    if(selDate){const _sd=typeof selDate==='string'?new Date(selDate+'T00:00:00'):selDate;if(_sd instanceof Date&&!isNaN(_sd))setLoanerMonth(new Date(_sd.getFullYear(),_sd.getMonth(),1));}
     setPickMode(true);setView('loaner');
   },[selDate,modalDk]);
 
