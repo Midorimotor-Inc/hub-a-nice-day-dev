@@ -1323,7 +1323,7 @@ const toNum      = (y,m,d) => y*10000+(m+1)*100+d;
 const getLoanerByKey = (loanerRes, bookingKey) => {
   if(!bookingKey) return null;
   for(const cid of Object.keys(loanerRes)){
-    for(const r of (loanerRes[cid]||[])){
+    for(const r of Object.values(loanerRes[cid]||{})){
       if(r.bookingKey===bookingKey){
         if(r.carName) return {label:`${r.carName}${r.carNum?` (${r.carNum})`:''}`,id:cid};
         const car=LOANERS.find(c=>c.id===Number(cid));
