@@ -748,7 +748,7 @@ const CustListModal = memo(({isOpen, onClose, mode:initMode, cust, existingData,
         initFrom={form.loanerFromDate||form.arrivalDate||''}
         initTo={form.loanerToDate||form.arrivalDate||''}
         selectedId={form.loanerCarId}
-        loanerRes={loanerRes}
+        loanerRes={pendingLoanerDeleteBk?(()=>{const _fl={};Object.keys(loanerRes).forEach(cid=>{const days={...loanerRes[cid]};Object.keys(days).forEach(d=>{if(days[d]?.bookingKey===pendingLoanerDeleteBk)delete days[d];});_fl[cid]=days;});return _fl;})():loanerRes}
         storeLoaners={storeLoaners}
         onSelect={(car,fromDate,toDate)=>{
           if(car){F('loanerCarId',car.id);F('loanerLabel',car.name+' ('+car.num+')');F('loanerFromDate',fromDate||'');F('loanerToDate',toDate||fromDate||'');}
@@ -3501,6 +3501,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
   const [showWkPk,setShowWkPk]=useState(false);
   const [showShPk,setShowShPk]=useState(false);
   const [showDatePicker,setShowDatePicker]=useState(false);
+  const [pendingLoanerDeleteBk,setPendingLoanerDeleteBk]=useState(''); // 日付変更時の削除予定代車予約キー
   // モーダルオープン時に元のdkを保持
   useEffect(()=>{ if(isOpen){ originalDkRef.current=''; localTargetDkRef.current=''; } },[isOpen]);
   const [pickerMonth,setPickerMonth]=useState(null);
@@ -4956,7 +4957,7 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
 // ============================================
 //  代車管理グリッド（閲覧専用 + モーダル編集）
 // ============================================
-const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRes,onUndo,selDate,onBack,onPickLoaner,pickMode,locks,currentUser,onLockCar,onUnlockCar,savedModalData,inspData,schedData,onOpenBooking,pinnedRes,setPinnedRes,hoverRes,setHoverRes,storeLoaners,storeInfo,rentalCars,rentalRes,onAddRentalRes,onDeleteRentalRes,onReplaceRentalRes,onPickRental,onOpenSettings,tireData,locationData,onOpenTireEdit,onOpenLocationEdit})=>{
+const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRes,onUndo,selDate,onBack,onPickLoaner,pickMode,locks,currentUser,onLockCar,onUnlockCar,savedModalData,inspData,schedData,onOpenBooking,pinnedRes,setPinnedRes,hoverRes,setHoverRes,storeLoaners,storeInfo,rentalCars,rentalRes,onAddRentalRes,onDeleteRentalRes,onReplaceRentalRes,onPickRental,onOpenSettings,tireData,locationData,onOpenTireEdit,onOpenLocationEdit,pendingDeleteBk=''})=>{
   const LOANERS_LOCAL=storeLoaners||LOANERS;
   const RENTAL_LOCAL=rentalCars||DEFAULT_RENTAL_CARS;
   const rentalResLocal=rentalRes||{};
@@ -6673,15 +6674,16 @@ function AppInner() {
           rows[modalIdx]={...cleanWithStore,bookingStatus:'confirmed'};
           console.log('[SAVE]','targetDk=',targetDk,'modalDk=',modalDk,'prev keys=',Object.keys(prev).join(','));
           const result={...prev,[targetDk]:rows};
-          const origDk=formData._originalDk;
+          const origDk=formData._originalDk||modalDk;
           if(origDk&&origDk!==targetDk&&prev[origDk]){
             const oldRows=[...(prev[origDk]||[])];if(oldRows[modalIdx])oldRows[modalIdx]=blankInsp();result[origDk]=oldRows;
           }
           return result;
         });
-        // 日付変更時：古い代車予約を削除
-        if(formData._originalDk&&formData._originalDk!==formData._targetDk){
-          const oldBk=`insp-${formData._originalDk}-${modalIdx}`;
+        // 日付変更時：古い代車予約を削除（pendingLoanerDeleteBk または _originalDkから計算）
+        const _delBk=pendingLoanerDeleteBk||(formData._originalDk&&formData._originalDk!==formData._targetDk?`insp-${formData._originalDk}-${modalIdx}`:'');
+        if(_delBk){
+          const oldBk=_delBk;
           setLoanerRes(prev=>{
             const next={...prev};
             Object.keys(next).forEach(carId=>{
@@ -6695,6 +6697,7 @@ function AppInner() {
             });
             return next;
           });
+          setPendingLoanerDeleteBk('');
         }
         // 本予約確定 → custBookingsの仮予約エントリを削除
         if(fromCustList && custModalMeta?.bkKey){
@@ -6861,6 +6864,12 @@ function AppInner() {
     setPendingRentalId(null);setPendingRentalRec(null); // レンタカー選択リセット
     const targetDk=modalDkRef.current||modalDk;
     if(targetDk!==modalDk){setModalDk(targetDk);}
+    // 日付変更がある場合、古い代車予約キーを削除予定としてセット
+    if(targetDk&&targetDk!==modalDk){
+      setPendingLoanerDeleteBk(`insp-${modalDk}-${modalIdx}`);
+    } else {
+      setPendingLoanerDeleteBk('');
+    }
     if(selDate){const _sd=typeof selDate==='string'?new Date(selDate+'T00:00:00'):selDate;if(_sd instanceof Date&&!isNaN(_sd))setLoanerMonth(new Date(_sd.getFullYear(),_sd.getMonth(),1));}
     setPickMode(true);setView('loaner');
   },[selDate,modalDk]);
