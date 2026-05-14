@@ -6584,7 +6584,7 @@ function AppInner() {
   },[curLockKey,releaseLock]);
 
   const handleDateChangeModal=useCallback((newDk)=>{
-    setSelDate(newDk);selDateRef.current=newDk;
+    const [_y,_m,_d]=newDk.split('-').map(Number);const newSelDate=new Date(_y,_m-1,_d);setSelDate(newSelDate);selDateRef.current=newSelDate;
     setModalDk(newDk);
   },[]);
 
