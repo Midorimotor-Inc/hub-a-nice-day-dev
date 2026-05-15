@@ -5273,7 +5273,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
                     const h2=selDate&&year===selDate.getFullYear()&&month===selDate.getMonth()&&day===selDate.getDate();
                     const isStart=isObj&&st.fd===day&&st.fm===month&&st.fy===year;
                     const isEnd=isObj&&st.td===day&&st.tm===month&&st.ty===year;
-                    const bg=isDrag?'#bef264':isConf?'#93c5fd':isObj?st.color:h2?'#fef08a':'white';
+                    const bg=isDrag?'#bef264':isConf?'#93c5fd':isObj?(st.color||RES_COLORS[0]):h2?'#fef08a':'white';
                     const isFree=pickMode&&!isObj&&!isDrag&&!isConf;
                     const isBlocked=pickMode&&isObj;
                     return (
@@ -6611,7 +6611,7 @@ function AppInner() {
         const _newDayKey=String(startDay);
         return{...cleaned,[carId]:{...(cleaned[carId]||{}),
           [_newDayKey]:{id:Date.now(),fy:startYear,fm:startMonth,fd:startDay,ty:startYear,tm:startMonth,td:endDay,
-          user:finalUser,color,bookingKey,carName,carNum}
+          user:finalUser,color:color||RES_COLORS[0],bookingKey,carName,carNum}
         }};
       });
       cleanData.rentalLabel='';
