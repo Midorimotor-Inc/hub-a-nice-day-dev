@@ -526,7 +526,7 @@ const CustLoanerDatePicker = ({isOpen, onClose, initFrom, initTo, selectedId, lo
 
   if(!isOpen) return null;
 
-  const getRes=(cid,y,m,d)=>{const num=toNum(y,m,d);return(loanerRes[cid]||[]).find(r=>num>=toNum(r.fy,r.fm,r.fd)&&num<=toNum(r.ty,r.tm,r.td));};
+  const getRes=(cid,y,m,d)=>{const num=toNum(y,m,d);returnObject.values(loanerRes[cid]||{}).find(r=>num>=toNum(r.fy,r.fm,r.fd)&&num<=toNum(r.ty,r.tm,r.td));};
   const hasConflict=(cid,sy,sm,sd,ey,em,ed)=>{const s=new Date(sy,sm,sd),e=new Date(ey,em,ed),c=new Date(s);while(c<=e){if(getRes(cid,c.getFullYear(),c.getMonth(),c.getDate()))return true;c.setDate(c.getDate()+1);}return false;};
 
   const getCellState=(cid,d)=>{
@@ -5028,7 +5028,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
     return()=>clearTimeout(timer);
   },[selDate]); // dateRangeを削除（selDateから計算されるため不要）
 
-  const getRes=(cid,y,m,d)=>{const num=toNum(y,m,d);return(loanerRes[cid]||[]).find(r=>num>=toNum(r.fy,r.fm,r.fd)&&num<=toNum(r.ty,r.tm,r.td));};
+  const getRes=(cid,y,m,d)=>{const num=toNum(y,m,d);returnObject.values(loanerRes[cid]||{}).find(r=>num>=toNum(r.fy,r.fm,r.fd)&&num<=toNum(r.ty,r.tm,r.td));};
   const hasConflict=(cid,sy,sm,sd,ey,em,ed)=>{
     const start=new Date(sy,sm,sd);
     const end=new Date(ey,em,ed);
@@ -6933,7 +6933,7 @@ function AppInner() {
   const deleteLoanerRes=useCallback((cid,rid)=>{
     setLoanerUndo(u=>[...u,{prevState:loanerRes}]);
     // loanerResから削除
-    const deletedRes=(loanerRes[cid]||[]).find(r=>r.id===rid);
+    const deletedRes=Object.values(loanerRes[cid]||{}).find(r=>r.id===rid);
     setLoanerRes(prev=>({...prev,[cid]:(prev[cid]||[]).filter(r=>r.id!==rid)}));
     // inspDataの該当行のloaner/loanerId/rentalLabel/rentalCarIdもクリア
     if(deletedRes?.bookingKey){
