@@ -6885,7 +6885,7 @@ function AppInner() {
     const bk=modalType==='insp'
       ?`insp-${modalDk}-${modalIdx}`
       :`sched-${modalDk}-${modalSlot}`;
-    const ci=((loanerRes[carId]||[]).length)%RES_COLORS.length;
+    const ci=(Object.keys(loanerRes[carId]||{}).length)%RES_COLORS.length;
     const pickedCar=(currentLoaners||[]).find(c=>String(c.id)===String(carId))||LOANERS.find(c=>c.id===Number(carId));
     setPendingLoanerData({
       carId, startDay, endDay, startYear, startMonth,
