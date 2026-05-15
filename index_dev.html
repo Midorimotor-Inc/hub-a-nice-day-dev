@@ -6604,12 +6604,15 @@ function AppInner() {
       setLoanerRes(prev=>{
         const cleaned={};
         for(const cid of Object.keys(prev)){
-          cleaned[cid]=(prev[cid]||[]).filter(r=>r.bookingKey!==bookingKey);
+          const days={...(prev[cid]||{})};
+          Object.keys(days).forEach(d=>{if(days[d]?.bookingKey===bookingKey)delete days[d];});
+          cleaned[cid]=days;
         }
-        return{...cleaned,[carId]:[...(cleaned[carId]||[]),{
-          id:Date.now(),fy:startYear,fm:startMonth,fd:startDay,ty:startYear,tm:startMonth,td:endDay,
-          user:finalUser,color,bookingKey,carName,carNum
-        }]};
+        const _newDayKey=String(startDay);
+        return{...cleaned,[carId]:{...(cleaned[carId]||{}),
+          [_newDayKey]:{id:Date.now(),fy:startYear,fm:startMonth,fd:startDay,ty:startYear,tm:startMonth,td:endDay,
+          user:finalUser,color,bookingKey,carName,carNum}
+        }};
       });
       cleanData.rentalLabel='';
       cleanData.rentalCarId=null;
@@ -6761,7 +6764,7 @@ function AppInner() {
         setLoanerRes(prev=>{
           const next={};
           for(const cid of Object.keys(prev)){
-            next[cid]=(prev[cid]||[]).map(r=>r.bookingKey===oldBk?{...r,bookingKey:newBk}:r);
+            const daysU={...(prev[cid]||{})};Object.keys(daysU).forEach(d=>{if(daysU[d]?.bookingKey===oldBk)daysU[d]={...daysU[d],bookingKey:newBk};});next[cid]=daysU;
           }
           return next;
         });
@@ -6829,7 +6832,7 @@ function AppInner() {
     setLoanerRes(prev=>{
       const next={};
       for(const cid of Object.keys(prev)){
-        next[cid]=(prev[cid]||[]).filter(r=>r.bookingKey!==bk);
+        const daysN={...(prev[cid]||{})};Object.keys(daysN).forEach(d=>{if(daysN[d]?.bookingKey===bk)delete daysN[d];});next[cid]=daysN;
       }
       return next;
     });
@@ -6838,7 +6841,7 @@ function AppInner() {
     setRentalResData(prev=>{
       const next={};
       for(const cid of Object.keys(prev)){
-        next[cid]=(prev[cid]||[]).filter(r=>r.bookingKey!==bk);
+        const daysN={...(prev[cid]||{})};Object.keys(daysN).forEach(d=>{if(daysN[d]?.bookingKey===bk)delete daysN[d];});next[cid]=daysN;
       }
       return next;
     });
@@ -6929,12 +6932,12 @@ function AppInner() {
     setPendingLoanerId(null);
   },[modalType,modalDk,modalIdx,modalSlot,setLoanerRes,deleteRentalRes]);
 
-  const addLoanerRes=useCallback((cid,res)=>setLoanerRes(prev=>({...prev,[cid]:[...(prev[cid]||[]),res]})),[setLoanerRes]);
+  const addLoanerRes=useCallback((cid,res)=>setLoanerRes(prev=>(()=>{const daysA={...(prev[cid]||{})};daysA[String(res.fd)]={...res};return{...prev,[cid]:daysA};})()),[setLoanerRes]);
   const deleteLoanerRes=useCallback((cid,rid)=>{
     setLoanerUndo(u=>[...u,{prevState:loanerRes}]);
     // loanerResから削除
     const deletedRes=Object.values(loanerRes[cid]||{}).find(r=>r.id===rid);
-    setLoanerRes(prev=>({...prev,[cid]:(prev[cid]||[]).filter(r=>r.id!==rid)}));
+    setLoanerRes(prev=>{const daysD={...(prev[cid]||{})};Object.keys(daysD).forEach(d=>{if(daysD[d]?.id===rid)delete daysD[d];});return{...prev,[cid]:daysD};});
     // inspDataの該当行のloaner/loanerId/rentalLabel/rentalCarIdもクリア
     if(deletedRes?.bookingKey){
       const bk=deletedRes.bookingKey;
