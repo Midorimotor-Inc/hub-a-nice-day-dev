@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## ビルド・テスト・実行
 
 - **ビルド/lint/テストは存在しない。** 静的HTMLをGitHub Pagesが直接配信する。
-- 動作確認はブラウザでHTMLを開く（PWA。Service Workerキャッシュがあるので確認時は**強制リロード Ctrl+Shift+R**）。
+- 動作確認はブラウザでHTMLを開く（PWA。**Service Workerは使っていない**ので、ブラウザの通常キャッシュだけ。念のため確認時は**強制リロード Ctrl+Shift+R**）。
 - デプロイ = `git push`。GitHub Pages反映に1〜3分。
 - コード変更後の検証は、ブラウザで開いて操作する以外に手段がない（自動テスト基盤なし）。Babelのin-browser変換のため、構文エラーは実行時まで出ない。
 
@@ -18,7 +18,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | | DEV（このリポジトリ） | 本番 |
 |---|---|---|
 | パス | `C:\Users\A\HUB-A-NICE-DAY-DEV` | `C:\Users\A\hub-a-nice-day` |
-| GitHub | `kyoshi-egawa/HUB-A-NICE-DAY-DEV` | `kyoshi-egawa/hub-a-nice-day-main`（旧 `hub-a-nice-day` からリダイレクト） |
+| GitHub | `Midorimotor-Inc/hub-a-nice-day-dev`（旧 `kyoshi-egawa/HUB-A-NICE-DAY-DEV` は切り戻し用に温存） | `Midorimotor-Inc/hub-a-nice-day`（旧 `kyoshi-egawa/hub-a-nice-day-main` は切り戻し用に温存） |
+| Pages URL | `https://midorimotor-inc.github.io/hub-a-nice-day-dev/` | `https://midorimotor-inc.github.io/hub-a-nice-day/` |
 | STORプレフィックス | `hub-v8-dev-` | `hub-v8-` |
 | スケジュール本体 | `index_dev.html`（`index.html`がリダイレクト） | `index_main.html`（`index.html`がリダイレクト） |
 | 顧客リスト | `customers.html` | `customers.html` |
@@ -61,12 +62,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `loanerRes[carId]` / `rentalRes[carId]` は `{ key: 予約 }` のオブジェクト。`.filter`/`.map`/`.find` を直接呼ぶと `TypeError`。必ず `Object.values(loanerRes[carId]||{})` で配列化してから使う。各予約は日付フィールド `fy/fm/fd`（from）・`ty/tm/td`（to）で期間を表す（`fm`/`tm` は0始まりの月）。
 
 ### GAS側（スプレッドシート + ドライブ）
-GASサーバーコードはリポジトリ内の `GAS_server_v9_drive.gs`（控え。実体はGoogle Apps Script側にデプロイ済み）。重要な制約と設計：
+GASサーバーコードはリポジトリ内の `GAS_server_v10_snapshots.gs`（控え。v11の追記あり。実体はGoogle Apps Script側にデプロイ済み）。重要な制約と設計：
 - **1セルの上限は50,000文字。** これを超えると `setValue` が失敗する（no-corsのためフロントは失敗を検知できない）。
 - v9以降、**30,000字超の値はGoogleドライブのファイル**（`hubdata_blobs` フォルダ）に保存し、シートにはマーカー `__DRIVEFILE__` だけ置く。`doGet`/`doPost` が透過的に処理するのでフロントは無変更。
 - シートに巨大セルがあると、そのシートへの全書き込みが極端に遅くなる（小データでも10秒超）。大きいデータは必ずドライブへ逃がす。
 - 書き込みは `LockService`（25秒）で直列化。毎日深夜2時に `backup_YYYYMMDD` シートへ自動バックアップ（90日保持）。
-- GASは**1プロジェクトに複数デプロイが存在しうる**。フロントが使う本番デプロイIDは `AKfycbxy...` で始まるもの。コード更新は「デプロイを管理 → 該当デプロイを編集 → 新バージョン」で行う（URLが変わると繋がらなくなる）。DriveApp を使う変更はドライブ権限の再承認＋再デプロイが必要。
+- GASは**1プロジェクトに複数デプロイが存在しうる**。フロントが使う本番デプロイIDは `AKfycby...` で始まるもの（**2026-08-08に会社アカウント `hubaniceday.system@gmail.com` の新環境へ移行済み**。旧・個人アカウントの `AKfycbxy...` は稼働したまま残してあり、切り戻し先になる）。コード更新は「デプロイを管理 → 該当デプロイを編集 → 新バージョン」で行う（URLが変わると繋がらなくなる）。DriveApp を使う変更はドライブ権限の再承認＋再デプロイが必要。
 
 ### useShared（ポーリング同期）
 `useShared(key, def, pollMs)` が各共有状態のフック。マウント時に `sGet`、`pollMs` 間隔でポーリングしてサーバーの最新を反映する。**書き込み中（writeCount>0）はポーリングをスキップし、idベースマージ**でローカルの新しいエントリ（id大）を保持する——これを怠ると、保存中のポーリングが新規予約をサーバーの古い値で上書きして消す。配列値（insp等）はマージせずGAS版を採用。
