@@ -85,7 +85,7 @@ const STOR='hub-v8-dev-';
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='1.76'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='1.77'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -96,6 +96,22 @@ const safeName=n=>n.replace(/[^a-zA-Z0-9　-鿿゠-ヿ぀-ゟ]/g,'_').slice(0,30
 //   （全書き込み共通・25秒）を長時間占有して他の保存をlock_timeoutで無言failさせていた。
 let __saveCount=0;
 const splitChunks=custs=>{const cs=[];for(let i=0;i<custs.length;i+=CHUNK_SIZE)cs.push(custs.slice(i,i+CHUNK_SIZE));return cs;};
+// ★sSetはno-cors＝GASが lock_timeout を返しても成功として返る。重要な書き込みは
+//   「書く→読み返す→違えば再送」で必ず着地を確認する（2026-08-24追加）。
+//   これが無かったため、複数ファイルを一度に取り込むと chunk / cf-{name}-index の書き込みが
+//   十数本同時にGASのロック(25秒・全書き込み共通)を奪い合い、溢れた分が無言で捨てられていた。
+//   結果、cf-index にはファイル名だけ残り実体が無い＝開き直すと取り込んだはずの月が消える。
+const sSetVerified=async(key,val,eq,tries=3)=>{
+  const same=eq||((back)=>JSON.stringify(back)===JSON.stringify(val));
+  for(let i=0;i<tries;i++){
+    await sSet(key,val);
+    await new Promise(r=>setTimeout(r,1200+800*i));
+    try{ if(same(await sGet(key)))return true; }catch(e){}
+    console.warn('[CF] 未反映→再送',key,'attempt',i+1);
+  }
+  console.error('[CF] GASに反映できませんでした:',key);
+  return false;
+};
 const saveFileChunked=async(file,prevCustomers)=>{
   __saveCount++;
   try{
@@ -103,15 +119,28 @@ const saveFileChunked=async(file,prevCustomers)=>{
   const chunks=splitChunks(file.customers);
   const prev=Array.isArray(prevCustomers)?splitChunks(prevCustomers):null;
   const idx={name:file.name,total:file.customers.length,chunks:chunks.length};
-  const jobs=[];
-  // インデックスは件数かチャンク数が変わった時だけ書く
-  if(!prev||prev.length!==chunks.length||prevCustomers.length!==file.customers.length)
-    jobs.push(sSet(STOR+'cf-'+name+'-index',idx));
-  chunks.forEach((c,i)=>{
-    const same=prev&&prev[i]&&JSON.stringify(prev[i])===JSON.stringify(c);
-    if(!same)jobs.push(sSet(STOR+'cf-'+name+'-chunk-'+i,c));
-  });
-  await Promise.all(jobs);
+  // ★チャンクは1本ずつ順番に書く（並列に投げるとGASのロックを奪い合って無言で落ちる）。
+  //   各本を読み返して確認し、全部そろってから最後にインデックスを書く。
+  //   ＝「cf-{name}-index がある＝中身も揃っている」を保証する（半端な状態を作らない）。
+  let ok=true;
+  for(let i=0;i<chunks.length;i++){
+    const same=prev&&prev[i]&&JSON.stringify(prev[i])===JSON.stringify(chunks[i]);
+    if(same)continue;
+    const c=chunks[i];
+    const done=await sSetVerified(STOR+'cf-'+name+'-chunk-'+i,c,
+      back=>Array.isArray(back)&&back.length===c.length&&JSON.stringify(back)===JSON.stringify(c));
+    if(!done){ok=false;break;}
+  }
+  if(ok){
+    // インデックスは中身が変わった時だけ書く。ただし過去に書き損じて欠けている場合は書き直す
+    //（欠けたままだとそのファイルは誰のPCからも読めない）。
+    let cur=null;
+    try{cur=await sGet(STOR+'cf-'+name+'-index');}catch(e){}
+    if(!(cur&&cur.chunks===idx.chunks&&cur.total===idx.total&&cur.name===idx.name))
+      ok=await sSetVerified(STOR+'cf-'+name+'-index',idx,
+        back=>back&&back.chunks===idx.chunks&&back.total===idx.total);
+  }
+  return ok;
   }finally{
     setTimeout(()=>{__saveCount=Math.max(0,__saveCount-1);},70000);
   }
@@ -121,16 +150,34 @@ const loadFileChunked=async(name)=>{
   const sn=safeName(name);
   const idx=await sGet(STOR+'cf-'+sn+'-index');
   if(!idx)return null;
-  const chunks=await Promise.all(
-    Array.from({length:idx.chunks},(_,i)=>sGet(STOR+'cf-'+sn+'-chunk-'+i))
-  );
+  // ★読めなかったチャンクは1回だけ即再試行する。以前は落ちた分を黙って捨てて
+  //   flat() していたため、件数が減ったまま「一部の顧客だけ消えている」状態になり得た。
+  const chunks=[];
+  for(let i=0;i<idx.chunks;i++){
+    let c=await sGet(STOR+'cf-'+sn+'-chunk-'+i);
+    if(!Array.isArray(c)){await new Promise(r=>setTimeout(r,800));c=await sGet(STOR+'cf-'+sn+'-chunk-'+i);}
+    chunks.push(Array.isArray(c)?c:null);
+  }
   const customers=chunks.filter(Boolean).flat();
-  return{name:idx.name,customers};
+  // _complete=false は「サーバー上のデータが欠けている」の合図。呼び出し側で警告を出す。
+  const _complete=chunks.every(Boolean)&&(!idx.total||customers.length===idx.total);
+  if(!_complete)console.warn('[CF] 読み込み不完全',name,customers.length,'/',idx.total);
+  return{name:idx.name,customers,_complete,_expected:idx.total};
 };
 // 全ファイルリスト
-const saveFilesIndex=async(files)=>{
-  const index=files.map(f=>({name:f.name,count:f.customers.length}));
-  await sSet(STOR+'cf-index',index);
+const saveFilesIndex=async(files,opts)=>{
+  const _o=opts||{};
+  const seen=new Set(),merged=[];
+  files.forEach(f=>{if(!seen.has(f.name)){seen.add(f.name);merged.push({name:f.name,count:f.customers.length});}});
+  // ★サーバーにあってローカルに無いファイルは消さない。読み込みに一度失敗しただけの月を
+  //   一覧から落とすと、そのファイルが全員のPCから見えなくなる。削除は明示指定(remove)のみ。
+  let cur=null;try{cur=await sGet(STOR+'cf-index');}catch(e){}
+  if(Array.isArray(cur))cur.forEach(x=>{if(x&&x.name&&!seen.has(x.name)){seen.add(x.name);merged.push(x);}});
+  const rm=new Set(_o.remove||[]);
+  const index=merged.filter(x=>!rm.has(x.name));
+  // 全員のPCが最初に読む一覧。ここが落ちると取り込んだファイルが誰にも見えないので必ず確認する。
+  return await sSetVerified(STOR+'cf-index',index,
+    back=>Array.isArray(back)&&back.length===index.length&&index.every(x=>back.some(b=>b&&b.name===x.name)));
 };
 const deleteFileFromCache=(file)=>{
   const sn=safeName(file.name);
@@ -1350,6 +1397,8 @@ const App=()=>{
   },[]);
   const [bgSyncing,setBgSyncing]=useState(false); // GASバックグラウンド同期中（キャッシュ表示中の読み込みアピール）
   const [importing,setImporting]=useState(false);
+  const [importMsg,setImportMsg]=useState('');   // インポート進捗（どのファイルを保存中か）
+  const [cfWarn,setCfWarn]=useState([]);         // サーバー上のデータが欠けている顧客ファイル名
   const [hotInsp,setInspData]=useState({});   // hot=今日以降＋直近。書き込みは全てサーバー最新(hot)から構築
   const [inspArch,setInspArch]=useState({});  // 保管箱（過去日）。起動時に1回読むだけ・書き換えない
   useEffect(()=>{ sGet(STOR+'insp-arch').then(v=>{ if(v&&typeof v==='object'&&!Array.isArray(v)) setInspArch(v); }).catch(()=>{}); },[]);
@@ -1437,6 +1486,12 @@ const App=()=>{
           for(const fi of fileIndex){
             if(__saveCount>0)continue; // 書き込み中はGASからの上書きをスキップ
             loadFileChunked(fi.name).then(f=>{
+              // ★一覧(cf-index)には載っているのに実体が読めない＝取り込み時にGASへ書けていない。
+              //   黙って消えたように見えるのが一番まずいので、画面に出して再取り込みを促す。
+              if(!f||f._complete===false){
+                console.warn('[CF] ファイルを完全に読めませんでした:',fi.name);
+                setCfWarn(prev=>prev.includes(fi.name)?prev:[...prev,fi.name]);
+              }
               if(f){
                 // GASキャッシュが古い場合でもローカルの予約状態を守る
                 setFiles(prev=>{
@@ -1459,10 +1514,10 @@ const App=()=>{
                       if(fc.entryDate&&lc.entryDate&&fc.entryDate!==lc.entryDate)return fc;
                       return lc;
                     })};
-                    localStorage.setItem(STOR+'cf-'+SAFE(fi.name),JSON.stringify(merged));
+                    if(f._complete!==false)localStorage.setItem(STOR+'cf-'+SAFE(fi.name),JSON.stringify(merged));
                     return prev.map(p=>p.name===f.name?merged:p);
                   }
-                  localStorage.setItem(STOR+'cf-'+SAFE(fi.name),JSON.stringify(f));
+                  if(f._complete!==false)localStorage.setItem(STOR+'cf-'+SAFE(fi.name),JSON.stringify(f));
                   return [...prev,f];
                   const i=prev.findIndex(x=>x.name===f.name);
                   if(i>=0){const n=[...prev];n[i]=f;return n;}
@@ -1629,6 +1684,31 @@ const App=()=>{
     return()=>clearInterval(pollTimer);
   },[]);
 
+  // ── 他のPCが取り込んだ顧客ファイルを自動で拾う（60秒ごと） ──
+  // 「一度読み込んだら開いた人全員で共有」を、開き直さなくても成立させるための取り込み。
+  // 起動時の1回きりだと、AさんがインポートしてもBさんの画面は再読み込みまで増えなかった。
+  useEffect(()=>{
+    const pickup=async()=>{
+      if(__saveCount>0)return; // 自分が保存中はさわらない
+      const idx=await sGet(STOR+'cf-index');
+      if(!Array.isArray(idx)||idx.length===0)return;
+      const have=new Set((filesRef.current||[]).map(f=>f.name));
+      for(const fi of idx){
+        if(have.has(fi.name))continue;
+        const f=await loadFileChunked(fi.name).catch(()=>null);
+        if(!f)continue;
+        if(f._complete===false){setCfWarn(prev=>prev.includes(fi.name)?prev:[...prev,fi.name]);continue;}
+        try{localStorage.setItem(STOR+'cf-'+safeName(f.name),JSON.stringify(f));}catch(e){}
+        setFiles(prev=>{
+          if(prev.some(p=>p.name===f.name))return prev;
+          const next=[...prev,f];filesRef.current=next;return next;
+        });
+      }
+    };
+    const t=setInterval(pickup,60000);
+    return()=>clearInterval(t);
+  },[]);
+
   // 画面復帰時（タブ切替・スリープ復帰）に即時リフレッシュ
   useEffect(()=>{
     const onVisible=()=>{
@@ -1734,20 +1814,44 @@ const App=()=>{
     setImporting(true);
     try{
       const results=await Promise.all(fileList.map(parseExcelFile));
-      setFiles(prev=>{
-        const next=[...prev];
-        results.forEach(r=>{
-          const i=next.findIndex(f=>f.name===r.name);
-          if(i>=0)next[i]=r;else next.push(r);
-        });
-        filesRef.current = next; // filesRef同期
-        // チャンク分割保存（GAS 50,000文字制限対策）
-        saveFilesIndex(next);
-        results.forEach(r=>saveFileChunked(r));
-        return next;
+      // まず画面とローカルキャッシュを更新（体感速度）。共有の実体はこの後GASへ書く。
+      const next=[...filesRef.current];
+      results.forEach(r=>{
+        const i=next.findIndex(f=>f.name===r.name);
+        if(i>=0)next[i]=r;else next.push(r);
+        try{localStorage.setItem(STOR+'cf-'+safeName(r.name),JSON.stringify(r));}catch(_e){}
       });
-      alert(`${results.map(r=>`「${r.name}」${r.customers.length}件`).join('、')} をインポートしました`);
-    }catch(err){alert('インポートエラー: '+err.message);}
+      filesRef.current=next;
+      setFiles(next);
+      // ★GASへは1ファイルずつ順番に保存し、着地を読み返しで確認する。
+      //   以前は全ファイルを並列に投げっぱなしにしており、GASのロックを奪い合って
+      //   後続の書き込みが無言で捨てられ、開き直すと取り込んだ月が消えていた。
+      const failed=[];
+      for(let i=0;i<results.length;i++){
+        const r=results[i];
+        setImportMsg(`保存中… (${i+1}/${results.length}) ${r.name}`);
+        let ok=false;
+        try{ok=await saveFileChunked(r);}catch(_e){ok=false;}
+        if(!ok)failed.push(r.name);
+      }
+      // 一覧(cf-index)には「確実に保存できたファイル」だけを載せる。
+      // 失敗した分を載せると、他のPCが開いた時に中身の無いファイル名だけが見える状態になる。
+      setImportMsg('一覧を更新中…');
+      const okFiles=next.filter(f=>!failed.includes(f.name));
+      const idxOk=await saveFilesIndex(okFiles);
+      setImportMsg('');
+      if(failed.length||!idxOk){
+        setCfWarn(prev=>[...new Set([...prev,...failed])]);
+        alert(`⚠ 保存できなかったファイルがあります
+${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失敗しました'}
+
+他のPCからは見えない状態です。通信が混み合っている可能性があるので、少し待ってからもう一度取り込んでください。`);
+      }else{
+        setCfWarn([]);
+        alert(`${results.map(r=>`「${r.name}」${r.customers.length}件`).join('、')} をインポートしました。
+保存を確認しました（開いた人全員のPCに共有されます）。`);
+      }
+    }catch(err){setImportMsg('');alert('インポートエラー: '+err.message);}
     setImporting(false);
     e.target.value='';
   },[]);
@@ -1758,7 +1862,7 @@ const App=()=>{
     const deletedFile=files[idx];
     setFiles(prev=>{
       const next=prev.filter((_,i)=>i!==idx);
-      saveFilesIndex(next);
+      saveFilesIndex(next,{remove:[deletedFile.name]}); // 削除だけは明示的に一覧から外す
       return next;
     });
     deleteFileFromCache(deletedFile);
@@ -2323,7 +2427,7 @@ const App=()=>{
             background:'linear-gradient(135deg,#1e1b4b,#1d4ed8)',color:'white',
             border:'none',borderRadius:8,fontWeight:700,fontSize:12,flexShrink:0,
             opacity:importing?0.6:1}}>
-          {importing?'読み込み中...':'+ Excelインポート'}
+          {importing?(importMsg||'読み込み中...'):'+ Excelインポート'}
         </button>
         {bgSyncing&&(
           <span style={{display:'inline-flex',alignItems:'center',gap:5,marginLeft:8,marginBottom:3,
@@ -2334,6 +2438,23 @@ const App=()=>{
         <input ref={fileInputRef} type="file" accept=".xlsx,.xls" multiple style={{display:'none'}}
           onChange={handleImport}/>
       </div>
+
+      {/* サーバーに保存しきれなかったファイルの警告（黙って消えたように見せない） */}
+      {cfWarn.length>0&&(
+        <div style={{flexShrink:0,margin:'6px 14px',padding:'8px 12px',borderRadius:8,
+          background:'#fef2f2',border:'1px solid #fecaca',color:'#991b1b',fontSize:12,fontWeight:700,
+          display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          <span>⚠ 次のファイルはサーバーに保存しきれていません（他のPCからは見えません）: {cfWarn.join('、')}</span>
+          <button onClick={()=>fileInputRef.current?.click()}
+            style={{padding:'4px 10px',background:'#991b1b',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700}}>
+            もう一度取り込む
+          </button>
+          <button onClick={()=>setCfWarn([])}
+            style={{padding:'4px 8px',background:'none',border:'none',color:'#991b1b',fontSize:11,fontWeight:700}}>
+            閉じる
+          </button>
+        </div>
+      )}
 
       {/* ファイルがない場合 */}
       {gasLoading&&(
