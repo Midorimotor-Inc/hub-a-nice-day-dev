@@ -94,7 +94,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.75';
+const APP_VERSION = '1.76';
 
 
 
@@ -5828,7 +5828,10 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
   const handlePickConfirm=()=>{
     if(!confirm)return;
     const {carId,start,end}=confirm;
-    onPickLoaner(carId,start.day,end.day,pickUser||'（未入力）',start.year,start.month);
+    // 返却日の「年・月」も渡す（Kyoshi承認のBLOCK-C変更・2026-08-23）。
+    // 従来は end.day しか渡しておらず、受け側が返却の年月に開始の年月を流用していたため、
+    // 月をまたぐ貸出（例 7/29〜8/2）が「7/29〜7/2」＝返却が開始より前の壊れた期間になっていた。
+    onPickLoaner(carId,start.day,end.day,pickUser||'（未入力）',start.year,start.month,end.year,end.month);
     setConfirm(null);setPickUser('');
   };
 
@@ -6770,6 +6773,35 @@ const RestoreModal = memo(({isOpen, onClose, currentUser, inspData})=>{
 // ║  - ヘッダー固定・スクロール制御                                 ║
 // ║  ⚠️  高さ計算（height/paddingTop）の変更は十分注意すること      ║
 // ╚══════════════════════════════════════════════════════════════════╝
+
+// ── 代車予約を「位置インデックスに依存せず」特定する（2026-08-23 追加） ──
+// 旧来は bookingKey `insp-{dk}-{idx}` の完全一致だけで旧代車を消していた。
+// しかし代車を付けた後に上の行が挿入・削除されると idx がズレ、削除が空振りする。
+// その結果「前の代車予約が残ったまま、付け直しで2件にダブる」現象が起きていた。
+// そこで「同じ旧日付・同じ客」で照合する経路を併用する（bookingKey一致は従来どおり残す）。
+const _lrNm=s=>String(s==null?'':s).replace(/[\s　]/g,'');
+const _lrMatch=(r,ident)=>{
+  if(!r||!ident||!ident.dk)return false;
+  if(String(r.bookingKey||'').indexOf(`insp-${ident.dk}-`)!==0)return false;
+  if(ident.custId&&r.custId)return String(r.custId)===String(ident.custId);
+  return !!_lrNm(ident.name)&&_lrNm(r.user)===_lrNm(ident.name);
+};
+const _lrObj=b=>(b&&typeof b==='object'&&!Array.isArray(b))?b:{};
+const resHasBooking=(base,ident)=>{
+  if(!ident||!ident.dk)return false;
+  return Object.values(_lrObj(base)).some(days=>Object.values(days||{}).some(r=>_lrMatch(r,ident)));
+};
+const removeResByBooking=(base,ident)=>{
+  const src=_lrObj(base);
+  if(!ident||!ident.dk)return src;
+  const out={};
+  for(const cid of Object.keys(src)){
+    const days={...(src[cid]||{})};
+    Object.keys(days).forEach(k=>{ if(_lrMatch(days[k],ident))delete days[k]; });
+    out[cid]=days;
+  }
+  return out;
+};
 
 function AppInner() {
   const nowDate = new Date();
@@ -7982,7 +8014,7 @@ function AppInner() {
 
     // ★修正1: モーダル確定時にpendingLoanerDataをloanerResに書き込む
     if(pendingLoanerData){
-      const {carId,startDay,endDay,startYear,startMonth,user,color,bookingKey:_pldBk,carName,carNum}=pendingLoanerData;
+      const {carId,startDay,endDay,startYear,startMonth,endYear,endMonth,user,color,bookingKey:_pldBk,carName,carNum}=pendingLoanerData;
       const finalUser=cleanData.name||user;
       const _loanerTdk=formData._targetDk||modalDkRef.current
         ||(selDateRef.current instanceof Date
@@ -7994,15 +8026,19 @@ function AppInner() {
       // pendingLoanerDataのloanerRes保存（サーバー最新値ベース＋読み返し検証＝persistLres。
       //   従来はローカル全文の書き戻しを投げっぱなしにしていたため、車検側には代車ラベルが残るのに
       //   代車予約だけが無言で消えることがあった。setTimeoutで非同期化してフリーズ防止するのは従来通り）
-      const _lu = {carId,startDay,endDay,startYear,startMonth,finalUser,color:color||RES_COLORS[0],
+      const _lu = {carId,startDay,endDay,startYear,startMonth,endYear,endMonth,finalUser,color:color||RES_COLORS[0],
         bk:_finalBk||_pldBk, carName, carNum};
       // idは再送しても同じ値を使う（＝着地確認が id で行えるよう mutate の外で確定させる）
+      // 返却の年月はピッカーから渡された値を使う（月またぎ対応）。
+      // 渡ってこない経路では従来どおり開始の年月にフォールバックする。
       const _luRec={id:Date.now(),fy:_lu.startYear,fm:_lu.startMonth,
-        fd:_lu.startDay,ty:_lu.startYear,tm:_lu.startMonth,td:_lu.endDay,
+        fd:_lu.startDay,ty:_lu.endYear??_lu.startYear,tm:_lu.endMonth??_lu.startMonth,td:_lu.endDay,
         user:_lu.finalUser,color:_lu.color,bookingKey:_lu.bk,
         carName:_lu.carName,carNum:_lu.carNum};
       setTimeout(()=>persistLres(
-        base=>putResRec(removeResByBk(base,[_lu.bk,_pldBk]),_lu.carId,String(_lu.startDay),_luRec),
+        // ★キーは「年-月-日」（"日"だけだと別の月で同じ日に始まる予約とキーが衝突する。
+        //   最適化経路(rkey)は既に年-月-日だったが、この登録経路だけ直し漏れていた）
+        base=>putResRec(removeResByBk(base,[_lu.bk,_pldBk]),_lu.carId,`${_luRec.fy}-${_luRec.fm}-${_luRec.fd}`,_luRec),
         back=>resHasRec(back,_lu.carId,_luRec.id),
         {verb:'登録',name:_lu.finalUser}
       ), 0);
@@ -8161,12 +8197,21 @@ function AppInner() {
         }
         // 日付変更時：古い代車予約を削除（pendingLoanerDeleteBk または _originalDkから計算）
         const _origDkForDel=originalModalDkRef.current||formData._originalDk;
-        const _delBk=pendingLoanerDeleteBk||(_origDkForDel&&_origDkForDel!==formData._targetDk?`insp-${_origDkForDel}-${modalIdx}`:'');
-        if(_delBk){
+        const _isDcForDel=!!(_origDkForDel&&_origDkForDel!==formData._targetDk);
+        const _delBk=pendingLoanerDeleteBk||(_isDcForDel?`insp-${_origDkForDel}-${modalIdx}`:'');
+        // ★bookingKeyの完全一致だけだと、代車を付けた後に行がズレていた場合に空振りし、
+        //   旧代車が残ったまま付け直しで2件にダブる。同じ旧日付・同じ客での照合を併用する。
+        const _delIdent=_isDcForDel
+          ?{dk:_origDkForDel,name:cleanData.name,custId:cleanData.custId}
+          :null;
+        if(_delBk||_delIdent){
           const oldBk=_delBk;
+          const _gone=b=>!(oldBk&&resHasBk(b,oldBk))&&!resHasBooking(b,_delIdent);
           persistLres(
-            base=>resHasBk(base,oldBk)?removeResByBk(base,[oldBk]):undefined,
-            back=>!resHasBk(back,oldBk),
+            base=>_gone(base)
+              ?undefined
+              :removeResByBooking(oldBk?removeResByBk(base,[oldBk]):base,_delIdent),
+            back=>_gone(back),
             {verb:'旧予約分の解除'}
           );
           setPendingLoanerDeleteBk('');
@@ -8414,7 +8459,7 @@ function AppInner() {
     setPickMode(true);setView('loaner');
   },[selDate,modalDk,modalDkRef,modalIdx,setPendingLoanerDeleteBk]);
 
-  const handlePickLoaner=useCallback((carId,startDay,endDay,user,startYear,startMonth)=>{
+  const handlePickLoaner=useCallback((carId,startDay,endDay,user,startYear,startMonth,endYear,endMonth)=>{
     setPendingLoanerId(carId);setPickMode(false);
     // ★修正1: loanerResへの即時書き込みをやめ、一時データとして保持
     //          モーダルの「✓ 予約確定」ボタン押下時に初めてloanerResに反映する
@@ -8428,7 +8473,7 @@ function AppInner() {
       :(Object.keys(loanerRes[carId]||{}).length)%RES_COLORS.length;
     const pickedCar=(currentLoaners||[]).find(c=>String(c.id)===String(carId))||LOANERS.find(c=>c.id===Number(carId));
     setPendingLoanerData({
-      carId, startDay, endDay, startYear, startMonth,
+      carId, startDay, endDay, startYear, startMonth, endYear, endMonth,
       user: user||savedModalData?.name||'（予約中）',
       color: RES_COLORS[ci],
       bookingKey: bk,
