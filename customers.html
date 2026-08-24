@@ -85,7 +85,7 @@ const STOR='hub-v8-dev-';
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='1.77'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='1.78'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -101,18 +101,26 @@ const splitChunks=custs=>{const cs=[];for(let i=0;i<custs.length;i+=CHUNK_SIZE)c
 //   これが無かったため、複数ファイルを一度に取り込むと chunk / cf-{name}-index の書き込みが
 //   十数本同時にGASのロック(25秒・全書き込み共通)を奪い合い、溢れた分が無言で捨てられていた。
 //   結果、cf-index にはファイル名だけ残り実体が無い＝開き直すと取り込んだはずの月が消える。
-const sSetVerified=async(key,val,eq,tries=3)=>{
+// ★GASは1回の書き込みに11〜27秒、読めるようになるまで最大40秒かかる（2026-08-24実測。
+//   データ量ではなく1回あたりの固定コスト）。短い間隔で「未反映」と決めつけて再送すると、
+//   重い書き込みが積み上がって永久に終わらない（v1.77はこれで「保存中」から進まなかった）。
+//   → 最大90秒ゆっくり待って着地を確認し、それでも駄目な時だけ1回だけ書き直す。
+const CF_POLL_MS=3000, CF_WAIT_MS=90000;
+const sSetVerified=async(key,val,eq,tries=2)=>{
   const same=eq||((back)=>JSON.stringify(back)===JSON.stringify(val));
   for(let i=0;i<tries;i++){
     await sSet(key,val);
-    await new Promise(r=>setTimeout(r,1200+800*i));
-    try{ if(same(await sGet(key)))return true; }catch(e){}
-    console.warn('[CF] 未反映→再送',key,'attempt',i+1);
+    const until=Date.now()+CF_WAIT_MS;
+    while(Date.now()<until){
+      await new Promise(r=>setTimeout(r,CF_POLL_MS));
+      try{ if(same(await sGet(key)))return true; }catch(e){}
+    }
+    console.warn('[CF] 90秒待っても未反映→書き直し',key,'attempt',i+1);
   }
   console.error('[CF] GASに反映できませんでした:',key);
   return false;
 };
-const saveFileChunked=async(file,prevCustomers)=>{
+const saveFileChunked=async(file,prevCustomers,onStep)=>{
   __saveCount++;
   try{
   const name=safeName(file.name);
@@ -126,12 +134,14 @@ const saveFileChunked=async(file,prevCustomers)=>{
   for(let i=0;i<chunks.length;i++){
     const same=prev&&prev[i]&&JSON.stringify(prev[i])===JSON.stringify(chunks[i]);
     if(same)continue;
+    if(onStep)onStep(i+1,chunks.length);
     const c=chunks[i];
     const done=await sSetVerified(STOR+'cf-'+name+'-chunk-'+i,c,
       back=>Array.isArray(back)&&back.length===c.length&&JSON.stringify(back)===JSON.stringify(c));
     if(!done){ok=false;break;}
   }
   if(ok){
+    if(onStep)onStep(chunks.length,chunks.length,true);
     // インデックスは中身が変わった時だけ書く。ただし過去に書き損じて欠けている場合は書き直す
     //（欠けたままだとそのファイルは誰のPCからも読めない）。
     let cur=null;
@@ -1827,11 +1837,17 @@ const App=()=>{
       //   以前は全ファイルを並列に投げっぱなしにしており、GASのロックを奪い合って
       //   後続の書き込みが無言で捨てられ、開き直すと取り込んだ月が消えていた。
       const failed=[];
+      // GASの書き込みは1本15〜40秒かかる。何分もかかることを先に伝えておく（無反応に見せない）。
+      const _bars=results.reduce((a,r)=>a+Math.ceil(r.customers.length/CHUNK_SIZE),0);
+      setImportMsg(`保存中 … 約${Math.max(1,Math.round(_bars*30/60))}分`);
       for(let i=0;i<results.length;i++){
         const r=results[i];
-        setImportMsg(`保存中… (${i+1}/${results.length}) ${r.name}`);
+        setImportMsg(`保存中 (${i+1}/${results.length}) ${r.name}`);
         let ok=false;
-        try{ok=await saveFileChunked(r);}catch(_e){ok=false;}
+        // ★GASが遅いので1本あたり15〜40秒かかる。止まって見えないよう本数の進捗を出す。
+        const onStep=(n,total,last)=>setImportMsg(
+          `保存中 (${i+1}/${results.length}) ${r.name} … ${last?'仕上げ':`${n}/${total}本目`}`);
+        try{ok=await saveFileChunked(r,null,onStep);}catch(_e){ok=false;}
         if(!ok)failed.push(r.name);
       }
       // 一覧(cf-index)には「確実に保存できたファイル」だけを載せる。
