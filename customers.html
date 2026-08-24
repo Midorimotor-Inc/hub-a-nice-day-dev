@@ -23,7 +23,22 @@
       var b=document.createElement('div');
       b.textContent='🔄 新しいバージョンがあります（タップして更新）';
       b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:#1d4ed8;color:#fff;text-align:center;padding:14px 12px;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 -2px 12px rgba(0,0,0,.35)';
-      b.onclick=function(){b.textContent='更新中…';location.reload();};
+        // ★保存がまだGASに着地していない状態でリロードすると、その保存は失われる
+        //   （GASへの書き込みは10〜27秒かかる）。書き込みが残っている間は待ってから更新する。
+        window.addEventListener('beforeunload',function(ev){
+          if((window.__hubWriteBusy||0)>0){ev.preventDefault();ev.returnValue='';return '';}
+        });
+        var __waitWrite=function(cb){
+          var waited=0;
+          (function go(){
+            if((window.__hubWriteBusy||0)>0&&waited<180000){
+              b.textContent='保存中です… 完了までお待ちください（'+Math.round(waited/1000)+'秒）';
+              waited+=1000;setTimeout(go,1000);return;
+            }
+            cb();
+          })();
+        };
+      b.onclick=function(){__waitWrite(function(){b.textContent='更新中…';location.reload();});};
       document.body.appendChild(b);
     }
     async function check(){
@@ -85,7 +100,7 @@ const STOR='hub-v8-dev-';
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='1.78'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='1.79'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -175,13 +190,17 @@ const loadFileChunked=async(name)=>{
   return{name:idx.name,customers,_complete,_expected:idx.total};
 };
 // 全ファイルリスト
+let __lastCfIndex=null; // 最後に読めたサーバー側の顧客ファイル一覧（読み取り失敗時のフォールバック）
 const saveFilesIndex=async(files,opts)=>{
   const _o=opts||{};
   const seen=new Set(),merged=[];
   files.forEach(f=>{if(!seen.has(f.name)){seen.add(f.name);merged.push({name:f.name,count:f.customers.length});}});
   // ★サーバーにあってローカルに無いファイルは消さない。読み込みに一度失敗しただけの月を
   //   一覧から落とすと、そのファイルが全員のPCから見えなくなる。削除は明示指定(remove)のみ。
+  // ★サーバー値を読めなかった時に「一覧は空」とみなすと、他の月を一覧から消してしまう
+  //   （2026-08-24に202607が実際に消えた）。読めない時は最後に読めた一覧を使う。
   let cur=null;try{cur=await sGet(STOR+'cf-index');}catch(e){}
+  if(Array.isArray(cur))__lastCfIndex=cur; else cur=__lastCfIndex;
   if(Array.isArray(cur))cur.forEach(x=>{if(x&&x.name&&!seen.has(x.name)){seen.add(x.name);merged.push(x);}});
   const rm=new Set(_o.remove||[]);
   const index=merged.filter(x=>!rm.has(x.name));
@@ -330,16 +349,50 @@ const sGet=async(k,retries=3)=>{
   }
   return null;
 };
-const sSet=async(k,v,retries=3)=>{
-  for(let i=0;i<retries;i++){
-    try{
-      await fetch(GAS_URL,{method:'POST',mode:'no-cors',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body:JSON.stringify({key:k,value:JSON.stringify(v),apiKey:GAS_API_KEY}),
-      });
-      return;
-    }catch{if(i<retries-1)await new Promise(r=>setTimeout(r,1500*(i+1)));}
+// ★2026-08-24 全面改修（BLOCK-B / Kyoshi承認済み）
+//   これまで書き込みは mode:'no-cors' で送っており、GASの応答を読めなかった。
+//   GASの書き込みは LockService の25秒グローバルロックで直列化され、1本あたり10〜27秒かかる。
+//   アプリは1つの保存で複数キー（insp / lres / custbk / locks / cust-updates …）へ同時に投げるため、
+//   25秒に間に合わなかった分は GAS が 'error: lock_timeout' を返して捨てているのに、
+//   no-cors のせいでそれを成功として扱っていた（実測: 6本同時に投げると4本が捨てられる）。
+//   ＝予約や代車が無言で消える最大の原因。対策は2つ:
+//     (1) 応答を読む … 'ok' なら確実に着地。'error: lock_timeout' なら混雑なので待って自動再送する。
+//     (2) 直列化   … アプリ全体で必ず1本ずつ送る。顧客ファイルの保存と予約の保存が巻き添えにならない。
+//   応答が読めない環境（CORSが遮断される等）では従来どおり no-cors で投げ直し、成否不明として扱う。
+let __gasWriteQueue=Promise.resolve();
+try{ window.__hubWriteBusy=0; }catch(e){}
+const __sSetOnce=async(k,v)=>{
+  const body=JSON.stringify({key:k,value:JSON.stringify(v),apiKey:GAS_API_KEY});
+  try{
+    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body});
+    const t=String((await r.text())||'').trim();
+    if(t==='ok')return 'ok';
+    if(t.indexOf('lock_timeout')>=0)return 'busy';
+    return 'error:'+t.slice(0,80);
+  }catch(e){
+    try{await fetch(GAS_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body});}catch(e2){}
+    return 'unknown';
   }
+};
+const sSet=async(k,v,retries=4)=>{
+  window.__hubWriteBusy=(window.__hubWriteBusy||0)+1;
+  const job=__gasWriteQueue.then(async()=>{
+    for(let i=0;i<retries;i++){
+      const r=await __sSetOnce(k,v);
+      if(r==='ok'||r==='unknown')return true;
+      if(r==='busy'){
+        console.warn('[WRITE] GAS混雑(lock_timeout)→待って再送',k,'attempt',i+1);
+        await new Promise(x=>setTimeout(x,3000+4000*i));
+        continue;
+      }
+      console.error('[WRITE] GASがエラーを返しました',k,r);
+      return false;
+    }
+    console.error('[WRITE] 混雑が続き書き込めませんでした',k);
+    return false;
+  }).catch(e=>{console.error('[WRITE] 例外',k,e);return false;});
+  __gasWriteQueue=job.then(()=>{},()=>{});
+  try{return await job;}finally{try{window.__hubWriteBusy=Math.max(0,(window.__hubWriteBusy||1)-1);}catch(e){}}
 };
 // ★sSetはno-cors。GASが 'error: lock_timeout' を返しても成功として返るため、書けたことにならない。
 //   重要なキーは必ずこれで書く: 書く→読み返す→期待どおりでなければサーバー最新値から作り直して再送。
@@ -1492,6 +1545,7 @@ const App=()=>{
         if(ilim&&typeof ilim==='object')setInspLimits(ilim);
         // GASから最新ファイルデータを取得してキャッシュ更新
         if(Array.isArray(fileIndex)&&fileIndex.length>0){
+          __lastCfIndex=fileIndex;
           localStorage.setItem(STOR+'cf-index',JSON.stringify(fileIndex));
           for(const fi of fileIndex){
             if(__saveCount>0)continue; // 書き込み中はGASからの上書きをスキップ
@@ -1575,7 +1629,7 @@ const App=()=>{
       if(arr.length===0)return;
       // ここから先は実際にリストへ反映する重い処理（チャンク保存・読み返し検証を伴う）。書込中・
       // 前回の保存検証走行中はスキップ（バッジは上で更新済みなので表示が遅れることはない）。
-      if(__saveCount>0)return; // 書き込み中はスキップ
+      if(__saveCount>0||(window.__hubWriteBusy||0)>0)return; // 書き込み中はスキップ
       if(window.__pollUpdatesBusy)return; // 前回のGAS反映確認(最大6秒)が走行中なら多重実行しない
       window.__pollUpdatesBusy=true;
       try{
@@ -1699,7 +1753,7 @@ const App=()=>{
   // 起動時の1回きりだと、AさんがインポートしてもBさんの画面は再読み込みまで増えなかった。
   useEffect(()=>{
     const pickup=async()=>{
-      if(__saveCount>0)return; // 自分が保存中はさわらない
+      if(__saveCount>0||(window.__hubWriteBusy||0)>0)return; // 自分が保存中はさわらない
       const idx=await sGet(STOR+'cf-index');
       if(!Array.isArray(idx)||idx.length===0)return;
       const have=new Set((filesRef.current||[]).map(f=>f.name));

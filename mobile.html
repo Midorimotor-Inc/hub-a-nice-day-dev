@@ -20,11 +20,26 @@
       var b=document.createElement('div');
       b.textContent='🔄 新しいバージョンがあります（タップして更新）';
       b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:#0e7490;color:#fff;text-align:center;padding:calc(14px + env(safe-area-inset-bottom,0px)) 12px 14px;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 -2px 12px rgba(0,0,0,.35)';
-      b.onclick=async function(){
+        // ★保存がまだGASに着地していない状態でリロードすると、その保存は失われる
+        //   （GASへの書き込みは10〜27秒かかる）。書き込みが残っている間は待ってから更新する。
+        window.addEventListener('beforeunload',function(ev){
+          if((window.__hubWriteBusy||0)>0){ev.preventDefault();ev.returnValue='';return '';}
+        });
+        var __waitWrite=function(cb){
+          var waited=0;
+          (function go(){
+            if((window.__hubWriteBusy||0)>0&&waited<180000){
+              b.textContent='保存中です… 完了までお待ちください（'+Math.round(waited/1000)+'秒）';
+              waited+=1000;setTimeout(go,1000);return;
+            }
+            cb();
+          })();
+        };
+      b.onclick=function(){__waitWrite(async function(){
         b.textContent='更新中…';
         try{await fetch(location.pathname+'?_v='+Date.now(),{cache:'reload'});}catch(e){}
         location.reload();
-      };
+      });};
       document.body.appendChild(b);
     }
     async function check(){
@@ -63,7 +78,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script type="text/babel" data-presets="react">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='1.78';
+const MOBILE_VERSION='1.79';
 const GAS_URL='https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 const GAS_API_KEY='hub2026co-f466kt5vs3vnDQDPuwWeS6XM';
 const STOR='hub-v8-dev-';

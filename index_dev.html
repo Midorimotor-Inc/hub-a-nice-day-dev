@@ -25,7 +25,21 @@
         var b=document.createElement('div');
         b.textContent='🔄 新しいバージョンがあります（タップして更新）';
         b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:#1d4ed8;color:#fff;text-align:center;padding:14px 12px;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 -2px 12px rgba(0,0,0,.35)';
-        b.onclick=function(){b.textContent='更新中…';location.reload();};
+        // ★保存がまだGASに着地していない状態でリロードすると、その保存は失われる
+        //   （GASへの書き込みは10〜27秒かかる）。書き込みが残っている間は待ってから更新する。
+        b.onclick=function(){
+          var waited=0;
+          (function go(){
+            if((window.__hubWriteBusy||0)>0&&waited<180000){
+              b.textContent='保存中です… 完了までお待ちください（'+Math.round(waited/1000)+'秒）';
+              waited+=1000;setTimeout(go,1000);return;
+            }
+            b.textContent='更新中…';location.reload();
+          })();
+        };
+        window.addEventListener('beforeunload',function(ev){
+          if((window.__hubWriteBusy||0)>0){ev.preventDefault();ev.returnValue='';return '';}
+        });
         document.body.appendChild(b);
       }
       async function check(){
@@ -94,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.78';
+const APP_VERSION = '1.79';
 
 
 
@@ -1863,22 +1877,51 @@ const sGet = async(k, retries=3) => {
 };
 
 // GASにデータを書き込む
-const sSet = async(k, v, retries=3) => {
-  if (!GAS_READY) return;
-  for(let i=0;i<retries;i++){
-    try {
-      // no-cors: GASのリダイレクト問題を回避。レスポンスは読めないが書き込みは成功する
-      await fetch(GAS_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: {'Content-Type': 'text/plain;charset=utf-8'},
-        body: JSON.stringify({key: k, value: JSON.stringify(v), apiKey: GAS_API_KEY}),
-      });
-      return; // 成功
-    } catch {
-      if(i<retries-1) await new Promise(r=>setTimeout(r,1500*(i+1)));
-    }
+// ★2026-08-24 全面改修（BLOCK-B / Kyoshi承認済み）
+//   これまで書き込みは mode:'no-cors' で送っており、GASの応答を読めなかった。
+//   GASの書き込みは LockService の25秒グローバルロックで直列化され、1本あたり10〜27秒かかる。
+//   アプリは1つの保存で複数キー（insp / lres / custbk / locks / cust-updates …）へ同時に投げるため、
+//   25秒に間に合わなかった分は GAS が 'error: lock_timeout' を返して捨てているのに、
+//   no-cors のせいでそれを成功として扱っていた（実測: 6本同時に投げると4本が捨てられる）。
+//   ＝予約や代車が無言で消える最大の原因。対策は2つ:
+//     (1) 応答を読む … 'ok' なら確実に着地。'error: lock_timeout' なら混雑なので待って自動再送する。
+//     (2) 直列化   … アプリ全体で必ず1本ずつ送る。顧客ファイルの保存と予約の保存が巻き添えにならない。
+//   応答が読めない環境（CORSが遮断される等）では従来どおり no-cors で投げ直し、成否不明として扱う。
+let __gasWriteQueue=Promise.resolve();
+try{ window.__hubWriteBusy=0; }catch(e){}
+const __sSetOnce=async(k,v)=>{
+  const body=JSON.stringify({key:k,value:JSON.stringify(v),apiKey:GAS_API_KEY});
+  try{
+    const r=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body});
+    const t=String((await r.text())||'').trim();
+    if(t==='ok')return 'ok';
+    if(t.indexOf('lock_timeout')>=0)return 'busy';
+    return 'error:'+t.slice(0,80);
+  }catch(e){
+    try{await fetch(GAS_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body});}catch(e2){}
+    return 'unknown';
   }
+};
+const sSet=async(k,v,retries=4)=>{
+  if(!GAS_READY)return false;
+  window.__hubWriteBusy=(window.__hubWriteBusy||0)+1;
+  const job=__gasWriteQueue.then(async()=>{
+    for(let i=0;i<retries;i++){
+      const r=await __sSetOnce(k,v);
+      if(r==='ok'||r==='unknown')return true;
+      if(r==='busy'){
+        console.warn('[WRITE] GAS混雑(lock_timeout)→待って再送',k,'attempt',i+1);
+        await new Promise(x=>setTimeout(x,3000+4000*i));
+        continue;
+      }
+      console.error('[WRITE] GASがエラーを返しました',k,r);
+      return false;
+    }
+    console.error('[WRITE] 混雑が続き書き込めませんでした',k);
+    return false;
+  }).catch(e=>{console.error('[WRITE] 例外',k,e);return false;});
+  __gasWriteQueue=job.then(()=>{},()=>{});
+  try{return await job;}finally{try{window.__hubWriteBusy=Math.max(0,(window.__hubWriteBusy||1)-1);}catch(e){}}
 };
 
 // ── 時点スナップショット/復旧（GAS v10。sGet/sSetは触らず新規に追加） ──
@@ -2002,7 +2045,11 @@ function useShared(key, def, pollMs=60000) {
       if (inFlight.current) return;
       inFlight.current = true;
       sGet(key).then(v => {
+        // ★書き込みがまだGASに届ききっていない間はサーバー値で上書きしない。
+        //   GASの書き込みは1本10〜27秒かかり順番待ちもあるため、writeCountの70秒解除だけでは
+        //   足りずに「保存したのに画面から消える」が起きる（2026-08-24）。
         if (!mounted.current || v === null || writeCount.current > 0) return;
+        if ((window.__hubWriteBusy||0) > 0) return;
         if (!shapeOk(v)) { logShapeAnomaly(v); return; } // 異形の応答は表示に反映しない
         const cur  = JSON.stringify(localRef.current);
         const next = JSON.stringify(v);
