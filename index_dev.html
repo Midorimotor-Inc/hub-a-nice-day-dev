@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787641990175';
+    window.__APP_BUILD='build-1787643243282';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.84';
+const APP_VERSION = '1.85';
 
 
 
@@ -1528,6 +1528,37 @@ const blankSched = () => ({name:'',staff:'',carType:'',work:'',loaner:'',loanerI
 const blankMemo  = () => ({content:''});
 const dateKey    = (y,m,d) => `${y}-${m+1}-${d}`;
 const toNum      = (y,m,d) => y*10000+(m+1)*100+d;
+
+// ── 予定の入出庫期間を求める（代車期間チェック用・純関数）─────────────────
+//   inspDk       … 車検日（スケジュール上の行が乗っている日）"YYYY-M-D"
+//   entryDate    … 期日前入庫日。未設定なら車検日から
+//   deliveryDate … 納車日。未設定ならコース既定（レギュラー車検=車検日の翌日／他=当日）
+//   ★レギュラー車検(course=3)は1泊2日が既定。翌日の起点は「入庫日」ではなく必ず「車検日」。
+//     事前入庫を設定した時に入庫日基準で翌日を出すと、実際の納車日より1日早くなり、
+//     正しく取った3日間の代車が「期間が一致しません」と警告されていた（2026-08-25 報告）。
+//   ★事前入庫・納車日を設定した分はそのまま期間に反映される＝設定と代車日数が合っていれば警告は出ない。
+const _normDkStr = s=>{const p=String(s||'').split('-');return (p.length===3&&p.every(v=>v!==''&&!isNaN(v)))?`${+p[0]}-${+p[1]}-${+p[2]}`:'';};
+const _dkToNum   = s=>{const t=_normDkStr(s);if(!t)return null;const p=t.split('-').map(Number);return toNum(p[0],p[1]-1,p[2]);};
+const _numAddDay = (n,add)=>{
+  if(n==null)return null;
+  const y=Math.floor(n/10000), m=Math.floor(n/100)%100, d=n%100;
+  const dt=new Date(y,m-1,d+add);
+  return toNum(dt.getFullYear(),dt.getMonth(),dt.getDate());
+};
+const REGULAR_COURSE_ID = 3;      // レギュラー車検＝1泊2日
+const schedSpan = ({inspDk, entryDate, deliveryDate, course})=>{
+  const inspNum = _dkToNum(inspDk);
+  const from = _dkToNum(entryDate) ?? inspNum;
+  const defaultTo = String(course)===String(REGULAR_COURSE_ID) ? _numAddDay(inspNum,1) : inspNum;
+  const to = _dkToNum(deliveryDate) ?? defaultTo;
+  return {from,to};
+};
+// 期間の日数（両端含む）
+const spanDays = (from,to)=>{
+  if(from==null||to==null)return null;
+  const d=n=>new Date(Math.floor(n/10000),Math.floor(n/100)%100-1,n%100);
+  return Math.max(1,Math.round((d(to)-d(from))/864e5)+1);
+};
 
 // loanerResからbookingKeyで代車を動的に取得
 // bookingKey = "insp-dk-idx" または "sched-dk-slot"
@@ -4242,21 +4273,14 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
       if(r){loanFrom=toNum(r.fy,r.fm,r.fd);loanTo=toNum(r.ty,r.tm,r.td);}
     }
     if(loanFrom==null)return null; // 代車無し＝チェック対象外（代車削除で解除）
-    const dkNum=s=>{const t=normDk(s);if(!t)return null;const p=t.split('-').map(Number);return toNum(p[0],p[1]-1,p[2]);};
-    // ★レギュラー車検(course=3)は1泊2日が既定。納車日を入れていない場合は
-    //   「入庫日＋1日」を予定期間とみなす。従来は入庫日=納車日として比較していたため、
-    //   正しく2日で取った代車が毎回「期間が一致しません」と警告されていた
-    //   （2026-08-25にユーザーが報告）。納車日を明示していればその日を優先する。
-    const _nextDayNum=n=>{
-      if(n==null)return null;
-      const y=Math.floor(n/10000), m=Math.floor(n/100)%100, d=n%100;
-      const dt=new Date(y,m-1,d+1);
-      return toNum(dt.getFullYear(),dt.getMonth(),dt.getDate());
-    };
-    const _isRegular=String(form.course)==='3';
-    const schFrom=dkNum(form.entryDate)??dkNum(modalDk);
-    const schTo=dkNum(form.deliveryDate)
-      ?? (_isRegular ? _nextDayNum(schFrom) : dkNum(modalDk));
+    // 予定期間は schedSpan（純関数・単体テスト済み）で求める。
+    //   日付変更中は移動先の日付が車検日になる。
+    const {from:schFrom,to:schTo}=schedSpan({
+      inspDk: localTargetDkRef.current||modalDk,
+      entryDate: form.entryDate,
+      deliveryDate: form.deliveryDate,
+      course: form.course,
+    });
     if(schFrom==null||schTo==null)return null;
     if(loanFrom===schFrom&&loanTo===schTo)return null; // 一致
     return {schFrom,schTo,loanFrom,loanTo};
@@ -4266,7 +4290,9 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
   const confirmLoanerMismatch=()=>{
     const mm=computeLoanerMismatch();
     if(!mm)return true;
-    return window.confirm(`⚠ 代車の期間がスケジュールと一致していません。\n\nスケジュール（入庫日→納車日）：${_mmFmt(mm.schFrom)}〜${_mmFmt(mm.schTo)}\n代車の貸出期間　　　　　　：${_mmFmt(mm.loanFrom)}〜${_mmFmt(mm.loanTo)}\n\nこのまま保存しますか？\n（代車を合わせるには「選択」で選び直し、代車が不要なら「削除」で外してください）`);
+    // 日数も出す（「何日ズレているか」が一目で分かるように）。
+    const _sd=spanDays(mm.schFrom,mm.schTo), _ld=spanDays(mm.loanFrom,mm.loanTo);
+    return window.confirm(`⚠ 代車の期間がスケジュールと一致していません。\n\nスケジュール（入庫日→納車日）：${_mmFmt(mm.schFrom)}〜${_mmFmt(mm.schTo)}（${_sd}日間）\n代車の貸出期間　　　　　　：${_mmFmt(mm.loanFrom)}〜${_mmFmt(mm.loanTo)}（${_ld}日間）\n\nこのまま保存しますか？\n（代車を合わせるには「選択」で選び直し、代車が不要なら「削除」で外してください）`);
   };
 
   const handleSave=()=>{
