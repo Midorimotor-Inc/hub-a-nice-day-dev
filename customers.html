@@ -15,7 +15,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1781580000000';
+  window.__APP_BUILD='build-1787562601404';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -100,7 +100,7 @@ const STOR='hub-v8-dev-';
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='1.79'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='1.80'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -177,12 +177,16 @@ const loadFileChunked=async(name)=>{
   if(!idx)return null;
   // ★読めなかったチャンクは1回だけ即再試行する。以前は落ちた分を黙って捨てて
   //   flat() していたため、件数が減ったまま「一部の顧客だけ消えている」状態になり得た。
-  const chunks=[];
-  for(let i=0;i<idx.chunks;i++){
-    let c=await sGet(STOR+'cf-'+sn+'-chunk-'+i);
-    if(!Array.isArray(c)){await new Promise(r=>setTimeout(r,800));c=await sGet(STOR+'cf-'+sn+'-chunk-'+i);}
-    chunks.push(Array.isArray(c)?c:null);
-  }
+  // ★チャンクは並列で読む。1本3〜4秒かかるので直列だと100人増えるごとに待ち時間が
+  //   3〜4秒ずつ伸びていた（実測: 257件の月で読み込みに14.8秒）。GASのロックは書き込み
+  //   専用で読み取りは競合しないため、並列にしても取りこぼしは増えない。
+  const chunks=await Promise.all(
+    Array.from({length:idx.chunks},async(_,i)=>{
+      let c=await sGet(STOR+'cf-'+sn+'-chunk-'+i);
+      if(!Array.isArray(c)){await new Promise(r=>setTimeout(r,800));c=await sGet(STOR+'cf-'+sn+'-chunk-'+i);}
+      return Array.isArray(c)?c:null;
+    })
+  );
   const customers=chunks.filter(Boolean).flat();
   // _complete=false は「サーバー上のデータが欠けている」の合図。呼び出し側で警告を出す。
   const _complete=chunks.every(Boolean)&&(!idx.total||customers.length===idx.total);
@@ -1659,7 +1663,14 @@ const App=()=>{
           const saveChunkVerified=async(f)=>{
             for(let _a=0;_a<3;_a++){
               try{
-                await saveFileChunked(f);
+                // ★サーバーの現在値を先に読み、中身が変わったチャンクだけ書く。
+                //   従来は prev=null で毎回3チャンク（各40KB）を丸ごと書き直しており、
+                //   1件の予約通知を受けるたびにGASのロック(25秒・全書き込み共通)を
+                //   1分以上占有していた。＝他の保存が巻き添えで遅くなる/溢れる原因。
+                //   通知の送り主がすでに保存済みなら書き込みは0本で済む。
+                //   欠けている(_complete===false)時だけは全部書き直して修復する。
+                const _cur=await loadFileChunked(f.name).catch(()=>null);
+                await saveFileChunked(f,(_cur&&_cur._complete!==false)?_cur.customers:null);
                 try{localStorage.setItem(STOR+'cf-'+safeName(f.name),JSON.stringify(f));}catch(e){}
                 await new Promise(r=>setTimeout(r,2000));
                 const chk=await loadFileChunked(f.name);
@@ -1891,17 +1902,45 @@ const App=()=>{
       //   以前は全ファイルを並列に投げっぱなしにしており、GASのロックを奪い合って
       //   後続の書き込みが無言で捨てられ、開き直すと取り込んだ月が消えていた。
       const failed=[];
-      // GASの書き込みは1本15〜40秒かかる。何分もかかることを先に伝えておく（無反応に見せない）。
+      // ★取り込みを始める前に所要時間を伝えて、了解を取ってから走る。
+      //   GASへの書き込みは1本あたり15〜30秒の固定コスト（データ量とほぼ無関係）で、
+      //   100人ごとに1本＋ファイルごとに索引1本＋最後に一覧1本を書く。複数ファイルだと
+      //   数分かかるので、黙って始めると「固まった」と誤解され、途中で閉じられて
+      //   保存が失われる（2026-08-24にユーザーから指摘）。
       const _bars=results.reduce((a,r)=>a+Math.ceil(r.customers.length/CHUNK_SIZE),0);
-      setImportMsg(`保存中 … 約${Math.max(1,Math.round(_bars*30/60))}分`);
+      const _writes=_bars+results.length+1;
+      const _mins=Math.max(1,Math.ceil(_writes*25/60));
+      if(!window.confirm(
+        `${results.map(r=>`「${r.name}」${r.customers.length}件`).join('、')} を取り込みます。\n\n`+
+        `サーバーへの保存に【約${_mins}分】かかります（保存${_writes}回 × 15〜30秒）。\n`+
+        `画面に「保存中」と残りが出ます。終わるまでこの画面を閉じたり再読み込みしないでください。\n\n`+
+        `開始しますか？`)){
+        setImportMsg('');setImporting(false);e.target.value='';return;
+      }
+      const _t0=Date.now();
+      let _doneWrites=0;
+      // 残り時間は「1本25秒」の見込みと実測の平均で出す（進むほど実測に寄る）。
+      const _remain=()=>{
+        const left=Math.max(0,_writes-_doneWrites);
+        const per=_doneWrites>0?(Date.now()-_t0)/_doneWrites:25000;
+        const m=Math.ceil(left*per/60000);
+        return m<=1?'あと1分ほど':`あと約${m}分`;
+      };
+      setImportMsg(`保存中 … 全${_writes}本 / 約${_mins}分`);
       for(let i=0;i<results.length;i++){
         const r=results[i];
-        setImportMsg(`保存中 (${i+1}/${results.length}) ${r.name}`);
+        setImportMsg(`保存中 (${i+1}/${results.length}) ${r.name} … ${_remain()}`);
         let ok=false;
-        // ★GASが遅いので1本あたり15〜40秒かかる。止まって見えないよう本数の進捗を出す。
-        const onStep=(n,total,last)=>setImportMsg(
-          `保存中 (${i+1}/${results.length}) ${r.name} … ${last?'仕上げ':`${n}/${total}本目`}`);
-        try{ok=await saveFileChunked(r,null,onStep);}catch(_e){ok=false;}
+        // ★GASが遅いので1本あたり15〜30秒かかる。止まって見えないよう本数と残り時間を出す。
+        const onStep=(n,total,last)=>{
+          _doneWrites++;
+          setImportMsg(`保存中 (${i+1}/${results.length}) ${r.name} … ${last?'仕上げ':`${n}/${total}本目`} / ${_remain()}`);
+        };
+        try{
+          // 中身が変わったチャンクだけ書く（同じ月の入れ直しは差分だけで済み、大幅に速い）。
+          const _prev=await loadFileChunked(r.name).catch(()=>null);
+          ok=await saveFileChunked(r,(_prev&&_prev._complete!==false)?_prev.customers:null,onStep);
+        }catch(_e){ok=false;}
         if(!ok)failed.push(r.name);
       }
       // 一覧(cf-index)には「確実に保存できたファイル」だけを載せる。
@@ -2236,15 +2275,30 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
         alert(`⚠️ ${customer.name} のリスト保存がサーバーに反映できませんでした。\n画面上部の「未反映の予約」バナーから再送できます。`);
       })();
     }else{ _done.file=true;_maybeDrop(); }
-    // 再予約時はcust-updatesの古いキャンセル通知を削除（cancel優先度コリジョン防止）
-    sGet(STOR+'cust-updates').then(updates=>{
-      if(!Array.isArray(updates)||updates.length===0)return;
-      const filtered=updates.filter(u=>
-        !(u.custId&&u.custId===customer.custId)&&
-        !(u.name&&u.name===customer.name&&String(u.no||'')===String(customer.no||''))
-      );
-      if(filtered.length!==updates.length)sSet(STOR+'cust-updates',filtered);
-    }).catch(()=>{});
+    // ★他のPCへ「この顧客を予約した」と知らせる（cust-updatesキュー）。
+    //   スケジュール側の予約は index の syncCustStatus が必ずこれを積むのに、
+    //   リストからの予約だけ積んでいなかった。＝別のPCのリストは、開き直すまで
+    //   ずっと「未予約」の網かけのままだった（2026-08-24にユーザーが報告）。
+    //   60秒の自動取り込み(pickup)は「まだ持っていないファイル」しか読まないので、
+    //   すでに202608を開いている端末はこの通知が無いと永久に気づけない。
+    //   ・同じ顧客の古い通知（キャンセル等）は差し替える＝再予約時のコリジョン防止も兼ねる
+    //   ・自分自身は適用済み扱いにして、他PCが受け取る前にキューから消さないようにする
+    //   ・7日より古い通知は掃除する（誰も受け取らないまま溜まり続けるのを防ぐ）
+    const _upd={custId:customer.custId,name:customer.name,no:customer.no,
+      status:updCustomer.status,entryDate:updCustomer.entryDate,linkedInspDate:updCustomer.linkedInspDate,
+      store:updCustomer.store,bookingTime:updCustomer.bookingTime,course:updCustomer.course,
+      tokuten:updCustomer.tokuten,staff:updCustomer.staff,note:updCustomer.note,
+      ...(dmCol==='dm1'?{dm1Book:bookDate}:{dm2Book:bookDate}),
+      ts:Date.now()};
+    try{ if(!window.__appliedUpdTs)window.__appliedUpdTs=new Set(); window.__appliedUpdTs.add(_upd.ts); }catch(e){}
+    const _sameCust=u=>(u.custId&&u.custId===customer.custId)||
+      (u.name&&u.name===customer.name&&String(u.no||'')===String(customer.no||''));
+    const _weekAgo=Date.now()-7*24*3600*1000;
+    writeVerified(STOR+'cust-updates',
+      base=>[...(Array.isArray(base)?base:[]).filter(u=>u&&!_sameCust(u)&&(u.ts||0)>_weekAgo),_upd],
+      back=>Array.isArray(back)&&back.some(u=>u&&u.ts===_upd.ts),
+      3,{requireBase:true} // 読めなかったサーバー値を「空」とみなして書かない
+    );
   },[loanerListH,loanerListS,saveInspWithStatus]);
 
   // ── 未反映の予約（pending）を起動時にサーバーと突き合わせる ──

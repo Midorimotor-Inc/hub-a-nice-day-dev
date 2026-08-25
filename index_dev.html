@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1781580000000';
+    window.__APP_BUILD='build-1787562601404';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.79';
+const APP_VERSION = '1.80';
 
 
 
@@ -7359,6 +7359,13 @@ function AppInner() {
       if(e.origin!==location.origin)return;
       if(e.data&&e.data.type==='hub-close-customers'){
         setCustOverlay(false);
+        // ★「スケジュールに戻る」は文字どおりスケジュール画面へ戻す。
+        //   顧客リストをオーバーレイ化(v1.60)して以降、この分岐は「閉じるだけ」だったため
+        //   カレンダー→リスト→戻る でカレンダーに戻っていた（2026-08-25にユーザーが報告）。
+        //   オーバーレイ化する前は ./index.html を読み直しており、初期値が
+        //   view='schedule' / selDate=今日 なので必ずスケジュールが出ていた。それに揃える。
+        setSelDate(d=>{if(d)return d;const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate());});
+        setView('schedule');
         refreshMainData();
       }
     };
