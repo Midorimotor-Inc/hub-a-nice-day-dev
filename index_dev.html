@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787640857879';
+    window.__APP_BUILD='build-1787641990175';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.83';
+const APP_VERSION = '1.84';
 
 
 
@@ -1993,6 +1993,44 @@ const syncCustStatus=async(custId,newStatus,extraFields={},matchName,matchNo)=>{
   }catch(e){console.error('syncCustStatus error:',e);}
 };
 
+// ★ポーリングで受けたサーバー値とローカル値を突き合わせる（代車/レンタカー/週予定など
+//   {親キー:{子キー:レコード}} 形のデータ用）。純関数にして単体テストできるようにしてある。
+//   規則:
+//     - 基本はサーバー値を採用する。
+//     - ローカルにしか無い／ローカルの方が id が新しいレコードは、"作られたばかり"の間だけ残す。
+//       （書き込みがまだGASに届いていない自分の入力を、ポーリングで消させないため）
+//   ★FRESH_MS を過ぎたローカル専用レコードは捨てる。従来は無条件に復活させていたため、
+//     他のPCで削除した代車が自分の画面では毎回よみがえり、リロードするまで消えなかった
+//     （＝「代車が消えたり現れたりする」の正体。2026-08-25にユーザーが報告）。
+//   ★id も savedAt も持たないレコードは判断材料が無いので従来どおり残す（custbk等の保護）。
+const SHARED_FRESH_MS = 180000; // 3分。GASへの書き込みは実測2〜4秒なので十分な猶予
+function sharedRecTs(r){
+  if(!r||typeof r!=='object')return 0;
+  return Number(r.id)||Number(r.savedAt)||0;
+}
+function sharedRecFresh(r,nowTs){
+  const t=sharedRecTs(r);
+  if(!t)return true;                       // 時刻が分からないものは残す（従来動作）
+  return (nowTs-t) < SHARED_FRESH_MS;
+}
+function mergeSharedObjects(local, server, nowTs){
+  const mg = {...server};
+  for (const cid of Object.keys(local||{})) {
+    const lCar = local[cid]||{};
+    const gCar = mg[cid]||{};
+    // 値が配列の場合はGAS版をそのまま使う（マージしない）
+    if(Array.isArray(lCar)||Array.isArray(gCar))continue;
+    const merged = {...gCar};
+    for (const day of Object.keys(lCar)) {
+      const lRec=lCar[day], gRec=gCar[day];
+      const newerLocal = !(day in gCar) || (sharedRecTs(lRec)||0) > (sharedRecTs(gRec)||0);
+      if (newerLocal && sharedRecFresh(lRec,nowTs)) merged[day] = lRec;
+    }
+    mg[cid] = merged;
+  }
+  return mg;
+}
+
 function useShared(key, def, pollMs=60000) {
   const [val, setVal] = useState(def);
   const mounted      = useRef(true);
@@ -2060,20 +2098,7 @@ function useShared(key, def, pollMs=60000) {
           const local = localRef.current;
           if (local && typeof local==='object' && !Array.isArray(local) &&
               v   && typeof v   ==='object' && !Array.isArray(v)) {
-            const mg = {...v};
-            for (const cid of Object.keys(local)) {
-              const lCar = local[cid]||{};
-              const gCar = mg[cid]||{};
-              // 値が配列の場合はGAS版をそのまま使う（マージしない）
-              if(Array.isArray(lCar)||Array.isArray(gCar)){continue;}
-              let merged = {...gCar};
-              for (const day of Object.keys(lCar)) {
-                if (!(day in gCar) || (lCar[day]?.id||0) > (gCar[day]?.id||0)) {
-                  merged[day] = lCar[day];
-                }
-              }
-              mg[cid] = merged;
-            }
+            const mg = mergeSharedObjects(local, v, Date.now());
             localRef.current = mg; setVal(mg);
           } else {
             localRef.current = v; setVal(v);
@@ -4218,8 +4243,20 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
     }
     if(loanFrom==null)return null; // 代車無し＝チェック対象外（代車削除で解除）
     const dkNum=s=>{const t=normDk(s);if(!t)return null;const p=t.split('-').map(Number);return toNum(p[0],p[1]-1,p[2]);};
+    // ★レギュラー車検(course=3)は1泊2日が既定。納車日を入れていない場合は
+    //   「入庫日＋1日」を予定期間とみなす。従来は入庫日=納車日として比較していたため、
+    //   正しく2日で取った代車が毎回「期間が一致しません」と警告されていた
+    //   （2026-08-25にユーザーが報告）。納車日を明示していればその日を優先する。
+    const _nextDayNum=n=>{
+      if(n==null)return null;
+      const y=Math.floor(n/10000), m=Math.floor(n/100)%100, d=n%100;
+      const dt=new Date(y,m-1,d+1);
+      return toNum(dt.getFullYear(),dt.getMonth(),dt.getDate());
+    };
+    const _isRegular=String(form.course)==='3';
     const schFrom=dkNum(form.entryDate)??dkNum(modalDk);
-    const schTo=dkNum(form.deliveryDate)??dkNum(modalDk);
+    const schTo=dkNum(form.deliveryDate)
+      ?? (_isRegular ? _nextDayNum(schFrom) : dkNum(modalDk));
     if(schFrom==null||schTo==null)return null;
     if(loanFrom===schFrom&&loanTo===schTo)return null; // 一致
     return {schFrom,schTo,loanFrom,loanTo};
