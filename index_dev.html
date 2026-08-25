@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787650136139';
+    window.__APP_BUILD='build-1787664766469';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.88';
+const APP_VERSION = '1.89';
 
 
 
@@ -1577,6 +1577,27 @@ const getLoanerByKey = (loanerRes, bookingKey) => {
   return null;
 };
 // 旧データ互換：bookingKeyなし(旧版保存データ)は名前マッチにフォールバック
+// ★その予約の代車が「限定（＝最適化で動かさない）」かどうか。表示用。
+//   探し方は getLoanerLabel と同じ（bookingKey優先 → 名前＋日付のフォールバック）。
+const getLoanerLocked = (loanerRes, dk, rowName, bookingKey) => {
+  if(!dk||!loanerRes)return false;
+  if(bookingKey){
+    for(const cid of Object.keys(loanerRes)){
+      for(const r of Object.values(loanerRes[cid]||{})){
+        if(r&&r.bookingKey===bookingKey)return !!r.locked;
+      }
+    }
+  }
+  if(!rowName)return false;
+  const parts=dk.split('-').map(Number);
+  const dateNum=toNum(parts[0],parts[1]-1,parts[2]);
+  for(const cid of Object.keys(loanerRes)){
+    for(const r of Object.values(loanerRes[cid]||{})){
+      if(r&&dateNum>=toNum(r.fy,r.fm,r.fd)&&dateNum<=toNum(r.ty,r.tm,r.td)&&r.user===rowName)return !!r.locked;
+    }
+  }
+  return false;
+};
 const getLoanerLabel = (loanerRes, dk, rowName, bookingKey) => {
   if(!dk)return'';
   // まずbookingKeyで検索
@@ -4863,6 +4884,7 @@ const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,loanerResH
     ?(normRowStore(row.store)==='honten'?loanerResH:loanerResS)
     :loanerRes;
   const loanerLabel=getLoanerLabel(rowLoanerRes,dk,row.name,bookingKey);
+  const loanerLocked=getLoanerLocked(rowLoanerRes,dk,row.name,bookingKey); // 限定＝最適化で動かさない
   // store正規化: 'honten'/'本店' → 'honten'、'sanda'/'三田店' → 'sanda'
   const normStore=s=>{if(!s)return'';if(s==='honten'||s==='本店')return'honten';if(s==='sanda'||s==='三田店')return'sanda';return s;};
   const rowStore=normStore(row.store);
@@ -4924,7 +4946,10 @@ const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,loanerResH
       </td>
       <td style={TD}><span style={{color:pending||isOverLimit||isCancelled?'#6b7280':'#374151',fontSize:13,fontWeight:700}}>{row.carType||'—'}</span></td>
       <td style={TD}>{cObj&&<span style={{display:'inline-flex',alignItems:'center',gap:4,padding:'2px 8px',borderRadius:20,background:cObj.bg,color:cObj.color,fontWeight:700,fontSize:11,opacity:pending||isOverLimit||isCancelled?0.4:1}}><span style={{width:16,height:16,borderRadius:'50%',background:cObj.color,color:'white',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,fontWeight:900}}>{cObj.initial}</span>{cObj.name}</span>}</td>
-      <td style={TD}><span style={{fontSize:12,color:row.rentalLabel?(pending||isOverLimit||isCancelled?'#6b7280':'#065f46'):(pending||isOverLimit||isCancelled?'#6b7280':'#374151'),fontWeight:400}}>{row.rentalLabel||loanerLabel||'—'}</span></td>
+      <td style={TD}><span style={{fontSize:12,color:row.rentalLabel?(pending||isOverLimit||isCancelled?'#6b7280':'#065f46'):(pending||isOverLimit||isCancelled?'#6b7280':'#374151'),fontWeight:400}}>
+        {/* ★限定（この車でないとダメ）の代車は鍵マークを付ける。最適化で動かない印 */}
+        {loanerLocked&&!row.rentalLabel&&<span title="限定：この代車は最適化で動かしません" style={{marginRight:3,fontSize:11}}>🔒</span>}
+        {row.rentalLabel||loanerLabel||'—'}</span></td>
       <td style={TD}><span style={{fontSize:13,color:pending||isOverLimit||isCancelled?'#6b7280':'#374151'}}>{row.tokuten||'—'}</span></td>
       <td style={TD}>{(row.entryDate&&row.entryDate!==dk)?(()=>{const p=row.entryDate.split('-');const mmdd=String(p[1]).padStart(2,'0')+'/'+String(p[2]).padStart(2,'0');return <span title="事前入庫（入庫日）" style={{display:'inline-flex',flexDirection:'column',lineHeight:1.15}}><span style={{fontWeight:800,fontSize:12,color:pending||isOverLimit||isCancelled?'#9ca3af':'#c2410c',whiteSpace:'nowrap'}}>🚗{mmdd}</span>{row.time&&<span style={{fontSize:10,color:'#9ca3af'}}>{specialSlotLabel(row.time)}</span>}</span>;})():<span style={{fontWeight:600,fontSize:13,color:pending||isOverLimit||isCancelled?'#6b7280':'#374151'}}>{row.time||'—'}</span>}</td>
       <td style={TD}>{row.note
@@ -4981,6 +5006,7 @@ const SchedRow=memo(({row,slot,baseSlot,isFirstSub,dk,onOpenModal,lockInfo,loane
   const otherStore=row.name&&_normStore3(row.store)&&_normStore3(row.store)!==vsId;
   const bookingKey=`sched-${dk}-${slot}`;
   const loanerLabel=getLoanerLabel(loanerRes,dk,row.name,bookingKey);
+  const loanerLocked=getLoanerLocked(loanerRes,dk,row.name,bookingKey); // 限定＝最適化で動かさない
 
   const isRestricted=!!(()=>{
     try{
@@ -5026,7 +5052,10 @@ const SchedRow=memo(({row,slot,baseSlot,isFirstSub,dk,onOpenModal,lockInfo,loane
       </td>
       <td style={TD}><span style={{color:'#374151',fontSize:13,fontWeight:700}}>{row.carType||'—'}</span></td>
       <td style={TD}>{row.work?<WorkBadge id={row.work} dim={locked||otherStore}/>:<span style={{fontSize:13,color:'#374151'}}>—</span>}</td>
-      <td style={TD}><span style={{fontSize:12,color:row.rentalLabel?'#065f46':'#374151',fontWeight:400}}>{row.rentalLabel||loanerLabel||'—'}</span></td>
+      <td style={TD}><span style={{fontSize:12,color:row.rentalLabel?'#065f46':'#374151',fontWeight:400}}>
+        {/* ★限定（この車でないとダメ）の代車は鍵マークを付ける。最適化で動かない印 */}
+        {loanerLocked&&!row.rentalLabel&&<span title="限定：この代車は最適化で動かしません" style={{marginRight:3,fontSize:11}}>🔒</span>}
+        {row.rentalLabel||loanerLabel||'—'}</span></td>
       <td style={TD}><span style={{fontSize:13,color:'#374151'}}>{row.shimi||'—'}</span></td>
       <td style={TD}>{row.content
         ?<div style={{display:'flex',flexWrap:'wrap',gap:3,alignItems:'center'}}>
@@ -6233,7 +6262,8 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
                         {/* 貸出日数分のセルを1枠として名前を表示（開始日 or 月またぎ・前が別予約の再開始位置から。尻切れ可） */}
                         {showName&&(
                           <div style={{position:'absolute',left:3,top:'50%',transform:'translateY(-50%)',width:nameSpan*44-6,fontSize:11,color:'white',fontWeight:800,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'clip',textShadow:'-1px -1px 1px rgba(0,0,0,.85),1px -1px 1px rgba(0,0,0,.85),-1px 1px 1px rgba(0,0,0,.85),1px 1px 1px rgba(0,0,0,.85),0 0 3px rgba(0,0,0,.9)',zIndex:2,pointerEvents:'none'}}>
-                            {shortenCorpName(st.user)}
+                            {/* ★限定（この車でないとダメ）の予約は鍵マーク付き。最適化で動かない印 */}
+                            {st.locked&&<span style={{marginRight:2}}>🔒</span>}{shortenCorpName(st.user)}
                           </div>
                         )}
                       </td>
