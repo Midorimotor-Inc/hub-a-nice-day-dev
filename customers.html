@@ -15,7 +15,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1787665691918';
+  window.__APP_BUILD='build-1787666505910';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -100,7 +100,7 @@ const STOR='hub-v8-dev-';
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='1.90'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='1.91'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -1064,6 +1064,54 @@ function InspCalendarPicker({value,onChange,inspData,closedDays,closedDates,over
 }
 
 
+// ★事前入庫日・納車日を選ぶ小さなカレンダー（スケジュール側の予約カードと同じ操作感）。
+//   入庫日のカレンダー(InspCalendarPicker)は車検枠の空き状況を見せる専用品なので、
+//   枠と関係のないこの2つには使わず、素直な月カレンダーを出す。
+//   値は index 側と同じ「YYYY-M-D」（ゼロ詰めなし）で持つ。
+const MiniDatePicker=({value,onChange,open,onClose,baseDk,accent})=>{
+  const parse=s=>{const p=String(s||'').split('-').map(Number);return (p.length===3&&p.every(n=>!isNaN(n)))?p:null;};
+  const src=parse(value)||parse(baseDk);
+  const [mo,setMo]=useState(()=>src?{year:src[0],month:src[1]-1}:(()=>{const n=new Date();return{year:n.getFullYear(),month:n.getMonth()};})());
+  if(!open)return null;
+  const first=new Date(mo.year,mo.month,1).getDay(), days=new Date(mo.year,mo.month+1,0).getDate();
+  const cells=[];
+  for(let i=0;i<first;i++)cells.push(<div key={'e'+i}/>);
+  const norm=s=>{const p=parse(s);return p?`${p[0]}-${p[1]}-${p[2]}`:'';};
+  for(let d=1;d<=days;d++){
+    const dow=new Date(mo.year,mo.month,d).getDay();
+    const dk=`${mo.year}-${mo.month+1}-${d}`;
+    const sel=norm(value)===dk, base=norm(baseDk)===dk;
+    cells.push(
+      <div key={d} title={base?'入庫日（車検日）':''} onClick={()=>{onChange(dk);onClose();}}
+        style={{display:'flex',alignItems:'center',justifyContent:'center',width:28,height:28,margin:'0 auto',
+          cursor:'pointer',fontSize:12,borderRadius:'50%',boxSizing:'border-box',
+          color:sel?'white':dow===0?'#ef4444':dow===6?'#2563eb':'#1f2937',
+          fontWeight:(sel||base)?800:600,background:sel?accent:'',
+          border:base?`2px solid ${accent}`:'2px solid transparent'}}>{d}</div>);
+  }
+  return(
+    <div style={{position:'absolute',top:'100%',left:0,zIndex:9999,marginTop:4,background:'white',borderRadius:10,
+      boxShadow:'0 8px 30px rgba(0,0,0,.25)',padding:12,minWidth:240,border:`2px solid ${accent}`}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+        <button type="button" onClick={()=>setMo(p=>{const d=new Date(p.year,p.month-1,1);return{year:d.getFullYear(),month:d.getMonth()};})}
+          style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'#374151'}}>‹</button>
+        <span style={{fontWeight:700,fontSize:13,color:'#1f2937'}}>{mo.year}年{mo.month+1}月</span>
+        <button type="button" onClick={()=>setMo(p=>{const d=new Date(p.year,p.month+1,1);return{year:d.getFullYear(),month:d.getMonth()};})}
+          style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'#374151'}}>›</button>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',marginBottom:2}}>
+        {['日','月','火','水','木','金','土'].map((d,i)=>(
+          <div key={d} style={{textAlign:'center',fontSize:10,fontWeight:700,color:i===0?'#ef4444':i===6?'#2563eb':'#9ca3af',padding:'2px 0'}}>{d}</div>))}
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:1}}>{cells}</div>
+      {baseDk&&<div style={{marginTop:6,display:'flex',alignItems:'center',gap:5,fontSize:10,color:'#6b7280'}}>
+        <span style={{width:14,height:14,borderRadius:'50%',border:`2px solid ${accent}`,flexShrink:0}}/>◯＝入庫日（車検日）</div>}
+      <button type="button" onClick={onClose}
+        style={{marginTop:8,width:'100%',padding:4,background:'#f3f4f6',border:'none',borderRadius:6,cursor:'pointer',fontSize:11,color:'#6b7280'}}>閉じる</button>
+    </div>
+  );
+};
+
 const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerListS,onSave,onClose,currentUser,closedDaysH,closedDaysS,closedDatesH,closedDatesS,overrideOpen,inspLimits})=>{
   const normStore=s=>{if(!s)return'honten';if(s==='三田店'||s==='sanda')return'sanda';return'honten';};
   const defaultStaff=customer.staff||currentUser?.name||'';
@@ -1077,6 +1125,18 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
     if(customer.expiry){const today=new Date().toISOString().slice(0,10);return calcTokuten(customer.expiry,today);}
     return'-';
   })();
+  // ★スケジュール側で設定済みの「事前入庫日・納車日・納車時間」を拾って初期値にする。
+  //   拾わないと、リストから予約を開いて保存し直すたびにスケジュール側で入れた
+  //   事前入庫・納車日が消える（保存はスケジュール行を組み立て直すため）。
+  const _existingInspRow=(()=>{
+    try{
+      for(const dk of Object.keys(inspData||{})){
+        const hit=(inspData[dk]||[]).find(r=>r&&r.custId&&r.custId===customer.custId&&r.bookingStatus!=='cancelled');
+        if(hit)return hit;
+      }
+    }catch(e){}
+    return null;
+  })();
   const [form,setForm]=useState({
     entryDate:customer.entryDate||'',
         store:defaultStore,
@@ -1085,7 +1145,13 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
     tokuten:defaultTokuten,
     staff:defaultStaff,
     note:customer.note||'',
+    preEntry:_existingInspRow?.entryDate||'',        // 事前入庫日（スケジュール行の entryDate）
+    deliveryDate:_existingInspRow?.deliveryDate||'',  // 納車日
+    deliveryTime:_existingInspRow?.deliveryTime||'',  // 納車時間
   });
+  const [showPreEntryCal,setShowPreEntryCal]=useState(false);
+  const [showDelivCal,setShowDelivCal]=useState(false);
+  const [showDelivTime,setShowDelivTime]=useState(false);
   const [showCal,setShowCal]=useState(true);
   const [selCarId,setSelCarId]=useState(null);
   const [selDays,setSelDays]=useState([]);
@@ -1279,6 +1345,69 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
                       {v}
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+            {/* ★事前入庫日（前日・前々日に車だけ預かる場合）。スケジュール行の entryDate に入る */}
+            <div style={{position:'relative'}}>
+              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>
+                事前入庫日 <span style={{fontWeight:400,color:'#9ca3af',fontSize:10}}>前日・前々日などに預かる場合</span>
+              </label>
+              <button type="button" onClick={()=>{setShowPreEntryCal(p=>!p);setShowDelivCal(false);}}
+                style={{width:'100%',display:'flex',alignItems:'center',gap:9,padding:'8px 10px',borderRadius:8,cursor:'pointer',boxSizing:'border-box',
+                  border:`2px solid ${form.preEntry?'#9a3412':'#e5e7eb'}`,background:form.preEntry?'#fff7ed':'white'}}>
+                <span style={{width:18,height:18,borderRadius:5,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
+                  fontSize:12,fontWeight:900,color:'white',
+                  border:`2px solid ${form.preEntry?'#9a3412':'#9ca3af'}`,background:form.preEntry?'#9a3412':'white'}}>{form.preEntry?'✓':''}</span>
+                <span style={{fontWeight:700,fontSize:12,color:form.preEntry?'#9a3412':'#9ca3af'}}>
+                  {form.preEntry?(()=>{const p=form.preEntry.split('-');return `${p[1]}/${p[2]}（${['日','月','火','水','木','金','土'][new Date(p[0],p[1]-1,p[2]).getDay()]}）に入庫`;})():'事前入庫にする'}
+                </span>
+                {form.preEntry&&<span onClick={e=>{e.stopPropagation();setForm(p=>({...p,preEntry:''}));setShowPreEntryCal(false);}}
+                  style={{marginLeft:'auto',color:'#9a3412',fontWeight:800,fontSize:15,padding:'0 3px'}}>✕</span>}
+              </button>
+              <MiniDatePicker value={form.preEntry} onChange={v=>setForm(p=>({...p,preEntry:v}))}
+                open={showPreEntryCal} onClose={()=>setShowPreEntryCal(false)} baseDk={form.entryDate} accent="#9a3412"/>
+            </div>
+            {/* ★納車日・納車時間。決めておくと納車日の表に出る */}
+            <div style={{position:'relative'}}>
+              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:5}}>
+                納車日 <span style={{fontWeight:400,color:'#9ca3af',fontSize:10}}>任意。決まっていれば入れておく</span>
+              </label>
+              <button type="button" onClick={()=>{setShowDelivCal(p=>!p);setShowPreEntryCal(false);}}
+                style={{width:'100%',display:'flex',alignItems:'center',gap:9,padding:'8px 10px',borderRadius:8,cursor:'pointer',boxSizing:'border-box',
+                  border:`2px solid ${form.deliveryDate?'#047857':'#e5e7eb'}`,background:form.deliveryDate?'#ecfdf5':'white'}}>
+                <span style={{width:18,height:18,borderRadius:5,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
+                  fontSize:12,fontWeight:900,color:'white',
+                  border:`2px solid ${form.deliveryDate?'#047857':'#9ca3af'}`,background:form.deliveryDate?'#047857':'white'}}>{form.deliveryDate?'✓':''}</span>
+                <span style={{fontWeight:700,fontSize:12,color:form.deliveryDate?'#047857':'#9ca3af'}}>
+                  {form.deliveryDate?(()=>{const p=form.deliveryDate.split('-');return `${p[1]}/${p[2]}（${['日','月','火','水','木','金','土'][new Date(p[0],p[1]-1,p[2]).getDay()]}）納車`;})():'納車日を設定する'}
+                </span>
+                {form.deliveryDate&&<span onClick={e=>{e.stopPropagation();setForm(p=>({...p,deliveryDate:'',deliveryTime:''}));setShowDelivCal(false);setShowDelivTime(false);}}
+                  style={{marginLeft:'auto',color:'#047857',fontWeight:800,fontSize:15,padding:'0 3px'}}>✕</span>}
+              </button>
+              <MiniDatePicker value={form.deliveryDate}
+                onChange={v=>setForm(p=>({...p,deliveryDate:v,deliveryTime:p.deliveryTime||'未定'}))}
+                open={showDelivCal} onClose={()=>setShowDelivCal(false)} baseDk={form.entryDate} accent="#047857"/>
+              {form.deliveryDate&&(
+                <div style={{marginTop:6}}>
+                  <div onClick={()=>setShowDelivTime(p=>!p)}
+                    style={{width:'100%',padding:'7px 10px',border:'2px solid #047857',borderRadius:8,fontSize:12,boxSizing:'border-box',
+                      cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <span style={{fontWeight:700,color:'#047857'}}>納車時間：{form.deliveryTime||'未定'}</span>
+                    <span style={{fontSize:10,color:'#6b7280'}}>{showDelivTime?'▲':'▼'}</span>
+                  </div>
+                  {showDelivTime&&(
+                    <div style={{border:'2px solid #047857',borderRadius:8,marginTop:4,maxHeight:170,overflowY:'auto',background:'white',boxShadow:'0 4px 12px rgba(0,0,0,.15)'}}>
+                      {['未定',...TIME_LIST].map(v=>(
+                        <div key={v} onMouseDown={e=>{e.preventDefault();setForm(p=>({...p,deliveryTime:v}));setShowDelivTime(false);}}
+                          style={{padding:'6px 13px',cursor:'pointer',fontSize:12.5,
+                            fontWeight:(form.deliveryTime||'未定')===v?800:400,
+                            background:(form.deliveryTime||'未定')===v?'#ecfdf5':'white',
+                            color:(form.deliveryTime||'未定')===v?'#047857':'#374151',
+                            borderLeft:(form.deliveryTime||'未定')===v?'4px solid #047857':'4px solid transparent'}}>{v}</div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2106,7 +2235,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
     const _bg=[]; // 裏で走らせる保存。全部終わってからカウンタを戻す
     try{ window.__hubBusyOps=(window.__hubBusyOps||0)+1; }catch(_e){}
     try{
-    const{entryDate,store,bookingTime,course,tokuten,staff,note,isTemp,selCarId,selDays}=form;
+    const{entryDate,store,bookingTime,course,tokuten,staff,note,isTemp,selCarId,selDays,preEntry,deliveryDate,deliveryTime}=form;
     const status=isTemp?'temp':'confirm';
     // 予約1件の保存（insp／顧客ファイル）を1つのIDで追跡し、両方の反映が確認できるまで
     // localStorageの控え（pending）を消さない。消えていなければ起動時に「未反映の予約」として拾える。
@@ -2172,6 +2301,13 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
           custId:customer.custId,
           bookingTime,
           time:bookingTime||'',  // index.htmlのrow.time表示用
+          // ★事前入庫日・納車日・納車時間。スケジュール側の予約カードと同じ項目名で持たせる
+          //   （entryDate＝事前入庫日。未設定なら空＝車検日当日入庫）。
+          //   ここに入れておかないと、リストから保存し直すたびにスケジュール側で
+          //   設定した事前入庫・納車日が消える。
+          entryDate:preEntry||'',
+          deliveryDate:deliveryDate||'',
+          deliveryTime:deliveryDate?(deliveryTime||'未定'):'',
         };
         // ★保存を始める前に「予約したという事実」を端末に残す（未反映なら起動時に検出して再送できる）
         pendAdd({pid,ts:Date.now(),custId:customer.custId,name:customer.name,no:customer.no,
