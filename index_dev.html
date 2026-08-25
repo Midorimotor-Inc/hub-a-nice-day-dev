@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787645790771';
+    window.__APP_BUILD='build-1787646819634';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.86';
+const APP_VERSION = '1.87';
 
 
 
@@ -7429,6 +7429,20 @@ function AppInner() {
   useEffect(()=>{
     const onMsg=(e)=>{
       if(e.origin!==location.origin)return;
+      // ★顧客リスト(iframe)で代車を付けた瞬間に受け取って、その場で代車管理へ反映する。
+      //   従来は保存が終わってサーバーから読み直すまで親は知らず、スケジュールは即出るのに
+      //   代車管理だけ遅れて出ていた（2026-08-25にユーザーが報告）。
+      //   保存自体はリスト側がバックグラウンドで続けるので、ここでは見た目だけ先行させる。
+      if(e.data&&e.data.type==='hub-lres-added'&&e.data.rec&&e.data.carId!=null){
+        const {store,carId,dayKey,rec}=e.data;
+        const apply=(store==='sanda')?updateLocalLresS:updateLocalLresH;
+        apply(prev=>{
+          const base=(prev&&typeof prev==='object'&&!Array.isArray(prev))?prev:{};
+          // 同じ予約の古い置き場所を消してから置く（キーがズレて二重に出ないように）
+          return putResRec(removeResByBk(base,[rec.bookingKey]),carId,dayKey||`${rec.fy}-${rec.fm}-${rec.fd}`,rec);
+        });
+        return;
+      }
       if(e.data&&e.data.type==='hub-close-customers'){
         setCustOverlay(false);
         // ★「スケジュールに戻る」は文字どおりスケジュール画面へ戻す。
@@ -7443,7 +7457,7 @@ function AppInner() {
     };
     window.addEventListener('message',onMsg);
     return()=>window.removeEventListener('message',onMsg);
-  },[refreshMainData]);
+  },[refreshMainData,updateLocalLresH,updateLocalLresS]);
 
   // 顧客リストデータのバックグラウンドプリロード
   useEffect(()=>{

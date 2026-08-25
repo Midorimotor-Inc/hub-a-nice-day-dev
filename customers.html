@@ -15,7 +15,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1787645790771';
+  window.__APP_BUILD='build-1787646819634';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -100,7 +100,7 @@ const STOR='hub-v8-dev-';
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='1.86'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='1.87'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -2258,7 +2258,10 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
             carNum:car?.num||'',
           };
           if(!loanerRes[selCarId])loanerRes[selCarId]={};
-          const _dKey=String(s.getDate());
+          // ★保存キーは「年-月-日」。日だけだと別の月の同じ日で衝突する
+          //   （index側は v1.76 で直したが、リスト側が直し漏れていた）。
+          //   キー名自体に意味は無く、予約は id / bookingKey で特定する。
+          const _dKey=`${newRes.fy}-${newRes.fm}-${newRes.fd}`;
           // ★色は先に決めて、画面表示と保存で同じ値を使う（従来は保存側でだけ計算していた）
           const _colorIdx=customer.custId?[...String(customer.custId)].reduce((a,c)=>a+c.charCodeAt(0),0)%RES_COLORS.length:0;
           newRes.color=RES_COLORS[_colorIdx];
@@ -2267,6 +2270,13 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
           //   従来はサーバーからlresを読み終わってから初めて setLoanerRes していたため、
           //   車検はすぐ出るのに代車だけ1〜4秒遅れて出ていた（2026-08-25にユーザーが報告）。
           if(carStore==='honten')setLoanerResH(loanerRes);else setLoanerResS(loanerRes);
+          // ★親（スケジュール画面）にも即座に渡す。顧客リストは iframe なので、
+          //   親はサーバーから読み直すまで新しい代車を知らない＝代車管理だけ表示が遅れていた。
+          //   保存の完了は待たずに見た目を先行させる（保存自体は下のバックグラウンド処理）。
+          try{
+            if(IS_EMBED)window.parent.postMessage(
+              {type:'hub-lres-added',store:carStore,carId:selCarId,dayKey:_dKey,rec:newRes},location.origin);
+          }catch(_e){}
 
           // ★サーバー最新のlresを取得してからマージして保存（2026-07-03修正）。
           // 以前はローカルstateベースで丸ごと上書きしていたため、このタブを開いてから
@@ -2284,7 +2294,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
               merged[k]=days;
             }
             if(!merged[selCarId])merged[selCarId]={};
-            const _resDay=String(_sD.getDate());
+            const _resDay=_dKey; // 表示時に使ったキーと必ず同じにする（別キーで二重に出さない）
             merged[selCarId]={...merged[selCarId],[_resDay]:{...newRes}}; // 色は表示時に確定済み
             if(carStore==='honten')setLoanerResH(merged);else setLoanerResS(merged);
             // 代車も読み返し検証つきで書く（無言failで「車検には代車名があるのに代車表に帯が無い」状態を作らない）
