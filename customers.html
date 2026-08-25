@@ -15,7 +15,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1787643243282';
+  window.__APP_BUILD='build-1787645790771';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -100,7 +100,7 @@ const STOR='hub-v8-dev-';
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='1.85'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='1.86'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -453,6 +453,27 @@ const trackSave=(p)=>{
   return Promise.resolve(p).catch(()=>{}).then(()=>{
     try{ window.__hubBusyOps=Math.max(0,(window.__hubBusyOps||1)-1); }catch(e){}
   });
+};
+// ★index_dev.html の mergeSharedObjects と同じ規則。サーバー値で丸ごと置き換えると、
+//   保存した代車がまだGASに届いていない間にタブ復帰が入った時に一瞬消えてしまう。
+//   ローカルにしか無いレコードは「作られたばかり(3分以内)」の間だけ残す。
+const SHARED_FRESH_MS=180000;
+const sharedRecTs=r=>(r&&typeof r==='object')?(Number(r.id)||Number(r.savedAt)||0):0;
+const sharedRecFresh=(r,nowTs)=>{const t=sharedRecTs(r);return t?((nowTs-t)<SHARED_FRESH_MS):true;};
+const mergeSharedObjects=(local,server,nowTs)=>{
+  const mg={...server};
+  for(const cid of Object.keys(local||{})){
+    const lCar=local[cid]||{}, gCar=mg[cid]||{};
+    if(Array.isArray(lCar)||Array.isArray(gCar))continue;
+    const merged={...gCar};
+    for(const day of Object.keys(lCar)){
+      const lRec=lCar[day], gRec=gCar[day];
+      const newerLocal=!(day in gCar)||(sharedRecTs(lRec)||0)>(sharedRecTs(gRec)||0);
+      if(newerLocal&&sharedRecFresh(lRec,nowTs))merged[day]=lRec;
+    }
+    mg[cid]=merged;
+  }
+  return mg;
 };
 const savesInFlight=()=>{try{return (window.__hubBusyOps||0)+(window.__hubWriteBusy||0);}catch(e){return 0;}};
 
@@ -1818,8 +1839,9 @@ const App=()=>{
       if(document.visibilityState!=='visible')return;
       if(pollUpdatesRef.current) pollUpdatesRef.current();
       sGet(STOR+'insp').then(v=>{if(v&&typeof v==='object')setInspData(v);});
-      sGet(storKey('lres','honten')).then(v=>{if(v)setLoanerResH(v);});
-      sGet(storKey('lres','sanda')).then(v=>{if(v)setLoanerResS(v);});
+      // 丸ごと置き換えずマージする（保存直後の代車が一瞬消えるのを防ぐ）
+      sGet(storKey('lres','honten')).then(v=>{if(v&&typeof v==='object'&&!Array.isArray(v))setLoanerResH(prev=>mergeSharedObjects(prev||{},v,Date.now()));});
+      sGet(storKey('lres','sanda')).then(v=>{if(v&&typeof v==='object'&&!Array.isArray(v))setLoanerResS(prev=>mergeSharedObjects(prev||{},v,Date.now()));});
       // 突き合わせ自己修復（GASから最新inspを読み直して照合）
       setTimeout(()=>{if(reconcileRef.current)reconcileRef.current();},2500);
     };
@@ -2237,14 +2259,20 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
           };
           if(!loanerRes[selCarId])loanerRes[selCarId]={};
           const _dKey=String(s.getDate());
+          // ★色は先に決めて、画面表示と保存で同じ値を使う（従来は保存側でだけ計算していた）
+          const _colorIdx=customer.custId?[...String(customer.custId)].reduce((a,c)=>a+c.charCodeAt(0),0)%RES_COLORS.length:0;
+          newRes.color=RES_COLORS[_colorIdx];
           loanerRes[selCarId]={...loanerRes[selCarId],[_dKey]:newRes};
+          // ★まず画面に出す（車検と同時に見えるように）。保存は下のバックグラウンド処理で行う。
+          //   従来はサーバーからlresを読み終わってから初めて setLoanerRes していたため、
+          //   車検はすぐ出るのに代車だけ1〜4秒遅れて出ていた（2026-08-25にユーザーが報告）。
+          if(carStore==='honten')setLoanerResH(loanerRes);else setLoanerResS(loanerRes);
 
           // ★サーバー最新のlresを取得してからマージして保存（2026-07-03修正）。
           // 以前はローカルstateベースで丸ごと上書きしていたため、このタブを開いてから
           // 他端末（モバイル等）が入れた代車予約を巻き添えで消す事故があり得た。
           _bg.push((async()=>{
             const _sD=new Date(sorted[0]);
-            const _ci=customer.custId?[...String(customer.custId)].reduce((a,c)=>a+c.charCodeAt(0),0)%RES_COLORS.length:0;
             const _localBase=carStore==='honten'?loanerResH:loanerResS;
             const _fresh=await sGet(resKey);
             const _base=(_fresh&&typeof _fresh==='object'&&!Array.isArray(_fresh))?_fresh:(_localBase||{});
@@ -2257,7 +2285,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
             }
             if(!merged[selCarId])merged[selCarId]={};
             const _resDay=String(_sD.getDate());
-            merged[selCarId]={...merged[selCarId],[_resDay]:{...newRes,color:RES_COLORS[_ci]}};
+            merged[selCarId]={...merged[selCarId],[_resDay]:{...newRes}}; // 色は表示時に確定済み
             if(carStore==='honten')setLoanerResH(merged);else setLoanerResS(merged);
             // 代車も読み返し検証つきで書く（無言failで「車検には代車名があるのに代車表に帯が無い」状態を作らない）
             await writeVerified(resKey,
@@ -2269,7 +2297,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
                   b[k]=days;
                 }
                 if(!b[selCarId])b[selCarId]={};
-                b[selCarId]={...b[selCarId],[_resDay]:{...newRes,color:RES_COLORS[_ci]}};
+                b[selCarId]={...b[selCarId],[_resDay]:{...newRes}};
                 return b;
               },
               back=>!!(back&&back[selCarId]&&back[selCarId][_resDay]&&back[selCarId][_resDay].custId===customer.custId),

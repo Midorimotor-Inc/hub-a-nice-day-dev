@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787643243282';
+    window.__APP_BUILD='build-1787645790771';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.85';
+const APP_VERSION = '1.86';
 
 
 
@@ -7398,7 +7398,13 @@ function AppInner() {
     // 主要データを即再取得（updateLocal＝GAS書き戻しなし・writeCount操作なし。
     // setXxx(v)を使うとGASへ書き戻して他端末の最新データを消す恐れがある）
     // ★2026-07-03 ポーリング間隔を15秒に伸ばした代わりに、タブ復帰時は主要キーを全て即時更新する
-    const applyIfObj=(fn)=>(v)=>{if(v&&typeof v==='object'&&!Array.isArray(v))fn(v);};
+    // ★サーバー値で丸ごと置き換えず、ポーリングと同じ規則でマージする。
+    //   置き換えていた頃は、保存した代車がまだGASに届いていない間にタブ復帰や
+    //   リストから戻る操作が入ると、いま入力した代車が一瞬消えて後から戻っていた
+    //   （＝「代車の反映が遅い／消えたり現れたり」の一因。2026-08-25にユーザーが報告）。
+    //   mergeSharedObjects は「作られたばかりのローカル専用レコード」だけを残すので、
+    //   他PCの削除は従来どおり反映される。
+    const applyIfObj=(fn)=>(v)=>{if(v&&typeof v==='object'&&!Array.isArray(v))fn(prev=>mergeSharedObjects(prev||{},v,Date.now()));};
     sGet(STOR+'insp').then(applyIfObj(updateLocalInspData));
     sGet(storKey('sched','honten')).then(applyIfObj(updateLocalSchedH));
     sGet(storKey('sched','sanda')).then(applyIfObj(updateLocalSchedS));
