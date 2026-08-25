@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787664766469';
+    window.__APP_BUILD='build-1787665691918';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.89';
+const APP_VERSION = '1.90';
 
 
 
@@ -8232,9 +8232,12 @@ function AppInner() {
     if(pendingLoanerData){
       const {carId,startDay,endDay,startYear,startMonth,endYear,endMonth,user,color,bookingKey:_pldBk,carName,carNum}=pendingLoanerData;
       const finalUser=cleanData.name||user;
+      // ★月は +1 する（dateKey は「年-月-日」で月は1始まり）。ここだけ getMonth() を
+      //   そのまま使っており、この経路に落ちると1か月ずれた bookingKey を作っていた
+      //   ＝代車が車検行と紐付かなくなる。_dcTargetDk と同じ作り方にそろえる。
       const _loanerTdk=formData._targetDk||modalDkRef.current
         ||(selDateRef.current instanceof Date
-            ?`${selDateRef.current.getFullYear()}-${selDateRef.current.getMonth()}-${selDateRef.current.getDate()}`
+            ?`${selDateRef.current.getFullYear()}-${selDateRef.current.getMonth()+1}-${selDateRef.current.getDate()}`
             :'');
       const _finalBk=modalType==='insp'
         ?`insp-${_loanerTdk}-${_dcPlaceIdx}`
@@ -8271,6 +8274,22 @@ function AppInner() {
       cleanData.rentalLabel=`🔑 ${rcar.name}${rcar.num?` (${rcar.num})`:''}`;
       cleanData.rentalCarId=pendingRentalId;
       cleanData.loaner='';cleanData.loanerId=null;
+      // ★レンタカー予約にも bookingKey を付けて予定と結び付ける。
+      //   従来は代車(lres)だけが bookingKey を持ち、レンタカーは予約カードの
+      //   rentalLabel だけが手掛かりだった。そのため車を選び直すと前に選んだ
+      //   レンタカーの予約が消えずに残り、1台が無駄に埋まっていた
+      //   （2026-08-25、木庭さんでレンタカーAとBの2件が残っているのを確認）。
+      //   同じ予約に紐づく古いレンタカーを消してから、今回の分を置き直す。
+      const _rBk=modalType==='insp'
+        ?`insp-${_dcTargetDk}-${_dcPlaceIdx}`
+        :`sched-${_dcTargetDk}-${modalSlot||''}`;
+      const _rRec={...pendingRentalRec,bookingKey:_rBk,carId:pendingRentalId};
+      const _rCar=pendingRentalId;
+      setTimeout(()=>persistRres(
+        base=>putResRec(removeResByBk(base,[_rBk]),_rCar,String(_rRec.id),_rRec),
+        back=>resHasRec(back,_rCar,_rRec.id),
+        {verb:'登録',name:_rRec.user}
+      ),0);
       setPendingRentalId(null);setPendingRentalRec(null);
     } else if(pendingLoanerId==null&&!pendingLoanerData){
       cleanData.rentalLabel='';
