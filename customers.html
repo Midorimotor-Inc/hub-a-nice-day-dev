@@ -15,7 +15,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1787635375688';
+  window.__APP_BUILD='build-1787640857879';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -100,7 +100,7 @@ const STOR='hub-v8-dev-';
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='1.82'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='1.83'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -124,7 +124,10 @@ const CF_POLL_MS=3000, CF_WAIT_MS=90000;
 const sSetVerified=async(key,val,eq,tries=2)=>{
   const same=eq||((back)=>JSON.stringify(back)===JSON.stringify(val));
   for(let i=0;i<tries;i++){
-    await sSet(key,val);
+    // ★GASが 'ok' を返したら着地は確定しているので読み返さない。
+    //   実測(2026-08-25・GAS v12): 書き込み応答の直後から読める＝読み返しは時間の無駄だった。
+    //   応答が読めない環境('unknown')だけ従来どおり読み返して確認する。
+    if(await sSet(key,val)==='ok')return true;
     const until=Date.now()+CF_WAIT_MS;
     while(Date.now()<until){
       await new Promise(r=>setTimeout(r,CF_POLL_MS));
@@ -388,7 +391,10 @@ const sSet=async(k,v,retries=4)=>{
   const job=__gasWriteQueue.then(async()=>{
     for(let i=0;i<retries;i++){
       const r=await __sSetOnce(k,v);
-      if(r==='ok'||r==='unknown')return true;
+      // ★'ok' はGASが「シートに書き終えた」と返した証拠。'unknown' は応答が読めない環境
+      //   （CORS遮断でno-corsに落ちた時）で、成否不明。呼び出し側が読み返しの要否を判断できるよう
+      //   真偽値ではなく状態を返す（どちらも真値なので既存の if(await sSet(...)) はそのまま動く）。
+      if(r==='ok'||r==='unknown')return r;
       if(r==='busy'){
         console.warn('[WRITE] GAS混雑(lock_timeout)→待って再送',k,'attempt',i+1);
         await new Promise(x=>setTimeout(x,3000+4000*i));
@@ -433,6 +439,22 @@ const writeVerified=async(key,mutate,check,tries=3,opts)=>{
   console.error('[WRITE] GASに反映できませんでした:',key);
   return false;
 };
+
+// ★裏で走っている保存を数える（顧客リストは index の全画面オーバーレイ＝iframe で開かれる）。
+//   予約1件の保存は、スケジュール(insp)だけを await して、リスト本体・カレンダー枠(custbk)・
+//   代車・他PCへの通知は「裏で続ける」作りになっている。ところがオーバーレイを閉じると
+//   iframe ごと破棄され、裏の保存はその場で全部死ぬ（ページ遷移ではないので beforeunload も出ない）。
+//   実測: 保存の3秒後に「スケジュールに戻る」を押すと、insp だけ残ってリスト・custbk・通知が消えた。
+//   ＝2026-08-24の月本さん、8-25の三村電機の「スケジュールにはあるのにリストが未予約」の正体。
+//   __hubWriteBusy は「GASへ送信中」しか数えないので、送信前の読み取り待ちを取りこぼす。
+//   そこで保存の一連の処理そのものを数え、終わるまで画面を閉じさせない。
+const trackSave=(p)=>{
+  try{ window.__hubBusyOps=(window.__hubBusyOps||0)+1; }catch(e){}
+  return Promise.resolve(p).catch(()=>{}).then(()=>{
+    try{ window.__hubBusyOps=Math.max(0,(window.__hubBusyOps||1)-1); }catch(e){}
+  });
+};
+const savesInFlight=()=>{try{return (window.__hubBusyOps||0)+(window.__hubWriteBusy||0);}catch(e){return 0;}};
 
 // ── 予約の意図ログ（未反映の予約を絶対に見失わないための控え）──
 // 保存を始める前に localStorage へ書き、insp への反映が確認できたら消す。残っていれば
@@ -1470,6 +1492,7 @@ const App=()=>{
   const [bgSyncing,setBgSyncing]=useState(false); // GASバックグラウンド同期中（キャッシュ表示中の読み込みアピール）
   const [importing,setImporting]=useState(false);
   const [importMsg,setImportMsg]=useState('');   // インポート進捗（どのファイルを保存中か）
+  const [closing,setClosing]=useState(null);     // 「スケジュールに戻る」で保存完了を待っている間の表示
   const [cfWarn,setCfWarn]=useState([]);         // サーバー上のデータが欠けている顧客ファイル名
   const [hotInsp,setInspData]=useState({});   // hot=今日以降＋直近。書き込みは全てサーバー最新(hot)から構築
   const [inspArch,setInspArch]=useState({});  // 保管箱（過去日）。起動時に1回読むだけ・書き換えない
@@ -2055,6 +2078,12 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
   },[]);
 
   const handleBookingSave=useCallback(async(form,customer)=>{
+    // ★保存の入口から最後までを数える。スケジュール(insp)の書き込みを待っている間はまだ
+    //   裏の保存が始まっておらず、カウンタだけ見ると0になる瞬間がある。その隙にオーバーレイを
+    //   閉じられると、続くリスト・custbk・通知の保存が丸ごと死ぬ（実測で再現）。
+    const _bg=[]; // 裏で走らせる保存。全部終わってからカウンタを戻す
+    try{ window.__hubBusyOps=(window.__hubBusyOps||0)+1; }catch(_e){}
+    try{
     const{entryDate,store,bookingTime,course,tokuten,staff,note,isTemp,selCarId,selDays}=form;
     const status=isTemp?'temp':'confirm';
     // 予約1件の保存（insp／顧客ファイル）を1つのIDで追跡し、両方の反映が確認できるまで
@@ -2174,11 +2203,11 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
         };
         // custbkもサーバー最新値にマージして書き、読み返して確認する（従来は投げっぱなしで、
         // lock_timeout時に無言で消えていた）
-        writeVerified(STOR+'custbk',
+        _bg.push(writeVerified(STOR+'custbk',
           base=>({...((base&&typeof base==='object')?base:{}),[bkKey]:custbkEntry}),
           back=>!!(back&&back[bkKey]),
           3,{requireBase:true} // 読めなかったサーバー値を「空」とみなして書かない
-        );
+        ));
 
         // 3. 代車予約追加（bookingKey付き）
         if(selCarId&&selDays&&selDays.length>0){
@@ -2213,7 +2242,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
           // ★サーバー最新のlresを取得してからマージして保存（2026-07-03修正）。
           // 以前はローカルstateベースで丸ごと上書きしていたため、このタブを開いてから
           // 他端末（モバイル等）が入れた代車予約を巻き添えで消す事故があり得た。
-          (async()=>{
+          _bg.push((async()=>{
             const _sD=new Date(sorted[0]);
             const _ci=customer.custId?[...String(customer.custId)].reduce((a,c)=>a+c.charCodeAt(0),0)%RES_COLORS.length:0;
             const _localBase=carStore==='honten'?loanerResH:loanerResS;
@@ -2246,7 +2275,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
               back=>!!(back&&back[selCarId]&&back[selCarId][_resDay]&&back[selCarId][_resDay].custId===customer.custId),
               3,{requireBase:true} // 読めなかったサーバー値を「空」とみなして書かない
             );
-          })();
+          })());
         }
       }
     }
@@ -2255,7 +2284,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
     //   その後で（多数チャンクの）顧客ファイル保存を行うことでGASロック競合を避ける。
     //   sSetはno-corsで失敗を検知できないため、読み返して実反映を確認し、最大3回まで再試行。
     if(changedFile){
-      (async()=>{
+      _bg.push((async()=>{
         for(let _attempt=0;_attempt<3;_attempt++){
           try{
             const _latest=await loadFileChunked(changedFile.name);
@@ -2263,9 +2292,13 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
             let _merged=_base.map(c=>c.custId===customer.custId?updCustomer:c);
             if(!_merged.some(c=>c.custId===customer.custId))_merged.push(updCustomer);
             const _mf={...changedFile,customers:_merged};
-            await saveFileChunked(_mf,_base); // 変わったチャンクだけ書く
+            const _wrote=await saveFileChunked(_mf,_base); // 変わったチャンクだけ書く
             try{localStorage.setItem(STOR+'cf-'+safeName(changedFile.name),JSON.stringify(_mf));}catch(e){}
-            // 読み返し検証：保存した顧客のstatus/entryDateがGASに入ったか
+            // ★保存が「GASのok応答」で確認できていれば、もう一度読み返さない。
+            //   3チャンクの読み直し（約4秒）＋待ち2秒を毎回やっており、入力した本人を
+            //   その分だけ待たせていた（オーバーレイを閉じるのに22秒かかっていた要因）。
+            if(_wrote===true){ _done.file=true;_maybeDrop(); return; }
+            // 確認が取れなかった時だけ読み返して照合する
             await new Promise(r=>setTimeout(r,2000));
             const _check=await loadFileChunked(changedFile.name);
             const _saved=_check&&(_check.customers||[]).find(c=>c.custId===customer.custId);
@@ -2278,7 +2311,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
         }
         setPendings(pendLoad());
         alert(`⚠️ ${customer.name} のリスト保存がサーバーに反映できませんでした。\n画面上部の「未反映の予約」バナーから再送できます。`);
-      })();
+      })());
     }else{ _done.file=true;_maybeDrop(); }
     // ★他のPCへ「この顧客を予約した」と知らせる（cust-updatesキュー）。
     //   スケジュール側の予約は index の syncCustStatus が必ずこれを積むのに、
@@ -2299,11 +2332,15 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
     const _sameCust=u=>(u.custId&&u.custId===customer.custId)||
       (u.name&&u.name===customer.name&&String(u.no||'')===String(customer.no||''));
     const _weekAgo=Date.now()-7*24*3600*1000;
-    writeVerified(STOR+'cust-updates',
+    _bg.push(writeVerified(STOR+'cust-updates',
       base=>[...(Array.isArray(base)?base:[]).filter(u=>u&&!_sameCust(u)&&(u.ts||0)>_weekAgo),_upd],
       back=>Array.isArray(back)&&back.some(u=>u&&u.ts===_upd.ts),
       3,{requireBase:true} // 読めなかったサーバー値を「空」とみなして書かない
-    );
+    ));
+    }finally{
+      // 裏の保存が全部終わってから初めてカウンタを戻す＝それまで画面は閉じられない
+      Promise.allSettled(_bg).then(()=>{try{window.__hubBusyOps=Math.max(0,(window.__hubBusyOps||1)-1);}catch(_e){}});
+    }
   },[loanerListH,loanerListS,saveInspWithStatus]);
 
   // ── 未反映の予約（pending）を起動時にサーバーと突き合わせる ──
@@ -2485,10 +2522,41 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
 
   return(
     <div style={{height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      {/* ★保存の完了待ち。閉じると裏の保存が死ぬので、終わるまで画面を覆って待たせる */}
+      {closing&&(
+        <div style={{position:'fixed',inset:0,zIndex:2147483646,background:'rgba(15,23,42,.72)',
+          display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <div style={{background:'white',borderRadius:14,padding:'26px 32px',maxWidth:420,textAlign:'center',
+            boxShadow:'0 12px 40px rgba(0,0,0,.4)'}}>
+            <div style={{fontSize:30,marginBottom:10}}>💾</div>
+            <div style={{fontWeight:800,fontSize:15,color:'#1e293b',marginBottom:8}}>{closing}</div>
+            <div style={{fontSize:12,color:'#64748b',lineHeight:1.7}}>
+              予約をサーバーに保存しています。<br/>完了すると自動でスケジュールに戻ります。
+            </div>
+          </div>
+        </div>
+      )}
       {/* ── ヘッダー ── */}
       <div style={{flexShrink:0,background:'linear-gradient(135deg,#1e1b4b,#1d4ed8)',padding:'10px 16px',display:'flex',alignItems:'center',gap:10}}>
         <a href="./index.html" onClick={e=>{
-            if(IS_EMBED){e.preventDefault();try{window.parent.postMessage({type:'hub-close-customers'},location.origin);}catch(err){}return;}
+            if(IS_EMBED){
+              e.preventDefault();
+              // ★保存が終わるまで閉じない。オーバーレイ(iframe)を閉じると裏で走っている
+              //   リスト本体・カレンダー枠・代車・他PCへの通知の保存がその場で死ぬ。
+              //   （ページ遷移ではないので beforeunload の警告も出ない）
+              const close=()=>{try{window.parent.postMessage({type:'hub-close-customers'},location.origin);}catch(err){}};
+              if(savesInFlight()<=0){close();return;}
+              let waited=0;
+              setClosing('保存中です… 完了までお待ちください');
+              const tick=()=>{
+                if(savesInFlight()<=0||waited>=180000){setClosing(null);close();return;}
+                waited+=500;
+                if(waited%2000===0)setClosing(`保存中です… 完了までお待ちください（${Math.round(waited/1000)}秒）`);
+                setTimeout(tick,500);
+              };
+              tick();
+              return;
+            }
             try{sessionStorage.setItem(STOR+'fs-restore',(document.fullscreenElement||document.webkitFullscreenElement)?'1':'0');}catch(err){}
           }}
           style={{color:'#fef08a',fontSize:12,textDecoration:'none',fontWeight:800,
