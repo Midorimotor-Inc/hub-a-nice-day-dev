@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787646819634';
+    window.__APP_BUILD='build-1787650136139';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.87';
+const APP_VERSION = '1.88';
 
 
 
@@ -2184,6 +2184,27 @@ const GCSS=`
   .fat-hscroll::-webkit-scrollbar{height:14px;width:14px}
   .fat-hscroll::-webkit-scrollbar-thumb{background:#94a3b8;border-radius:8px;border:3px solid #f1f5f9}
   .fat-hscroll::-webkit-scrollbar-thumb:hover{background:#64748b}
+  /* ★「たった今登録した代車」を光らせる。予約の帯はお客様ごとに色が違うので、
+     色ではなく「白い波紋＋濃い輪郭」で示す＝どの色の帯の上でも埋もれない。
+     光る根拠はサーバーを見ず、自分の端末が登録した瞬間の記録だけ＝保存の完了を待たない。 */
+  @keyframes hubJustPulse{
+    0%{box-shadow:inset 0 0 0 2px rgba(255,255,255,.95), 0 0 0 0 rgba(255,255,255,.9), 0 0 0 2px rgba(15,23,42,.92);}
+    70%{box-shadow:inset 0 0 0 2px rgba(255,255,255,.95), 0 0 0 9px rgba(255,255,255,0), 0 0 0 2px rgba(15,23,42,.92);}
+    100%{box-shadow:inset 0 0 0 2px rgba(255,255,255,.95), 0 0 0 0 rgba(255,255,255,0), 0 0 0 2px rgba(15,23,42,.92);}
+  }
+  .hub-just-added{animation:hubJustPulse 1.4s ease-out 6;position:relative;z-index:3;}
+  @keyframes hubJustChip{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:scale(1)}}
+  .hub-just-chip{
+    position:absolute;top:-9px;right:-5px;z-index:6;pointer-events:none;
+    background:#0f172a;color:#fff;font-size:9px;font-weight:900;letter-spacing:.04em;
+    border-radius:20px;padding:1px 7px;line-height:1.6;white-space:nowrap;
+    box-shadow:0 1px 5px rgba(0,0,0,.45);
+    animation:hubJustChip .3s cubic-bezier(.34,1.56,.64,1) both;
+  }
+  @media (prefers-reduced-motion: reduce){
+    .hub-just-added{animation:none;box-shadow:inset 0 0 0 2px rgba(255,255,255,.95),0 0 0 2px rgba(15,23,42,.92);}
+    .hub-just-chip{animation:none;opacity:1;transform:none;}
+  }
 `;
 
 const SEC_INSP='sec-insp', SEC_SCHED='sec-sched', SEC_NOTES='sec-notes';
@@ -5761,7 +5782,7 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
 // ============================================
 //  代車管理グリッド（閲覧専用 + モーダル編集）
 // ============================================
-const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onReplaceRes,onUndo,selDate,onBack,onPickLoaner,pickMode,locks,currentUser,onLockCar,onUnlockCar,savedModalData,inspData,schedData,onOpenBooking,pinnedRes,setPinnedRes,hoverRes,setHoverRes,storeLoaners,storeInfo,rentalCars,rentalRes,onAddRentalRes,onDeleteRentalRes,onReplaceRentalRes,onPickRental,onOpenSettings,tireData,locationData,onOpenTireEdit,onOpenLocationEdit,onApplyOptimize,pendingDeleteBk=''})=>{
+const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onReplaceRes,onUndo,selDate,onBack,onPickLoaner,pickMode,locks,currentUser,onLockCar,onUnlockCar,savedModalData,inspData,schedData,onOpenBooking,pinnedRes,setPinnedRes,hoverRes,setHoverRes,storeLoaners,storeInfo,rentalCars,rentalRes,onAddRentalRes,onDeleteRentalRes,onReplaceRentalRes,onPickRental,onOpenSettings,tireData,locationData,onOpenTireEdit,onOpenLocationEdit,onApplyOptimize,pendingDeleteBk='',justAddedIds=[]})=>{
   const LOANERS_LOCAL=storeLoaners||LOANERS;
   const RENTAL_LOCAL=rentalCars||DEFAULT_RENTAL_CARS;
   const rentalResLocal=rentalRes||{};
@@ -6170,8 +6191,11 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
                     const showName=isObj&&(isStart||!_leftSt||(typeof _leftSt==='object'&&_leftSt.id!==st.id)||(!!_prevD&&_prevD.month!==month));
                     let nameSpan=1;
                     if(showName){for(let j=i+1;j<dateRange.length;j++){const s=getState(car.id,dateRange[j]);if(s&&typeof s==='object'&&s.id===st.id)nameSpan++;else break;}}
+                    // ★この端末が「たった今」登録した予約か（保存の完了は待たない）
+                    const isJust=isObj&&justAddedIds&&justAddedIds.indexOf(st.id)>=0;
                     return (
                       <td key={i}
+                        className={isJust&&!isDrag&&!isConf?'hub-just-added':undefined}
                         onMouseDown={e=>{
                           e.preventDefault();
                           if(!isBlocked)handleMD(car.id,dateObj,e);
@@ -6200,10 +6224,12 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
                           background:bg,
                           cursor:isBlocked?'not-allowed':isFree?'crosshair':!pickMode&&isObj?'pointer':'default',
                           padding:0,
-                          overflow:showName?'visible':'hidden',
+                          overflow:(showName||isJust)?'visible':'hidden',
                           position:'relative',
                           boxSizing:'border-box'
                         }}>
+                        {/* ★たった今登録した予約の目印。開始位置にだけ出す */}
+                        {isJust&&showName&&(<div className="hub-just-chip">たった今</div>)}
                         {/* 貸出日数分のセルを1枠として名前を表示（開始日 or 月またぎ・前が別予約の再開始位置から。尻切れ可） */}
                         {showName&&(
                           <div style={{position:'absolute',left:3,top:'50%',transform:'translateY(-50%)',width:nameSpan*44-6,fontSize:11,color:'white',fontWeight:800,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'clip',textShadow:'-1px -1px 1px rgba(0,0,0,.85),1px -1px 1px rgba(0,0,0,.85),-1px 1px 1px rgba(0,0,0,.85),1px 1px 1px rgba(0,0,0,.85),0 0 3px rgba(0,0,0,.9)',zIndex:2,pointerEvents:'none'}}>
@@ -7239,6 +7265,25 @@ function AppInner() {
   const addRentalRes    = useCallback((carId,rec) => persistRres(base=>putResRec(base,carId,String(rec.id),rec),back=>resHasRec(back,carId,rec.id),{verb:'登録',name:rec?.user}),[persistRres]);
   const deleteRentalRes = useCallback((carId,resId) => persistRres(base=>resHasRec(base,carId,resId)?removeResById(base,carId,resId):undefined,back=>!resHasRec(back,carId,resId),{verb:'削除'}),[persistRres]);
   const replaceRentalRes = useCallback((carId,resId,newRec) => persistRres(base=>resHasRec(base,carId,resId)?patchResRec(base,carId,resId,newRec):undefined,back=>{const r=Object.values(_resObj(back)[carId]||{}).find(x=>x&&x.id===resId);return !!r&&Object.keys(newRec||{}).every(k=>JSON.stringify(r[k])===JSON.stringify(newRec[k]));},{verb:'期間の変更',name:newRec?.user}),[persistRres]);
+  // ★「この端末がたった今登録した代車」を覚えておく。光らせる根拠はこれだけで、
+  //   サーバーの応答も保存の完了も待たない＝代車管理を開いた瞬間に必ず光っている。
+  //   保存に20秒かかっても、その間に画面を切り替えても、開いた時点から光り始める。
+  const [justAdded,setJustAdded]=useState([]); // [{id,ts}]
+  const markJustAdded=useCallback((id)=>{
+    if(id==null)return;
+    setJustAdded(prev=>[...prev.filter(x=>x.id!==id),{id,ts:Date.now()}].slice(-10));
+  },[]);
+  // 代車管理を開いている間だけ光らせ、9秒で静かに終わる。開くまでは消さない
+  //   ＝保存に何秒かかっても「開いた瞬間に光っている」を保証する。
+  useEffect(()=>{
+    if(view!=='loaner'||justAdded.length===0)return;
+    const t=setTimeout(()=>setJustAdded([]),9000);
+    return ()=>clearTimeout(t);
+  },[view,justAdded]);
+  const justAddedIds=useMemo(()=>{
+    const now=Date.now();
+    return justAdded.filter(x=>now-x.ts<15*60*1000).map(x=>x.id); // 15分たったものは対象外
+  },[justAdded]);
   const [loanerUndo, setLoanerUndo]=useState([]);
   // LoanerGridのpinnedRes/hoverResを親で管理（グリッドの再レンダリング防止→scrollLeft保持）
   const [loanerPinnedRes, setLoanerPinnedRes]=useState(null);
@@ -7441,6 +7486,7 @@ function AppInner() {
           // 同じ予約の古い置き場所を消してから置く（キーがズレて二重に出ないように）
           return putResRec(removeResByBk(base,[rec.bookingKey]),carId,dayKey||`${rec.fy}-${rec.fm}-${rec.fd}`,rec);
         });
+        markJustAdded(rec.id); // 顧客リストから入れた分も「たった今」として光らせる
         return;
       }
       if(e.data&&e.data.type==='hub-close-customers'){
@@ -7457,7 +7503,7 @@ function AppInner() {
     };
     window.addEventListener('message',onMsg);
     return()=>window.removeEventListener('message',onMsg);
-  },[refreshMainData,updateLocalLresH,updateLocalLresS]);
+  },[refreshMainData,updateLocalLresH,updateLocalLresS,markJustAdded]);
 
   // 顧客リストデータのバックグラウンドプリロード
   useEffect(()=>{
@@ -8175,6 +8221,7 @@ function AppInner() {
         fd:_lu.startDay,ty:_lu.endYear??_lu.startYear,tm:_lu.endMonth??_lu.startMonth,td:_lu.endDay,
         user:_lu.finalUser,color:_lu.color,bookingKey:_lu.bk,
         carName:_lu.carName,carNum:_lu.carNum};
+      markJustAdded(_luRec.id);
       setTimeout(()=>persistLres(
         // ★キーは「年-月-日」（"日"だけだと別の月で同じ日に始まる予約とキーが衝突する。
         //   最適化経路(rkey)は既に年-月-日だったが、この登録経路だけ直し漏れていた）
@@ -9998,7 +10045,8 @@ function AppInner() {
               locationData={rentalLocData}
               onOpenTireEdit={()=>setShowTireEdit(true)}
               onOpenLocationEdit={()=>setShowLocationEdit(true)}
-              onApplyOptimize={applyLoanerOptimize}/>
+              onApplyOptimize={applyLoanerOptimize}
+              justAddedIds={justAddedIds}/>
           </div>
         )}
         {view==='vehicle'&&(
