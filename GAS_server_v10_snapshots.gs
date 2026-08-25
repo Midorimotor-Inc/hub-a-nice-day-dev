@@ -1,4 +1,13 @@
-// Hub a Nice Day - GAS server v10 (snapshots / restore)  ※v11 追記あり（下記）
+// Hub a Nice Day - GAS server v10 (snapshots / restore)  ※v11・v12 追記あり（下記）
+// v12 追加（2026-08-25・要再デプロイ）: 書き込みが「データ量に関係なく1本10〜27秒」かかる原因を潰す。
+//   実測(DEV・数バイトの値): 読み取り1.1秒 に対し 書き込み4.8〜11.4秒 ＝ 遅さはGAS側の処理そのものだった。
+//   ①invalidateCache が cache.remove() を1+100回ループしていた → removeAll で1往復にまとめる
+//   ②writeRow が値と更新日時を setValue×2 で書いていた → setValues 1回にまとめる
+//   ③書き込みのたびに findRow と deleteChunks でキー列(A列)を2回フルスキャンしていた → 1回に集約し、
+//     __chunk 行が無ければシートに触らない（v9のDrive保管移行後は通常0行）
+//   ④doPost action=setMany … 複数キーを1リクエスト・1回のロックで書く（最大20件）。
+//     1予約の保存が insp/lres/custbk と複数キーに散るため、1本ずつロックを取り直すのをやめる。
+//     ★①②③はフロント無変更で効く。④はフロントが caps.setMany を見てオプトインするまで未使用。
 // v11 追加（2026-07-29・要再デプロイ／すべて追加のみで既存経路は不変）:
 //  - doGet ?action=caps … 使える機能を返す（フロントが起動時に検出して経路を切り替えるため）。
 //  - doPost action=patchInsp … insp の「指定した日付キーだけ」をロック内で原子的にマージ（差分書き込み）。
@@ -69,36 +78,70 @@ function makeResponse(text) {
   return output;
 }
 
+// v12: キー列(A列)の読み取りを1回に集約するためのヘルパー。
+//   従来は writeRow の findRow と deleteChunks で毎回2回フルスキャンしていた。
+function readKeyCol(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 1) return [];
+  return sheet.getRange(1, 1, last, 1).getValues();
+}
+function findRowIn(keysCol, key) {
+  for (var i = 1; i < keysCol.length; i++) {
+    if (keysCol[i][0] === key) return i + 1;
+  }
+  return -1;
+}
+
 function writeRow(sheet, key, value, now) {
-  var row = findRow(sheet, key);
+  writeRowAt(sheet, findRow(sheet, key), key, value, now);
+}
+// v12: 値と更新日時を1回の setValues で書く（従来は setValue を2回＝往復2回）。
+function writeRowAt(sheet, row, key, value, now) {
   if (row === -1) {
     sheet.appendRow([key, value, now]);
   } else {
-    sheet.getRange(row, 2).setValue(value);
-    sheet.getRange(row, 3).setValue(now);
+    sheet.getRange(row, 2, 1, 2).setValues([[value, now]]);
   }
 }
 
 // legacy cleanup: remove old key__chunkN rows (column 1 only, fast)
 function deleteChunks(sheet, key) {
-  var last = sheet.getLastRow();
-  if (last < 2) return;
-  var keys = sheet.getRange(1, 1, last, 1).getValues();
+  deleteChunksFrom(sheet, readKeyCol(sheet), key);
+}
+// v12: 既に読んであるキー列を使い回す。該当行が無ければシートに一切触らない
+//   （v9でDrive保管に移行して以降 __chunk 行は作られないので、通常はここで終わる）。
+//   削除した行数を返す（>0 なら行番号がずれるので、呼び出し側はキー列を読み直すこと）。
+function deleteChunksFrom(sheet, keysCol, key) {
+  if (!keysCol || keysCol.length < 2) return 0;
   var prefix = key + '__chunk';
   var rowsToDelete = [];
-  for (var i = 1; i < keys.length; i++) {
-    var k = keys[i][0];
+  for (var i = 1; i < keysCol.length; i++) {
+    var k = keysCol[i][0];
     if (k && String(k).indexOf(prefix) === 0) rowsToDelete.push(i + 1);
   }
+  if (rowsToDelete.length === 0) return 0;
   rowsToDelete.sort(function(a, b) { return b - a; });
   rowsToDelete.forEach(function(r) { sheet.deleteRow(r); });
+  return rowsToDelete.length;
 }
 
-function invalidateCache(key) {
+// v12: キャッシュ削除は removeAll で1往復にまとめる。
+//   従来は cache.remove() を 1+100 回ループしており、値が数バイトでも書き込みが
+//   数秒伸びていた（CacheServiceは1回ごとにリモート往復する）。
+//   複数キー分をまとめて消せるよう、キー配列も受け取れるようにする。
+function cacheKeysFor(key) {
+  var ks = [key];
+  for (var i = 0; i < 100; i++) ks.push(key + '__chunk' + i);
+  return ks;
+}
+function invalidateCache(key) { invalidateCacheMany([key]); }
+function invalidateCacheMany(keys) {
   try {
     var cache = CacheService.getScriptCache();
-    cache.remove(key);
-    for (var i = 0; i < 100; i++) cache.remove(key + '__chunk' + i);
+    var all = [];
+    for (var i = 0; i < keys.length; i++) all = all.concat(cacheKeysFor(keys[i]));
+    // removeAll の上限に配慮して分割（1回あたり500件まで）
+    for (var j = 0; j < all.length; j += 500) cache.removeAll(all.slice(j, j + 500));
   } catch (ce) {}
 }
 
@@ -195,7 +238,7 @@ function doGet(e) {
     // v11: 機能検出。フロントは起動時に1回だけ読み、使える機能に応じて経路を切り替える。
     //   （通常のGETなので応答を読める。POSTはno-corsで応答が読めないため能力検出はGETで行う）
     if (e.parameter.action === 'caps') {
-      return makeResponse(JSON.stringify({ patchInsp: true, notifyFail: true, snapshots: true, ver: 'v11' }));
+      return makeResponse(JSON.stringify({ patchInsp: true, notifyFail: true, snapshots: true, setMany: true, ver: 'v12' }));
     }
 
     // 一括読み: ?keys=a,b,c → {"a":"<値文字列|null>", ...} のJSON。
@@ -363,6 +406,58 @@ function doPost(e) {
     finally { if (lockedP) lockP.releaseLock(); }
   }
 
+  // v12: 複数キーを1リクエスト・1回のロックでまとめて書く。
+  //   body.items = [{key:"…", value:"<JSON文字列>"}, …]（最大20件）。
+  //   1予約の保存が insp / lres / custbk … と複数キーに散るため、従来は1本ずつ
+  //   ロックを取り直して10〜27秒×本数かかっていた。ここを1回にまとめる。
+  //   応答は {"ok":[書けたキー], "failed":[{key,error}]} のJSON。
+  //   ★フロントは caps.setMany を見てオプトインする（未対応環境では従来の1本ずつ経路）。
+  if (body.action === 'setMany') {
+    var itemsM = body.items;
+    if (!itemsM || !itemsM.length) return makeResponse('error: no items');
+    if (itemsM.length > 20) return makeResponse('error: too many items');
+    var lockM = LockService.getScriptLock();
+    var lockedM = false;
+    try { lockM.waitLock(25000); lockedM = true; } catch (leM) { return makeResponse('error: lock_timeout'); }
+    try {
+      var sheetM = getSheet();
+      var keysColM = readKeyCol(sheetM);
+      var nowM = new Date().toLocaleString('ja-JP');
+      var okM = [], failM = [], touchedM = [];
+      for (var iM = 0; iM < itemsM.length; iM++) {
+        var itM = itemsM[iM] || {};
+        var kM = itM.key;
+        if (!kM) { failM.push({ key: '', error: 'no key' }); continue; }
+        try {
+          var sM = (itM.value === null || itM.value === undefined) ? '' : String(itM.value);
+          Logger.log('setMany key=' + kM + ' len=' + sM.length);
+          var rowM = findRowIn(keysColM, kM);
+          if (sM.length <= BIG_THRESHOLD) {
+            writeRowAt(sheetM, rowM, kM, sM, nowM);
+          } else {
+            driveWrite(kM, sM);
+            writeRowAt(sheetM, rowM, kM, FILE_MARKER, nowM);
+          }
+          var delM = deleteChunksFrom(sheetM, keysColM, kM);
+          // ★行の増減があったらキー列を読み直す。append で伸びた時だけでなく、
+          //   旧chunk行を削除して行番号が繰り上がった時も読み直さないと、
+          //   次のキーを別の行に書いてしまう（モック単体テストで検出）。
+          if (rowM === -1 || delM > 0) keysColM = readKeyCol(sheetM);
+          touchedM.push(kM);
+          okM.push(kM);
+        } catch (eM) {
+          failM.push({ key: kM, error: String(eM && eM.message ? eM.message : eM) });
+        }
+      }
+      if (touchedM.length) invalidateCacheMany(touchedM);
+      return makeResponse(JSON.stringify({ ok: okM, failed: failM }));
+    } catch (erM) {
+      return makeResponse('error: ' + erM.message);
+    } finally {
+      if (lockedM) lockM.releaseLock();
+    }
+  }
+
   var lock = LockService.getScriptLock();
   var locked = false;
   try { lock.waitLock(25000); locked = true; } catch (le) {
@@ -380,19 +475,23 @@ function doPost(e) {
     // v11: どのキーに何バイト書いたかを実行ログに残す（どのキーが重いか診断できるように）。
     Logger.log('write key=' + key + ' len=' + str.length);
 
+    // v12: キー列は1回だけ読んで findRow と deleteChunks で共有する。
+    var keysCol = readKeyCol(sheet);
+    var row = findRowIn(keysCol, key);
+
     // Write new data FIRST, then clean up old chunk rows last.
     // This way, if anything fails midway, the old data is still readable.
     if (str.length <= BIG_THRESHOLD) {
       // small value: keep in the sheet
-      writeRow(sheet, key, str, now);
+      writeRowAt(sheet, row, key, str, now);
     } else {
       // big value: store in Drive (must succeed), then mark the sheet
       driveWrite(key, str);
-      writeRow(sheet, key, FILE_MARKER, now);
+      writeRowAt(sheet, row, key, FILE_MARKER, now);
     }
 
     // legacy cleanup only after the new value is safely written
-    deleteChunks(sheet, key);
+    deleteChunksFrom(sheet, keysCol, key);
 
     invalidateCache(key);
     return makeResponse('ok');
