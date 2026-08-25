@@ -15,7 +15,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1787630353399';
+  window.__APP_BUILD='build-1787635375688';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -100,7 +100,7 @@ const STOR='hub-v8-dev-';
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='1.81'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='1.82'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -167,7 +167,12 @@ const saveFileChunked=async(file,prevCustomers,onStep)=>{
   }
   return ok;
   }finally{
-    setTimeout(()=>{__saveCount=Math.max(0,__saveCount-1);},70000);
+    // ★保存完了後の猶予。この間はポーリングがサーバー値でローカルを上書きしない。
+    //   従来は70秒。書き込みが10〜27秒かかり「書いた値がすぐ読めない」前提の数字だったが、
+    //   v1.79で応答(ok)を確認して書くようになり、GAS v12で書き込みは約2秒・書けた直後から
+    //   読めることを実測した。70秒のままだと、ファイルを1回保存しただけで他PCの予約が
+    //   最大70秒画面に出てこない（実測: 他PCへの反映が20秒→80秒に伸びた）。
+    setTimeout(()=>{__saveCount=Math.max(0,__saveCount-1);},8000);
   }
 };
 // ファイルをチャンクから復元
