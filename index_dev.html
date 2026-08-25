@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787562601404';
+    window.__APP_BUILD='build-1787630353399';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.80';
+const APP_VERSION = '1.81';
 
 
 
@@ -7079,14 +7079,17 @@ function AppInner() {
   // 店舗別データ（本店）
   const [schedDataH, setSchedDataH, updateLocalSchedH]=useShared(storKey('sched','honten'),{},15000);
   const [memoDataH,  setMemoDataH] =useShared(storKey('memo', 'honten'),{});
-  const [loanerResH, setLoanerResH, updateLocalLresH]=useShared(storKey('lres', 'honten'),{});
+  // ★代車(lres)・レンタカー(rres)のポーリングは15秒。スケジュール(insp)・顧客枠(custbk)と揃える。
+  //   ここだけ既定値の60秒のままだったため、他の端末で入れた代車が最大1分出てこず
+  //   「スケジュールは反映するのに代車だけ反映しない」と見えていた（2026-08-25にユーザーが報告）。
+  const [loanerResH, setLoanerResH, updateLocalLresH]=useShared(storKey('lres', 'honten'),{},15000);
   const [closedDaysH,setClosedDaysH]=useShared(storKey('cdow', 'honten'),[],60000);
   const [closedDatesH,setClosedDatesH]=useShared(storKey('cdate','honten'),[],60000);
   const [dayOffDataH, setDayOffDataH] =useShared(storKey('dayoff','honten'),{},60000);
   // 店舗別データ（三田店）
   const [schedDataS, setSchedDataS, updateLocalSchedS]=useShared(storKey('sched','sanda'),{},15000);
   const [memoDataS,  setMemoDataS] =useShared(storKey('memo', 'sanda'),{});
-  const [loanerResS, setLoanerResS, updateLocalLresS]=useShared(storKey('lres', 'sanda'),{});
+  const [loanerResS, setLoanerResS, updateLocalLresS]=useShared(storKey('lres', 'sanda'),{},15000);
   // 三田店：水曜(3)をデフォルト定休 ※-v2でリセット
   const [closedDaysS,setClosedDaysS]=useShared(storKey('cdow-v2','sanda'),[3],60000);
   const [closedDatesS,setClosedDatesS]=useShared(storKey('cdate','sanda'),[],60000);
@@ -7122,7 +7125,7 @@ function AppInner() {
   const [loanerListH,  setLoanerListH]  = useShared(storKey('cars','honten'),DEFAULT_LOANERS_HONTEN,60000);
   const [loanerListS,  setLoanerListS]  = useShared(storKey('cars','sanda'),DEFAULT_LOANERS_SANDA,60000);
   const [rentalCars,   setRentalCars]   = useShared(STOR+'rentalcars',DEFAULT_RENTAL_CARS,60000);
-  const [rentalResData,setRentalResData,updateLocalRres]= useShared(STOR+'rres',              {});
+  const [rentalResData,setRentalResData,updateLocalRres]= useShared(STOR+'rres',              {},15000);
   const [carTireData,  setCarTireData]  = useShared(STOR+'tiredata',{},60000); // {carId: 'summer'|'winter'|'all'}
   const [rentalLocData,setRentalLocData]= useShared(STOR+'rentaloc',          {}); // {carId: 'honten'|'sanda'|'out'}
   const [vehicleData,  setVehicleData]  = useShared(STOR+'vehicles', []);          // 車両管理（車検証＋点検）
