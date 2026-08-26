@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787719384443';
+    window.__APP_BUILD='build-1787733080971';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.96';
+const APP_VERSION = '1.97';
 
 
 
@@ -7730,16 +7730,59 @@ function AppInner() {
       return h>=9 && h<=18 && s!=='12:30';  // 12:30（昼休み枠）は印刷では省く
     });
 
+    // ★事前入庫・納車も印刷に載せる（画面のタイムスケジュールと同じ規則）。
+    //   これらは「行そのものを保存しない派生表示」なので、当日のデータだけ見ていた印刷には
+    //   出てこなかった。他の日付の車検／作業から毎回組み立てる（2026-08-26にユーザーが要望）。
+    const _inStore = r => (r.store===vsId||(r.store==null&&vsId==='honten'));
+    const _slotOf  = t => (t&&SCHED_SLOTS.includes(getBaseSlot(t)))?getBaseSlot(t):'未定';
+    const _mmdd    = s => {const p=String(s||'').split('-');return p.length===3?`${+p[1]}/${+p[2]}`:String(s||'');};
+    const _initial = c => {const x=COURSES.find(x=>x.id===Number(c));return x?x.initial:'';};
+    const derivedBySlot = {};
+    const pushDerived = (slot,row)=>{(derivedBySlot[slot]=derivedBySlot[slot]||[]).push(row);};
+    Object.keys(inspData||{}).forEach(wdk=>{
+      (inspData[wdk]||[]).forEach((r,ix)=>{
+        if(!r||!r.name||r.bookingStatus==='cancelled'||!_inStore(r))return;
+        // 事前入庫：この日に車だけ預かる（車検作業日は別の日）
+        if(wdk!==dk && r.entryDate===dk){
+          pushDerived(_slotOf(r.time),{kind:'事前入庫',cls:'d-pre',name:r.name,carType:r.carType||'',
+            loaner:getLoanerLabel(r.name,`insp-${wdk}-${ix}`),
+            note:`${_mmdd(wdk)} 車検${_initial(r.course)?`（${_initial(r.course)}）`:''}の預かり`});
+        }
+        // 納車：この日に返す
+        if(r.deliveryDate===dk){
+          pushDerived(_slotOf(r.deliveryTime),{kind:'納車',cls:'d-dlv',name:r.name,carType:r.carType||'',
+            loaner:getLoanerLabel(r.name,`insp-${wdk}-${ix}`),
+            note:`${_mmdd(wdk)} 車検${_initial(r.course)?`（${_initial(r.course)}）`:''}の納車`});
+        }
+      });
+    });
+    Object.keys(schedData||{}).forEach(wdk=>{
+      Object.keys(schedData[wdk]||{}).forEach(sk=>{
+        const r=schedData[wdk][sk];
+        if(!r||!r.name||r.deliveryDate!==dk)return;
+        if(wdk===dk&&getBaseSlot(sk)===_slotOf(r.deliveryTime))return; // 自分自身の枠と重なる時は出さない
+        pushDerived(_slotOf(r.deliveryTime),{kind:'納車',cls:'d-dlv',name:r.name,carType:r.carType||'',
+          loaner:schedLoaner(r),note:`${_mmdd(wdk)} 作業の納車`});
+      });
+    });
+
     const schedRows = [];
     for(const slot of PRINT_SLOTS){
       const subKeys = Object.keys(schedData[dk]||{}).filter(k=>getBaseSlot(k)===slot).sort();
       const dataKeys = subKeys.filter(k=>{const r=schedData[dk][k];return r&&r.name;});
-      if(dataKeys.length===0){
+      const derived  = derivedBySlot[slot]||[];
+      if(dataKeys.length===0&&derived.length===0){
         schedRows.push({slot, name:'', carType:'', work:'', loaner:'', note:'', isEmpty:true});
       } else {
-        dataKeys.forEach((k,i)=>{
+        let first=true;
+        dataKeys.forEach(k=>{
           const r=schedData[dk][k];
-          schedRows.push({slot:i===0?slot:'', name:r.name||'', carType:r.carType||'', work:r.work||'', loaner:schedLoaner(r), note:r.content||'', isEmpty:false});
+          schedRows.push({slot:first?slot:'', name:r.name||'', carType:r.carType||'', work:r.work||'', loaner:schedLoaner(r), note:r.content||'', isEmpty:false});
+          first=false;
+        });
+        derived.forEach(d=>{
+          schedRows.push({slot:first?slot:'', name:d.name, carType:d.carType, work:d.kind, loaner:d.loaner, note:d.note, isEmpty:false, cls:d.cls});
+          first=false;
         });
       }
     }
@@ -7803,6 +7846,11 @@ function AppInner() {
   .slot-empty td { color: #94a3b8; background: #f1f5f9; }
   .slot-empty td:first-child { color: #334155; font-weight: 700; }
   .has-data td { background: white; }
+  /* ★事前入庫・納車の派生行。当日の作業ではないので地色で区別する（白黒印刷でも濃さで分かる） */
+  .d-pre td { background: #fff1e2; }
+  .d-pre td:nth-child(4) { color: #9a3412; }
+  .d-dlv td { background: #e6f7ef; }
+  .d-dlv td:nth-child(4) { color: #047857; }
   .staff-row { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; font-size: 12px; }
   .chip { padding: 2px 8px; border-radius: 10px; font-weight: 700; }
   .chip-work { background: #e0f2fe; color: #075985; }
@@ -7888,11 +7936,11 @@ function AppInner() {
           ${schedRows.map(r=>{
             const nn=(r.note||'').length;
             const nCls=nn>34?'note-xs':nn>22?'note-sm':'';
-            return `<tr class="${r.isEmpty?'slot-empty':'has-data'}">
+            return `<tr class="${r.isEmpty?'slot-empty':'has-data'}${r.cls?' '+r.cls:''}">
               <td style="font-weight:700;color:#0e7490;white-space:nowrap">${r.slot||''}</td>
               <td style="font-weight:${r.name?'700':'400'}">${r.name||''}</td>
               <td>${r.carType||''}</td>
-              <td style="text-align:center">${r.work||''}</td>
+              <td style="text-align:center${r.cls?';white-space:nowrap;font-weight:800':''}">${r.work||''}</td>
               <td class="${loanerFitCls(r.loaner)}">${r.loaner||''}</td>
               <td class="${nCls}">${r.note||''}</td>
             </tr>`;}).join('')}
