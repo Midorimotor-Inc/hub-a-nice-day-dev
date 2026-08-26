@@ -1,4 +1,10 @@
-// Hub a Nice Day - GAS server v10 (snapshots / restore)  ※v11・v12 追記あり（下記）
+// Hub a Nice Day - GAS server v10 (snapshots / restore)  ※v11・v12・v13 追記あり（下記）
+// v13 追加（2026-08-26・要再デプロイ）: 読み取りキャッシュの寿命を60秒→5秒に短縮。
+//   書き込みは invalidateCache でキャッシュを消すが、書き込みの「前」に始まった読み取りが
+//   書き込みの「後」にキャッシュへ古い値を書き戻すことがある。すると直後の読み取りが最大60秒
+//   古い値を返し続け、フロントの「書いた→読み返して確認」が失敗して再送を繰り返す。
+//   実測(2026-08-26): 代車を1件付けただけで lres の書き込みが3回再送され、画面上では
+//   代車が消えて数秒後に復活した。読み取りは1秒前後で終わるためキャッシュの利得は小さい。
 // v12 追加（2026-08-25・要再デプロイ）: 書き込みが「データ量に関係なく1本10〜27秒」かかる原因を潰す。
 //   実測(DEV・数バイトの値): 読み取り1.1秒 に対し 書き込み4.8〜11.4秒 ＝ 遅さはGAS側の処理そのものだった。
 //   ①invalidateCache が cache.remove() を1+100回ループしていた → removeAll で1往復にまとめる
@@ -48,6 +54,13 @@ var BIG_THRESHOLD = 30000;            // values longer than this go to Drive
 var FILE_MARKER = '__DRIVEFILE__';    // cell marker meaning "value is in a Drive file"
 var CHUNK_MARKER = '__CHUNKED__:';    // legacy marker (v7/v8), read-only support
 var DRIVE_FOLDER = 'hubdata_blobs';
+// ★v13: 読み取りキャッシュの寿命（秒）。従来は60秒だった。
+//   書き込みは invalidateCache でキャッシュを消すが、書き込みの「前」に始まった読み取りが
+//   書き込みの「後」にキャッシュへ古い値を書き戻すことがある。その場合、直後の読み取りが
+//   最大60秒ものあいだ古い値を返し続け、フロントの「書いた→読み返して確認」が失敗して
+//   再送を繰り返し、画面上では予約や代車が消えたり復活したりする（2026-08-26に実測）。
+//   読み取り自体は1秒前後で終わるのでキャッシュの利得は小さい。寿命を短くして被害を断つ。
+var READ_CACHE_SEC = 5;
 
 function getSheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -185,7 +198,7 @@ function readOneValue(sheet, cache, key, rowHint) {
   if (value === FILE_MARKER) {
     var c = driveRead(key);
     if (c === null || c === '') c = 'null';
-    try { if (c.length < 90000) cache.put(key, c, 60); } catch (ce) {}
+    try { if (c.length < 90000) cache.put(key, c, READ_CACHE_SEC); } catch (ce) {}
     return c;
   }
 
@@ -201,11 +214,11 @@ function readOneValue(sheet, cache, key, rowHint) {
       }
     }
     if (!result) result = 'null';
-    try { if (result.length < 90000) cache.put(key, result, 60); } catch (ce) {}
+    try { if (result.length < 90000) cache.put(key, result, READ_CACHE_SEC); } catch (ce) {}
     return result;
   }
 
-  try { cache.put(key, value, 60); } catch (ce) {}
+  try { cache.put(key, value, READ_CACHE_SEC); } catch (ce) {}
   return value;
 }
 
@@ -238,7 +251,7 @@ function doGet(e) {
     // v11: 機能検出。フロントは起動時に1回だけ読み、使える機能に応じて経路を切り替える。
     //   （通常のGETなので応答を読める。POSTはno-corsで応答が読めないため能力検出はGETで行う）
     if (e.parameter.action === 'caps') {
-      return makeResponse(JSON.stringify({ patchInsp: true, notifyFail: true, snapshots: true, setMany: true, ver: 'v12' }));
+      return makeResponse(JSON.stringify({ patchInsp: true, notifyFail: true, snapshots: true, setMany: true, ver: 'v13' }));
     }
 
     // 一括読み: ?keys=a,b,c → {"a":"<値文字列|null>", ...} のJSON。
