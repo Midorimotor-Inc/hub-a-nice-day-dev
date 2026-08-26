@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787733080971';
+    window.__APP_BUILD='build-1787735826959';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.97';
+const APP_VERSION = '1.98';
 
 
 
@@ -1914,6 +1914,11 @@ const RESTORE_ALLOWED = [
 const canRestore = (u) => !!u && RESTORE_ALLOWED.some(a => (u.uid && a.uid===u.uid) || (u.name && a.name===u.name));
 
 // GASからデータを読み込む
+// ★サーバーに繋がっているかの目印。読み取りに失敗した時に画面を空のまま描くと
+//   「データが全部消えた」ように見える（2026-08-26、実際にユーザーが消失と誤解した）。
+//   はっきり知らせるための状態をここで持つ。データそのものには一切触れない。
+const markGasUp   = ()=>{try{window.__hubGasDown=0;}catch(e){}};
+const markGasDown = ()=>{try{if(!window.__hubGasDown)window.__hubGasDown=Date.now();}catch(e){}};
 const sGet = async(k, retries=3) => {
   if (!GAS_READY) return null;
   for(let i=0;i<retries;i++){
@@ -1921,16 +1926,19 @@ const sGet = async(k, retries=3) => {
       const r = await fetch(`${GAS_URL}?key=${encodeURIComponent(k)}&apiKey=${encodeURIComponent(GAS_API_KEY)}`, {cache:'no-store'});
       if(r.status===503){
         if(i<retries-1){await new Promise(r=>setTimeout(r,2000*(i+1)));continue;}
-        return null;
+        markGasDown(); return null;
       }
       const t = await r.text();
-      if (!t || t === 'null' || t.startsWith('error:')) return null;
+      // 値が無いだけ（'null'）は「繋がっているが空」＝異常ではない
+      if (!t || t === 'null' || t.startsWith('error:')) { markGasUp(); return null; }
       const parsed = JSON.parse(t);
       // GASの同時呼び出しエラーが混入したデータを除外
-      if (parsed && typeof parsed === 'object' && parsed.error) return null;
+      if (parsed && typeof parsed === 'object' && parsed.error) { markGasUp(); return null; }
+      markGasUp();
       return parsed;
-    } catch { if(i===retries-1) return null; }
+    } catch { if(i===retries-1){ markGasDown(); return null; } }
   }
+  markGasDown();
   return null;
 };
 
@@ -7393,6 +7401,20 @@ function AppInner() {
     const now=Date.now();
     return justAdded.filter(x=>now-x.ts<15*60*1000).map(x=>x.id); // 15分たったものは対象外
   },[justAdded]);
+  // ★サーバーに繋がらない時の告知。読めない時に空の表を描くと「全部消えた」ように見えるので、
+  //   はっきり知らせる（2026-08-26、実際に消失と誤解させてしまった）。データには触らない。
+  const [gasDownSince,setGasDownSince]=useState(0);
+  useEffect(()=>{
+    const t=setInterval(()=>{
+      let d=0; try{d=window.__hubGasDown||0;}catch(e){}
+      setGasDownSince(prev=>prev===d?prev:d);
+    },2000);
+    return()=>clearInterval(t);
+  },[]);
+  // 一瞬の失敗で騒がないよう、5秒以上つながらない時だけ出す
+  const gasDownSec=gasDownSince?Math.max(0,Math.floor((Date.now()-gasDownSince)/1000)):0;
+  const showGasDown=!!gasDownSince&&gasDownSec>=5;
+
   const [loanerUndo, setLoanerUndo]=useState([]);
   // LoanerGridのpinnedRes/hoverResを親で管理（グリッドの再レンダリング防止→scrollLeft保持）
   const [loanerPinnedRes, setLoanerPinnedRes]=useState(null);
@@ -10449,7 +10471,42 @@ function AppInner() {
   );
 }
 
-function App(){return <ErrorBoundary><AppInner/></ErrorBoundary>;}
+// ★サーバーに繋がらない時の告知。ログイン画面でも出す必要があるので最上位に置く
+//   （繋がらないとログイン画面のまま止まるため、アプリ内に置くと出ない）。
+//   データには一切触れない。表示だけ。
+const GasDownBanner=()=>{
+  const [since,setSince]=useState(0);
+  const [,tick]=useState(0);
+  useEffect(()=>{
+    const t=setInterval(()=>{
+      let d=0; try{d=window.__hubGasDown||0;}catch(e){}
+      setSince(prev=>prev===d?prev:d);
+      tick(x=>x+1);
+    },2000);
+    return()=>clearInterval(t);
+  },[]);
+  if(!since)return null;
+  const sec=Math.max(0,Math.floor((Date.now()-since)/1000));
+  if(sec<5)return null; // 一瞬の失敗では騒がない
+  return(
+    <div style={{position:'fixed',top:0,left:0,right:0,zIndex:2147483647,background:'#7f1d1d',color:'white',
+      padding:'10px 16px',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',
+      boxShadow:'0 2px 12px rgba(0,0,0,.45)',fontFamily:'system-ui,sans-serif'}}>
+      <span style={{fontSize:20,lineHeight:1}}>⚠</span>
+      <div style={{flex:1,minWidth:240}}>
+        <div style={{fontWeight:900,fontSize:15}}>サーバーに接続できません。データは守られています。</div>
+        <div style={{fontSize:12,opacity:.9,marginTop:2}}>
+          いま画面に出ていない予約も消えていません。繋がり次第このメッセージは消え、自動で表示に戻ります。
+          復旧するまでの入力は保存されないのでお待ちください。（{sec}秒経過）
+        </div>
+      </div>
+      <button onClick={()=>{try{window.__hubGasDown=0;}catch(e){}location.reload();}}
+        style={{background:'white',color:'#7f1d1d',border:'none',borderRadius:7,padding:'7px 14px',
+          fontWeight:800,fontSize:13,cursor:'pointer',whiteSpace:'nowrap'}}>再読み込み</button>
+    </div>
+  );
+};
+function App(){return <ErrorBoundary><GasDownBanner/><AppInner/></ErrorBoundary>;}
 
 // - スタイル定数 -
 const NAV_S    ={background:'#c2410c',color:'white',border:'none',borderRadius:7,padding:7,cursor:'pointer',display:'flex',alignItems:'center'};
