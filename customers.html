@@ -15,7 +15,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1787666505910';
+  window.__APP_BUILD='build-1787704574007';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -100,7 +100,7 @@ const STOR='hub-v8-dev-';
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='1.91'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='1.92'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -474,6 +474,34 @@ const mergeSharedObjects=(local,server,nowTs)=>{
     mg[cid]=merged;
   }
   return mg;
+};
+// ★代車予約の置き方。index_dev.html の removeResByBk / putResRec と同じ規約にそろえる。
+//   構造は {carId:{キー:予約}}。キー名自体に意味は無く、予約は id / bookingKey / custId で特定する。
+//   ・resRemoveRes … 同じ予約（bookingKey か custId が一致）を全車から取り除く
+//   ・resPutRec    … 希望キーが別予約で埋まっていたらサフィックスを付けて逃がす
+//   ★リスト側は希望キーへ無条件で上書きしていたため、同じ代車・同じ開始日の別予約を
+//     無言で消していた（2026-08-26、タント8/25開始の予約が上書きされて消えたのを確認）。
+//     index側は v1.76 で直っていたが、リスト側が直し漏れていた。
+const _lresObj=b=>(b&&typeof b==='object'&&!Array.isArray(b))?b:{};
+const resRemoveRes=(base,{bookingKey,custId})=>{
+  const src=_lresObj(base),out={};
+  for(const cid of Object.keys(src)){
+    const days={...(src[cid]||{})};
+    Object.keys(days).forEach(k=>{
+      const r=days[k];if(!r)return;
+      if(bookingKey&&r.bookingKey===bookingKey)delete days[k];
+      else if(custId&&r.custId===custId)delete days[k];
+    });
+    out[cid]=days;
+  }
+  return out;
+};
+const resPutRec=(base,carId,wantKey,rec)=>{
+  const src=_lresObj(base),days={...(src[carId]||{})};
+  let k=String(wantKey);
+  if(days[k]&&days[k].id!==rec.id)k=`${wantKey}_${rec.id}`; // 別予約が居たら横へ逃がす
+  days[k]={...rec};
+  return {...src,[carId]:days};
 };
 const savesInFlight=()=>{try{return (window.__hubBusyOps||0)+(window.__hubWriteBusy||0);}catch(e){return 0;}};
 
@@ -2373,12 +2401,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
           const car=allLoaners.find(c=>c.id===selCarId);
           const carStore=car?.store||store;
           const resKey=storKey('lres',carStore);
-          const loanerRes=carStore==='honten'?{...loanerResH}:{...loanerResS};
-
-          // 既存の同一custIdを削除
-          for(const k of Object.keys(loanerRes)){
-            const _days={...(loanerRes[k]||{})};Object.keys(_days).forEach(d=>{if(_days[d]?.custId===customer.custId)delete _days[d];});loanerRes[k]=_days;
-          }
+          const _localLres=carStore==='honten'?loanerResH:loanerResS;
 
           const sorted=[...selDays].sort();
           const s=new Date(sorted[0]),e=new Date(sorted[sorted.length-1]);
@@ -2393,7 +2416,6 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
             carName:car?.name||'',
             carNum:car?.num||'',
           };
-          if(!loanerRes[selCarId])loanerRes[selCarId]={};
           // ★保存キーは「年-月-日」。日だけだと別の月の同じ日で衝突する
           //   （index側は v1.76 で直したが、リスト側が直し漏れていた）。
           //   キー名自体に意味は無く、予約は id / bookingKey で特定する。
@@ -2401,7 +2423,11 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
           // ★色は先に決めて、画面表示と保存で同じ値を使う（従来は保存側でだけ計算していた）
           const _colorIdx=customer.custId?[...String(customer.custId)].reduce((a,c)=>a+c.charCodeAt(0),0)%RES_COLORS.length:0;
           newRes.color=RES_COLORS[_colorIdx];
-          loanerRes[selCarId]={...loanerRes[selCarId],[_dKey]:newRes};
+          // 同じ予約の古い代車を消してから置く。希望キーが別予約で埋まっていたら横へ逃がす
+          const _placeRes=(base)=>resPutRec(
+            resRemoveRes(base,{bookingKey:bKey,custId:customer.custId}),
+            selCarId,_dKey,newRes);
+          const loanerRes=_placeRes(_localLres);
           // ★まず画面に出す（車検と同時に見えるように）。保存は下のバックグラウンド処理で行う。
           //   従来はサーバーからlresを読み終わってから初めて setLoanerRes していたため、
           //   車検はすぐ出るのに代車だけ1〜4秒遅れて出ていた（2026-08-25にユーザーが報告）。
@@ -2422,31 +2448,17 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
             const _localBase=carStore==='honten'?loanerResH:loanerResS;
             const _fresh=await sGet(resKey);
             const _base=(_fresh&&typeof _fresh==='object'&&!Array.isArray(_fresh))?_fresh:(_localBase||{});
-            const merged=JSON.parse(JSON.stringify(_base));
-            // 同顧客の古いエントリをクリア
-            for(const k of Object.keys(merged)){
-              const days={...(merged[k]||{})};
-              Object.keys(days).forEach(d=>{if(days[d]?.custId===customer.custId)delete days[d];});
-              merged[k]=days;
-            }
-            if(!merged[selCarId])merged[selCarId]={};
-            const _resDay=_dKey; // 表示時に使ったキーと必ず同じにする（別キーで二重に出さない）
-            merged[selCarId]={...merged[selCarId],[_resDay]:{...newRes}}; // 色は表示時に確定済み
+            // サーバー最新値の上に、同じ置き方（衝突したら横へ逃がす）で置き直す
+            const merged=_placeRes(_base);
             if(carStore==='honten')setLoanerResH(merged);else setLoanerResS(merged);
             // 代車も読み返し検証つきで書く（無言failで「車検には代車名があるのに代車表に帯が無い」状態を作らない）
             await writeVerified(resKey,
-              base=>{
-                const b=(base&&typeof base==='object'&&!Array.isArray(base))?JSON.parse(JSON.stringify(base)):{};
-                for(const k of Object.keys(b)){
-                  const days={...(b[k]||{})};
-                  Object.keys(days).forEach(d=>{if(days[d]&&days[d].custId===customer.custId)delete days[d];});
-                  b[k]=days;
-                }
-                if(!b[selCarId])b[selCarId]={};
-                b[selCarId]={...b[selCarId],[_resDay]:{...newRes}};
-                return b;
+              base=>_placeRes(base),
+              back=>{
+                // 置き場所(キー)は衝突時にずれるので、キーではなく id で着地を確かめる
+                const days=(back&&back[selCarId])||{};
+                return Object.values(days).some(r=>r&&r.id===newRes.id);
               },
-              back=>!!(back&&back[selCarId]&&back[selCarId][_resDay]&&back[selCarId][_resDay].custId===customer.custId),
               3,{requireBase:true} // 読めなかったサーバー値を「空」とみなして書かない
             );
           })());

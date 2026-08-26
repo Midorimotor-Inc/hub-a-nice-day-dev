@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787666505910';
+    window.__APP_BUILD='build-1787704574007';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.91';
+const APP_VERSION = '1.92';
 
 
 
@@ -5866,12 +5866,20 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
     // ★キーは衝突しない「年-月-日」を使う（"日"だけだと別の月で同じ日に始まる予約を
     //   同じ車にまとめた時にキーが衝突して予約が消える。同じ車に同じ開始日=重複なので一意）。
     const rkey=(r)=>`${r.fy}-${r.fm}-${r.fd}`;
+    // ★同じ車・同じ開始日は本来ありえない（＝重複予約）が、過去データや別経路の書き込みで
+    //   ぶつかることがある。素直に代入すると片方が無言で消えるので、埋まっていたら横へ逃がす。
+    const rput=(cid,r,res)=>{
+      const days=(newLR[cid]=newLR[cid]||{});
+      let k=rkey(r);
+      if(days[k]&&days[k].id!==res.id)k=`${k}_${res.id}`;
+      days[k]=res;
+    };
     // 過去・貸出中・限定はそのままの車に残す（触らない）
-    past.forEach(r=>{const {_curCar,_key,...res}=r; (newLR[_curCar]=newLR[_curCar]||{})[rkey(r)]=res;});
-    fixed.forEach(r=>{const {_curCar,_key,...res}=r; (newLR[_curCar]=newLR[_curCar]||{})[rkey(r)]=res;});
+    past.forEach(r=>{const {_curCar,_key,...res}=r; rput(_curCar,r,res);});
+    fixed.forEach(r=>{const {_curCar,_key,...res}=r; rput(_curCar,r,res);});
     movable.forEach(r=>{
       const cid=assign[r.id]; const car=carById[cid]; const {_curCar,_key,...res}=r;
-      (newLR[cid]=newLR[cid]||{})[rkey(r)]={...res,carName:car?car.name:res.carName,carNum:car?car.num:res.carNum};
+      rput(cid,r,{...res,carName:car?car.name:res.carName,carNum:car?car.num:res.carNum});
       if(String(_curCar)!==String(cid)){
         const oldCar=carById[_curCar];
         moves.push({user:r.user,fromCarId:_curCar,toCarId:cid,fromName:(oldCar&&oldCar.name)||res.carName||'?',toName:(car&&car.name)||'?',period:`${r.fm+1}/${r.fd}〜${r.tm+1}/${r.td}`,bookingKey:r.bookingKey});
