@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787708449422';
+    window.__APP_BUILD='build-1787709353393';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.93';
+const APP_VERSION = '1.94';
 
 
 
@@ -7283,7 +7283,18 @@ function AppInner() {
         3,{requireBase:true} // 読めなかったサーバー値を「空」とみなして書かない
       );
       if(ok){
-        try{ const fresh=await sGet(key); if(fresh&&typeof fresh==='object'&&!Array.isArray(fresh)) updateLocal(fresh); }catch(e){}
+        // ★サーバー値で「丸ごと置き換え」しない。ポーリングと同じ規則でマージする。
+        //   GASは読み取り結果を60秒キャッシュしており、書き込み前に始まった読み取りが
+        //   書き込みの後にキャッシュへ古い値を戻すと、直後の読み取りが古い値を返す。
+        //   丸ごと置き換えると、いま登録した代車がその瞬間に画面から消え、
+        //   キャッシュが切れた頃に復活する＝「代車が消えて数秒後に戻る」の正体。
+        //   mergeSharedObjects は作られたばかりのローカル専用レコードだけを残すので、
+        //   他PCの削除は従来どおり反映される。
+        try{
+          const fresh=await sGet(key);
+          if(fresh&&typeof fresh==='object'&&!Array.isArray(fresh))
+            updateLocal(prev=>mergeSharedObjects(prev||{},fresh,Date.now()));
+        }catch(e){}
       }else if(o.alert!==false){
         const lbl=o.label||'代車予約';
         alert(`⚠️ ${lbl}の${o.verb||'変更'}がサーバーに反映されていません。\nもう一度お試しください。`);
