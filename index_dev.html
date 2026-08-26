@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787709353393';
+    window.__APP_BUILD='build-1787711681252';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.94';
+const APP_VERSION = '1.95';
 
 
 
@@ -2065,6 +2065,38 @@ function sharedRecFresh(r,nowTs){
   if(!t)return true;                       // 時刻が分からないものは残す（従来動作）
   return (nowTs-t) < SHARED_FRESH_MS;
 }
+// ★スケジュール(insp)用。{日付:[行,...]} の形なので上のマージ規則（{親:{子:値}}）は使えない。
+//   サーバー値を土台に、「手元にしか無い作りたての行」だけを足して返す。
+//   GASは読み取りを60秒キャッシュするので、直前に自分が入れた予約がまだ入っていない
+//   古い値が土台として返ることがある。そのまま書くとその予約が消える。
+//   行の同一判定は custId → seq → 氏名+No の順。seq(作成時刻)が古い行は足さない
+//   ＝他のPCが消した予約を勝手に復活させない。
+const INSP_FRESH_MS = 180000; // 3分
+function mergeInspFresh(local, server, nowTs){
+  if(!server||typeof server!=='object'||Array.isArray(server))return server;
+  if(!local||typeof local!=='object'||Array.isArray(local))return server;
+  const out={...server};
+  for(const dk of Object.keys(local)){
+    const lrows=local[dk];
+    if(!Array.isArray(lrows))continue;
+    const srows=Array.isArray(out[dk])?out[dk].slice():[];
+    const same=(a,b)=>!!a&&!!b&&(
+      (a.custId&&b.custId&&a.custId===b.custId)||
+      (a.seq&&b.seq&&a.seq===b.seq)||
+      (!!a.name&&a.name===b.name&&String(a.no||'')===String(b.no||''))
+    );
+    lrows.forEach(r=>{
+      if(!r||!r.name)return;
+      const ts=Number(r.seq)||0;
+      if(!ts||(nowTs-ts)>=INSP_FRESH_MS)return;   // 作りたてだけ
+      if(srows.some(x=>same(x,r)))return;          // 既にサーバーにある
+      srows.push(r);
+    });
+    out[dk]=srows;
+  }
+  return out;
+}
+
 function mergeSharedObjects(local, server, nowTs){
   const mg = {...server};
   for (const cid of Object.keys(local||{})) {
@@ -7171,19 +7203,22 @@ function AppInner() {
   //   画面は updateLocalInspData で即時反映（GAS書き込みなし＝他端末の予約を巻き添えにしない）。
   //   実際のGAS保存は writeVerified が担い、毎回サーバー最新値を読んで mutate し直して書く。
   //   これが insp への唯一のGAS書き込み経路（useShared 経由の setInspData 全文書き戻しは使わない）。
+  const hotInspRef=useRef(hotInsp); hotInspRef.current=hotInsp;
   const persistInsp = useCallback((mutate, confirmFn, opts)=>{
     const o=opts||{};
     // 即時反映（ローカルのみ）
     updateLocalInspData(prev=>{ try{return mutate(prev);}catch(e){return prev;} });
     (async()=>{
       const ok=await writeVerified(STOR+'insp',
-        base=>{ const v=mutate(base); updateLocalInspData(v); return v; },
+        // ★土台に「手元の作りたての予約」を足してから変更を適用する（古いキャッシュ対策）
+        base=>{ const v=mutate(mergeInspFresh(hotInspRef.current,base,Date.now())); updateLocalInspData(v); return v; },
         back=>{ try{return !!confirmFn(back);}catch(e){return false;} },
         3,{requireBase:true} // 読めなかったサーバー値を「空」とみなして書かない
       );
       if(ok){
         if(o.pid)inspPendDrop(o.pid);
-        try{ const fresh=await sGet(STOR+'insp'); if(fresh&&typeof fresh==='object'&&!Array.isArray(fresh)) updateLocalInspData(fresh); }catch(e){}
+        // 丸ごと置き換えず、作りたての行を残してマージする（古いキャッシュで消えないように）
+        try{ const fresh=await sGet(STOR+'insp'); if(fresh&&typeof fresh==='object'&&!Array.isArray(fresh)) updateLocalInspData(prev=>mergeInspFresh(prev,fresh,Date.now())); }catch(e){}
       }else if(o.alert!==false){
         alert(`⚠️ ${o.name?o.name+' の':''}${o.verb||'変更'}がサーバーに反映されていません。\nもう一度お試しください。`);
         // ★真の失敗（3回書いても着地せず）は運用者にメール通知（席を外していても気づける）。
@@ -7278,7 +7313,17 @@ function AppInner() {
     updateLocal(prev=>{ try{ const v=mutate(prev); return v===undefined?prev:v; }catch(e){ return prev; } });
     (async()=>{
       const ok=await writeVerified(key,
-        base=>{ const v=mutate(base); if(v!==undefined)updateLocal(v); return v; },
+        // ★書き込みの土台（サーバー最新値）に、手元の「作られたばかりの予約」を必ず足してから
+        //   変更を適用する。GASは読み取りを60秒キャッシュするため、直前に自分が入れた予約が
+        //   まだ入っていない古い値が土台として返ることがある。そのまま書くと、その予約が
+        //   きれいに消える（2026-08-26、長谷川さんの代車を付けた30秒後に池田さんを保存して
+        //   長谷川さんの代車が消えた事例。insp側にラベルだけ残り、代車表から帯が消える）。
+        base=>{
+          const seed=(o.getLocal&&o.getLocal())||null;
+          const base2=(seed&&base&&typeof base==='object'&&!Array.isArray(base))
+            ?mergeSharedObjects(seed,base,Date.now()):base;
+          const v=mutate(base2); if(v!==undefined)updateLocal(v); return v;
+        },
         back=>{ try{return !!confirmFn(back);}catch(e){return false;} },
         3,{requireBase:true} // 読めなかったサーバー値を「空」とみなして書かない
       );
@@ -7305,11 +7350,17 @@ function AppInner() {
     })();
   },[currentUser]);
   const updateLocalLres = vsId==='honten'?updateLocalLresH:updateLocalLresS;
+  // 書き込みの土台に足すための「手元の最新値」。refで持つ（コールバックが古い値を掴まないように）
+  const lresHRef=useRef(loanerResH); lresHRef.current=loanerResH;
+  const lresSRef=useRef(loanerResS); lresSRef.current=loanerResS;
+  const rresRef =useRef(rentalResData); rresRef.current=rentalResData;
   const persistLres = useCallback((mutate,confirmFn,opts)=>
-    persistRes(storKey('lres',vsId),updateLocalLres,mutate,confirmFn,{label:'代車予約',...(opts||{})}),
+    persistRes(storKey('lres',vsId),updateLocalLres,mutate,confirmFn,
+      {label:'代車予約',getLocal:()=>(vsId==='honten'?lresHRef.current:lresSRef.current),...(opts||{})}),
     [persistRes,updateLocalLres,vsId]);
   const persistRres = useCallback((mutate,confirmFn,opts)=>
-    persistRes(STOR+'rres',updateLocalRres,mutate,confirmFn,{label:'レンタカー予約',...(opts||{})}),
+    persistRes(STOR+'rres',updateLocalRres,mutate,confirmFn,
+      {label:'レンタカー予約',getLocal:()=>rresRef.current,...(opts||{})}),
     [persistRes,updateLocalRres]);
   const addRentalRes    = useCallback((carId,rec) => persistRres(base=>putResRec(base,carId,String(rec.id),rec),back=>resHasRec(back,carId,rec.id),{verb:'登録',name:rec?.user}),[persistRres]);
   const deleteRentalRes = useCallback((carId,resId) => persistRres(base=>resHasRec(base,carId,resId)?removeResById(base,carId,resId):undefined,back=>!resHasRec(back,carId,resId),{verb:'削除'}),[persistRres]);
