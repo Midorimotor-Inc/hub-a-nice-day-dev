@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787704574007';
+    window.__APP_BUILD='build-1787708449422';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.92';
+const APP_VERSION = '1.93';
 
 
 
@@ -7429,21 +7429,23 @@ function AppInner() {
   const isDraggingRef        = useRef(false);
 
   // 過去の台数制限を自動クリーンアップ（起動時 + 日付変わった時）
+  // ★掃除するものが無ければ setInspLimits を呼ばない。useShared の setter は
+  //   中身が同じでも必ずGASへ書くので、「変わらなければ prev を返す」だけでは
+  //   書き込みを止められない。さらにこの効果はログイン直後＝サーバーからの
+  //   初回読み込み前に走ることがあり、既定値の {} をそのまま書いて
+  //   台数制限を全消ししていた（実際にサーバーの inspLimits が {} になっていた）。
   useEffect(()=>{
     if(!currentUser)return;
     const today=new Date();
     const todayNum=today.getFullYear()*10000+(today.getMonth()+1)*100+today.getDate();
-    setInspLimits(prev=>{
-      const cleaned={};let changed=false;
-      Object.entries(prev).forEach(([dk,limit])=>{
-        const parts=dk.split('-').map(Number);
-        const num=parts[0]*10000+parts[1]*100+parts[2];
-        if(num>=todayNum){cleaned[dk]=limit;}
-        else{changed=true;}
-      });
-      return changed?cleaned:prev;
+    const cur=inspLimits||{};
+    const stale=Object.keys(cur).filter(dk=>{
+      const p=dk.split('-').map(Number);
+      return (p[0]*10000+p[1]*100+p[2])<todayNum;
     });
-  },[currentUser,setInspLimits]);
+    if(stale.length===0)return; // 掃除するものが無い＝書かない
+    setInspLimits(prev=>{const c={...prev};stale.forEach(dk=>delete c[dk]);return c;});
+  },[currentUser,inspLimits,setInspLimits]);
 
   // ロック管理：setLocksはuseSharedのupdateなのでsSetは自動で呼ばれる
   const acquireLock=useCallback((key,userName)=>{
@@ -7840,19 +7842,23 @@ function AppInner() {
 
 
 
-  // ロックTTLクリーナー：setLocksのupdate経由でsSetが自動実行される
+  // ロックTTLクリーナー：期限切れのロックがある時だけ setLocks を呼ぶ。
+  // ★これが最重要。useShared の setter は「中身が同じでも必ずGASへ書く」ため、
+  //   従来は掃除するものが無くても10秒ごとに locks を書き続けていた。
+  //   実測: 何も操作していないタブが10秒ごとに書き込みを発行（値は {} の2文字）。
+  //   GASの書き込みは25秒のグローバルロックを取り1本2〜4秒かかるので、
+  //   端末が2〜3台開いているだけでロックがほぼ埋まり、予約の保存が待たされ、
+  //   lock_timeout や「保存が遅い・消えて復活する」の温床になっていた。
+  const locksRef=useRef(locks);
+  locksRef.current=locks;
   useEffect(()=>{
     if(!currentUser)return;
     const t=setInterval(()=>{
       const now=Date.now();
-      setLocks(prev=>{
-        const cleaned={};let changed=false;
-        Object.entries(prev).forEach(([k,v])=>{
-          if(now-v.lockedAt>LOCK_TTL){changed=true;}
-          else{cleaned[k]=v;}
-        });
-        return changed?cleaned:prev;
-      });
+      const cur=locksRef.current||{};
+      const expired=Object.keys(cur).filter(k=>cur[k]&&(now-cur[k].lockedAt)>LOCK_TTL);
+      if(expired.length===0)return; // 期限切れが無ければGASに書かない
+      setLocks(prev=>{const c={...prev};expired.forEach(k=>delete c[k]);return c;});
     },10000);
     return()=>clearInterval(t);
   },[currentUser,setLocks]);
