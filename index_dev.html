@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787795510015';
+    window.__APP_BUILD='build-1787796207946';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.00';
+const APP_VERSION = '2.01';
 
 
 
@@ -8410,13 +8410,13 @@ function AppInner() {
     if(pendingLoanerData){
       const {carId,startDay,endDay,startYear,startMonth,endYear,endMonth,user,color,bookingKey:_pldBk,carName,carNum}=pendingLoanerData;
       const finalUser=cleanData.name||user;
-      // ★月は +1 する（dateKey は「年-月-日」で月は1始まり）。ここだけ getMonth() を
-      //   そのまま使っており、この経路に落ちると1か月ずれた bookingKey を作っていた
-      //   ＝代車が車検行と紐付かなくなる。_dcTargetDk と同じ作り方にそろえる。
-      const _loanerTdk=formData._targetDk||modalDkRef.current
-        ||(selDateRef.current instanceof Date
-            ?`${selDateRef.current.getFullYear()}-${selDateRef.current.getMonth()+1}-${selDateRef.current.getDate()}`
-            :'');
+      // ★代車の紐付け先は、車検予約を書き込むのと「まったく同じ日付」を使う。
+      //   従来はここだけ別に計算しており、画面で選択中の日付(selDate)へすり替わる経路が
+      //   残っていた。その場合、車検予約は元の日に残ったまま代車だけ別の日に紐づき、
+      //   「予約が消えて代車だけ残る」ように見える
+      //   （2026-08-27、青木さんの代車が8/30〜8/31・紐付け先 insp-2026-8-31-1 になり、
+      //    車検予約は8/24のままという実例が発生）。計算を1か所にそろえて二度と食い違わせない。
+      const _loanerTdk=_dcTargetDk;
       const _finalBk=modalType==='insp'
         ?`insp-${_loanerTdk}-${_dcPlaceIdx}`
         :`sched-${_loanerTdk}-${modalSlot||''}`;
