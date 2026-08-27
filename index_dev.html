@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787736711297';
+    window.__APP_BUILD='build-1787795510015';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '1.99';
+const APP_VERSION = '2.00';
 
 
 
@@ -4922,7 +4922,26 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
 
 // limitFull: 台数制限を掛けた日で上限に達している場合の上限台数（そうでなければnull）。
 //            追加行を「予約不可」にして新規入力自体をブロックする（制限を掛けていない日は従来どおり7台目=承認待ち）
-const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,loanerResH,loanerResS,vsId,onApprove,isOverLimit,limitFull,setItems})=>{
+// ★入庫済みチェック。氏名の左に置く小さな〇。押すと黄色地に赤チェックが点く。
+//   「その車がもう入庫しているか」を誰が見ても分かるようにするための任意の印
+//   （2026-08-27にユーザーが要望）。予約内容そのものには影響しない。
+//   行のクリック（予約カードを開く）と取り違えないよう、押した時は伝播を止める。
+const ArrivedCheck=({on,onToggle,size=17})=>(
+  <span role="checkbox" aria-checked={on} tabIndex={0}
+    title={on?'入庫済み（クリックで解除）':'入庫したらクリック'}
+    onClick={e=>{e.preventDefault();e.stopPropagation();onToggle();}}
+    onMouseDown={e=>{e.preventDefault();e.stopPropagation();}}
+    onKeyDown={e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();e.stopPropagation();onToggle();}}}
+    style={{width:size,height:size,flexShrink:0,borderRadius:'50%',cursor:'pointer',
+      display:'inline-flex',alignItems:'center',justifyContent:'center',
+      border:`2px solid ${on?'#dc2626':'#9ca3af'}`,
+      background:on?'#fde047':'white',
+      color:'#dc2626',fontWeight:900,fontSize:size-5,lineHeight:1,
+      boxShadow:on?'0 0 0 2px rgba(253,224,71,.55)':'none',
+      transition:'background .12s, border-color .12s'}}>{on?'✓':''}</span>
+);
+
+const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,loanerResH,loanerResS,vsId,onApprove,onToggleArrived,isOverLimit,limitFull,setItems})=>{
   const cObj=row.course?COURSES.find(c=>c.id===row.course):null;
   const isEmpty=!row.name&&!row.staff&&!row.carType&&!row.course;
   const locked=lockInfo?.lockedBy;
@@ -4979,9 +4998,11 @@ const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,loanerResH
           </div>
          :locked?<div style={{padding:'3px 5px'}}><div style={{fontWeight:600}}>{row.name||'—'}</div><LockBadge lockedBy={lockInfo.lockedBy}/></div>
          :limitBlocked?<div style={{color:'#dc2626',fontSize:11,padding:'5px 7px',fontWeight:800,display:'flex',alignItems:'center',gap:4}}><span style={{fontSize:12}}>🚫</span>予約不可（台数制限 {limitFull}台に達しています）</div>
-         :isEmpty?<div style={{color:'#9ca3af',fontSize:11,padding:'5px 7px',fontStyle:'italic',display:'flex',alignItems:'center',gap:4}}><span style={{width:18,height:18,border:'2px dashed #d1d5db',borderRadius:3,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11}}>+</span>クリックして追加</div>
+         :isEmpty?<div style={{color:'#475569',fontSize:11,padding:'5px 7px',fontStyle:'italic',fontWeight:600,display:'flex',alignItems:'center',gap:4}}><span style={{width:18,height:18,border:'2px dashed #94a3b8',borderRadius:3,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,color:'#475569',fontWeight:700}}>+</span>クリックして追加</div>
          :<div style={{padding:'3px 5px'}}>
               <div style={{display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
+                {/* ★入庫済みチェック（任意）。押すと黄色地に赤チェックが点く */}
+                <ArrivedCheck on={!!row.arrived} onToggle={()=>{if(onToggleArrived)onToggleArrived(dk,idx);}}/>
                 <span style={{fontWeight:700,color:pending?'#6b7280':'#7c2d12',whiteSpace:'nowrap'}}>{row.name}</span>
                 {row.store&&<span style={{padding:'1px 6px',borderRadius:20,fontSize:10,fontWeight:800,background:row.store==='honten'?'#2563eb':'#dc2626',color:'white',flexShrink:0,whiteSpace:'nowrap'}}>
                   {row.store==='honten'?'本店':'三田店'}
@@ -5045,7 +5066,7 @@ const RestrictionTip=({r,style})=>{
 // ============================================
 //  SchedRow
 // ============================================
-const SchedRow=memo(({row,slot,baseSlot,isFirstSub,dk,onOpenModal,lockInfo,loanerRes,vsId,restriction,setItems})=>{
+const SchedRow=memo(({row,slot,baseSlot,isFirstSub,dk,onOpenModal,lockInfo,loanerRes,vsId,restriction,setItems,onToggleArrived})=>{
   const [showRestrTip,setShowRestrTip]=useState(false);
   const isEmpty=!row.name&&!row.staff&&!row.carType&&!row.work;
   const locked=lockInfo?.lockedBy;
@@ -5088,9 +5109,11 @@ const SchedRow=memo(({row,slot,baseSlot,isFirstSub,dk,onOpenModal,lockInfo,loane
       </td>
       <td style={TD}>
         {locked?<div style={{padding:'3px 5px'}}><div style={{fontWeight:600}}>{row.name||'—'}</div><LockBadge lockedBy={lockInfo.lockedBy}/></div>
-         :isEmpty?<div style={{color:'#9ca3af',fontSize:11,padding:'5px 7px',fontStyle:'italic',display:'flex',alignItems:'center',gap:4}}><span style={{width:18,height:18,border:'2px dashed #d1d5db',borderRadius:3,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11}}>+</span>クリックして追加</div>
+         :isEmpty?<div style={{color:'#475569',fontSize:11,padding:'5px 7px',fontStyle:'italic',fontWeight:600,display:'flex',alignItems:'center',gap:4}}><span style={{width:18,height:18,border:'2px dashed #94a3b8',borderRadius:3,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,color:'#475569',fontWeight:700}}>+</span>クリックして追加</div>
          :<div style={{padding:'3px 5px'}}>
               <div style={{display:'flex',alignItems:'center',gap:5,flexWrap:'nowrap'}}>
+                {/* ★入庫済みチェック（任意） */}
+                <ArrivedCheck on={!!row.arrived} size={16} onToggle={()=>{if(onToggleArrived)onToggleArrived(dk,slot);}}/>
                 <span style={{fontWeight:600,color:'#1e293b',whiteSpace:'nowrap'}}>{row.name}</span>
                 {row.store&&<span style={{padding:'1px 6px',borderRadius:20,fontSize:10,fontWeight:800,background:row.store==='honten'?'#2563eb':'#dc2626',color:'white',flexShrink:0,whiteSpace:'nowrap'}}>
                   {row.store==='honten'?'本店':'三田店'}
@@ -8781,6 +8804,34 @@ function AppInner() {
   },[modalType,modalDk,modalIdx,modalSlot,curLockKey,releaseLock,persistInsp,setSchedData,persistLres,persistRres,inspData,syncCustStatus,inspLimits]);
 
   // 承認ハンドラー（承認もサーバー最新値ベース。対象を本人性で特定し approved を立てる）
+  // ★入庫済みチェック（任意）。名前の横の〇を押すと黄色地に赤チェックが点く。
+  //   誰が見ても「その車はもう入庫しているか」が一目で分かるようにするための印
+  //   （2026-08-27にユーザーが要望）。予約内容には影響しない表示上の印。
+  const toggleInspArrived=useCallback((dk,idx)=>{
+    const cur=(inspData[dk]||[])[idx];
+    if(!cur||!cur.name)return;
+    const next=!cur.arrived;
+    const _tgt={custId:cur.custId,seq:(cur.seq!=null)?cur.seq:null,name:cur.name,no:cur.no,idx,limit:inspLimits[dk]??6};
+    persistInsp(
+      base=>patchInspBooking(base,dk,_tgt,{arrived:next||undefined}),
+      back=>{const rows=(back&&back[dk])||[];const j=rows.findIndex(_inspMatcher(_tgt));return j>=0&&!!rows[j].arrived===next;},
+      {name:cur.name,verb:next?'入庫チェック':'入庫チェックの解除',dk,alert:false}
+    );
+  },[inspData,inspLimits,persistInsp]);
+
+  // 一般予約（タイムスケジュール）側の入庫済みチェック
+  const toggleSchedArrived=useCallback((dk,slotKey)=>{
+    const cur=(schedData[dk]||{})[slotKey];
+    if(!cur||!cur.name)return;
+    const next=!cur.arrived;
+    setSchedData(prev=>{
+      const day={...((prev&&prev[dk])||{})};
+      const r=day[slotKey]; if(!r)return prev;
+      day[slotKey]=next?{...r,arrived:true}:(()=>{const {arrived,...rest}=r;return rest;})();
+      return {...prev,[dk]:day};
+    });
+  },[schedData,setSchedData]);
+
   const handleApprove=useCallback((dk,idx)=>{
     const cur=(inspData[dk]||[])[idx];
     if(!cur)return;
@@ -9897,7 +9948,7 @@ function AppInner() {
                           const origIdx=row._origIdx??dispIdx;
                           const {_origIdx,...cleanRow}=row;
                           rows.push(
-                            <InspRow key={`${origIdx}-${dispIdx}`} row={cleanRow} idx={origIdx} dispNo={dispIdx+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} loanerResH={loanerResH} loanerResS={loanerResS} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
+                            <InspRow key={`${origIdx}-${dispIdx}`} row={cleanRow} idx={origIdx} dispNo={dispIdx+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} loanerResH={loanerResH} loanerResS={loanerResS} vsId={vsId} onApprove={handleApprove} onToggleArrived={toggleInspArrived} isOverLimit={false} setItems={setItems}/>
                           );
                         });
                         // ② 台数制限超過バナー（7台目以降がある場合）
@@ -9919,7 +9970,7 @@ function AppInner() {
                             ?{...cleanRow,pendingApproval:false}  // 承認済み：承認待ちバッジ消す
                             :{...cleanRow,pendingApproval:true};  // 未承認：承認待ちバッジ表示
                           rows.push(
-                            <InspRow key={`waiting-${origIdx}-${pi}`} row={displayRow} idx={origIdx} dispNo={normalRows.length+pi+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} loanerResH={loanerResH} loanerResS={loanerResS} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
+                            <InspRow key={`waiting-${origIdx}-${pi}`} row={displayRow} idx={origIdx} dispNo={normalRows.length+pi+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} loanerResH={loanerResH} loanerResS={loanerResS} vsId={vsId} onApprove={handleApprove} onToggleArrived={toggleInspArrived} isOverLimit={false} setItems={setItems}/>
                           );
                         });
                         // ④ 追加行（isNew=trueで開く）。台数制限を掛けた日で上限に達していたら「予約不可」
@@ -10133,6 +10184,7 @@ function AppInner() {
                                 loanerRes={loanerRes}
                                 vsId={vsId}
                                 restriction={schedRestrictions[dk]}
+                                onToggleArrived={toggleSchedArrived}
                                 setItems={setItems}/>
                               );
                             })}
@@ -10195,7 +10247,7 @@ function AppInner() {
                             {!schedCollapsed&&lastHasData&&!isSlotRestricted&&(
                               <tr style={{background:'#f0feff'}}>
                                 <td style={{...TD,width:50,maxWidth:50,paddingLeft:6,paddingRight:3,whiteSpace:isSpecialSlot(slot)?'normal':'nowrap',lineHeight:1.12,borderLeft:'3px solid #7dd3fc'}}>
-                                  <span style={{fontSize:10,color:'#7dd3fc',fontWeight:500}}>{specialSlotLabel(slot)}</span>
+                                  <span style={{fontSize:10,color:'#0369a1',fontWeight:700}}>{specialSlotLabel(slot)}</span>
                                 </td>
                                 <td colSpan={6} style={TD}>
                                   <button
