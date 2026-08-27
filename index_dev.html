@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787799735220';
+    window.__APP_BUILD='build-1787811433641';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.02';
+const APP_VERSION = '2.03';
 
 
 
@@ -4357,7 +4357,12 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
       // ピック直後（未保存）＝ピッカーで選んだ期間
       const pd=pendingLoanerData;
       loanFrom=toNum(pd.startYear,pd.startMonth,pd.startDay);
-      loanTo=toNum(pd.startYear,pd.startMonth,pd.endDay);
+      // ★終了日の「年月」は必ず終了側の値を使う。ここだけ開始側の年月に終了日を組み合わせて
+      //   おり、月をまたぐ選択（例: 8/31〜9/1）を 8/31〜8/1 と誤って計算していた。
+      //   その結果、期間が合っているのに「一致しません」と警告が出て、しかも文面の日付も
+      //   間違っていた（2026-08-27にユーザーが報告）。保存されるデータ自体は正しい＝表示と
+      //   判定だけの不具合。渡ってこない経路では従来どおり開始の年月にフォールバックする。
+      loanTo=toNum(pd.endYear??pd.startYear,pd.endMonth??pd.startMonth,pd.endDay);
     }else{
       // 保存済み予約＝現在キー or 元キー（日付変更で移動する前）に一致する予約
       const wantKeys=[curBk,origBk].filter(Boolean);
