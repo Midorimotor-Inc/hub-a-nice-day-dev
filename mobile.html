@@ -12,7 +12,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1787811433641';
+  window.__APP_BUILD='build-1787812482561';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -78,7 +78,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.03';
+const MOBILE_VERSION='2.04';
 const GAS_URL='https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 const GAS_API_KEY='hub2026co-f466kt5vs3vnDQDPuwWeS6XM';
 const STOR='hub-v8-dev-';
@@ -612,6 +612,9 @@ const EditModal=({mode,initial,vsId,currentUser,staffList,loanerCars,rentalCars,
   const defDate=`${dkParts[0]}-${String(dkParts[1]).padStart(2,'0')}-${String(dkParts[2]).padStart(2,'0')}`;
   // 代車選択: 'keep'=変更なし / 'none'=なし / 'loaner' / 'rental'
   const [carKind,setCarKind]=useState('keep');
+  // ★限定＝この車でないとダメな予約。代車スケジュールの最適化で動かさない印。
+  //   最初の予約から付けられるようにする（2026-08-27にユーザーが要望）。
+  const [carLocked,setCarLocked]=useState(false);
   const [carSel,setCarSel]=useState('');
   const [carFrom,setCarFrom]=useState(form.entryDate?dkToInputDate(form.entryDate):defDate);
   const [carTo,setCarTo]=useState(form.deliveryDate?dkToInputDate(form.deliveryDate):defDate);
@@ -623,6 +626,17 @@ const EditModal=({mode,initial,vsId,currentUser,staffList,loanerCars,rentalCars,
     setCarFrom(form.entryDate?dkToInputDate(form.entryDate):defDate);
     setCarTo(form.deliveryDate?dkToInputDate(form.deliveryDate):defDate);
   },[form.entryDate,form.deliveryDate,mode.dk,carKind]);
+  // 開き直した時、既に限定が付いている代車ならスイッチもONで表示する
+  useEffect(()=>{
+    try{
+      const bk=mode.type==='insp'?`insp-${mode.dk}-${mode.idx}`:`sched-${mode.dk}-${mode.slot}`;
+      const res=(vsId==='honten'?loanerResH:loanerResS)||{};
+      for(const cid of Object.keys(res))for(const k of Object.keys(res[cid]||{})){
+        const r=res[cid][k];
+        if(r&&r.bookingKey===bk){setCarLocked(!!r.locked);return;}
+      }
+    }catch(e){}
+  },[mode.dk,mode.idx,mode.slot,mode.type,vsId,loanerResH,loanerResS]);
   const bk=isInsp?`insp-${mode.dk}-${mode.idx}`:`sched-${mode.dk}-${mode.slot}`;
   const currentLoanerLbl=getLoanerLabel(loanerRes,mode.dk,initial?.name,initial?.bookingKey||bk,loanerCars);
   const currentBinding=currentLoanerLbl?`🚗 ${currentLoanerLbl}`:(initial?.rentalLabel||'');
@@ -671,7 +685,7 @@ const EditModal=({mode,initial,vsId,currentUser,staffList,loanerCars,rentalCars,
       if(toNum(from.y,from.m0,from.d)>toNum(to.y,to.m0,to.d)){setErr('代車の期間（開始日と返却日）が逆です');return;}
       const busy=availabilityOf(carKind,carSel);
       if(busy){setErr(`その期間は使用中です（${busy}）`);return;}
-      loanerAction={kind:carKind,carId:carSel,from,to};
+      loanerAction={kind:carKind,carId:carSel,from,to,locked:carLocked};
     }
     if(loanerMismatch&&!window.confirm(`⚠ 代車の期間がスケジュールと一致していません。\n\nスケジュール（入庫日→納車日）：${mmFmt(loanerMismatch.sf)}〜${mmFmt(loanerMismatch.st)}\n代車の貸出期間　　　　　　：${mmFmt(loanerMismatch.lf)}〜${mmFmt(loanerMismatch.lt)}\n\nこのまま保存しますか？\n（代車を合わせるには「代車」を選び直し、不要なら「なし」にしてください）`))return;
     setErr('');
@@ -868,6 +882,23 @@ const EditModal=({mode,initial,vsId,currentUser,staffList,loanerCars,rentalCars,
                   })}
                   {(carKind==='loaner'?loanerCars:rentalCars).length===0&&<div style={{fontSize:11,color:'#94a3b8'}}>車両リストが読み込めていません</div>}
                 </div>
+                {/* ★限定：この車でないとダメな予約。代車スケジュールの最適化で動かさない */}
+                {carKind==='loaner'&&(
+                  <button onClick={()=>setCarLocked(v=>!v)}
+                    style={{marginTop:8,width:'100%',display:'flex',alignItems:'center',gap:9,padding:'10px 11px',borderRadius:10,textAlign:'left',
+                      border:'2px solid '+(carLocked?'#7c2d12':'#e2e8f0'),background:carLocked?'#fff7ed':'white'}}>
+                    <span style={{fontSize:15}}>{carLocked?'🔒':'🔓'}</span>
+                    <span style={{flex:1}}>
+                      <span style={{display:'block',fontWeight:800,fontSize:13,color:carLocked?'#7c2d12':'#334155'}}>
+                        {carLocked?'限定中（この車で固定）':'限定にする'}
+                      </span>
+                      <span style={{display:'block',fontSize:10,color:'#94a3b8',marginTop:1}}>
+                        高さ制限などで「この車でないとダメ」な時。最適化で入れ替わらなくなります
+                      </span>
+                    </span>
+                    <span style={{fontSize:12,fontWeight:900,color:carLocked?'#7c2d12':'#cbd5e1'}}>{carLocked?'ON':'OFF'}</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1872,14 +1903,16 @@ const App=()=>{
         ty:action.to.y,tm:action.to.m0,td:action.to.d,
         user:userName,color:colorOf(userName),bookingKey:bkFinal,
         carName:car?.name,carNum:car?.num,
+        locked:action.locked||undefined,   // ★限定（最適化で動かさない）
       };
       await Promise.all([
         writeShared(lresKey,myLres,base=>{
           const cleaned=cleanOwn(base);
           const days={...(cleaned[action.carId]||{})};
-          // PC版は開始日をキーにする。別予約と衝突する場合はサフィックスを付けて上書きを防ぐ
-          let k=String(action.from.d);
-          if(days[k])k=`${action.from.d}_${rec.id}`;
+          // ★保存キーは「年-月-日」。日だけだと別の月の同じ日で衝突する（PC側は修正済み）。
+          //   別予約が居る時はサフィックスを付けて上書きを防ぐ。
+          let k=`${rec.fy}-${rec.fm}-${rec.fd}`;
+          if(days[k]&&days[k].id!==rec.id)k=`${k}_${rec.id}`;
           days[k]=rec;
           return{...cleaned,[action.carId]:days};
         },setMyLres,echo=>Object.values(echo[action.carId]||{}).some(r=>r&&r.id===rec.id&&r.bookingKey===bkFinal),true),

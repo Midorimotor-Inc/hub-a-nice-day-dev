@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787811433641';
+    window.__APP_BUILD='build-1787812482561';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.03';
+const APP_VERSION = '2.04';
 
 
 
@@ -4171,7 +4171,7 @@ const InspCalendarPicker=memo(({form,setForm,bmInspData,bmClosedDays,bmClosedDat
   );
 });
 
-const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSlot,onSave,onDelete,onDateChange,onOpenLoanerPicker,pendingLoanerId,pendingLoanerData,pendingRentalId,pendingRentalRec,rentalCarsData,loanerRes,modalDk,modalIdx:modalIdxProp,onDeleteLoaner,onToggleLoanerLock,currentUser,setItems,onOpenSetItemEdit,allCars,fromCustList,savedModalData,inspData:bmInspData,closedDays:bmClosedDays,closedDates:bmClosedDates,overrideOpenDates:bmOverrideOpen,inspLimits:bmInspLimits})=>{
+const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSlot,onSave,onDelete,onDateChange,onOpenLoanerPicker,pendingLoanerId,pendingLoanerData,pendingRentalId,pendingRentalRec,rentalCarsData,loanerRes,modalDk,modalIdx:modalIdxProp,onDeleteLoaner,onToggleLoanerLock,onTogglePendingLoanerLock,currentUser,setItems,onOpenSetItemEdit,allCars,fromCustList,savedModalData,inspData:bmInspData,closedDays:bmClosedDays,closedDates:bmClosedDates,overrideOpenDates:bmOverrideOpen,inspLimits:bmInspLimits})=>{
   const [form,setForm]=useState(initialData);
   const [staffInput,setStaffInput]=useState('');
   const [showStaff,setShowStaff]=useState(false);
@@ -4640,9 +4640,19 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
                 const dynamicLoanerId=pendingLoanerId??getLoanerIdForRow(loanerRes,modalDk,form.name,bk2);
                 // ⑤ 限定：保存済みの代車予約（bookingKey一致）を探し、その locked を切り替える
                 const _lockResv=(dynamicLoanerId!=null&&pendingLoanerId==null)?Object.values(loanerRes[dynamicLoanerId]||{}).find(r=>r.bookingKey===bk2):null;
+                // ★まだ保存していない（いま選んだばかりの）代車にも限定を付けられるようにする。
+                //   従来は「保存済みの代車がある予約を開き直した時」だけ出ていたため、
+                //   最初の予約では付けられず、保存→開き直しの2手間が必要だった
+                //   （2026-08-27にユーザーが要望）。高さ制限などは最初から分かっているので、
+                //   その場で付けられる方が自然。保存時に代車へ locked が一緒に書かれる。
+                const _pendLock=(pendingLoanerData&&pendingLoanerId!=null)?pendingLoanerData:null;
                 return(<>
                   <input value={dynamicLoaner} readOnly placeholder="管理表で選択" style={{...INP,flex:1,cursor:'pointer',background:'#fef9c3',color:dynamicLoaner?'#7c2d12':'#9ca3af'}} onClick={()=>onOpenLoanerPicker({...form,loaner:dynamicLoaner,loanerId:dynamicLoanerId})}/>
                   <button onClick={()=>onOpenLoanerPicker({...form,loaner:dynamicLoaner,loanerId:dynamicLoanerId})} style={{padding:'0 12px',background:'#0891b2',color:'white',border:'none',borderRadius:7,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',fontSize:12}}>選択</button>
+                  {_pendLock&&onTogglePendingLoanerLock&&<button onClick={onTogglePendingLoanerLock}
+                    title={_pendLock.locked?'限定を解除（最適化で動かせるようにする）':'この予約の車を限定（最適化で動かさない）'}
+                    style={{padding:'0 10px',background:_pendLock.locked?'#7c2d12':'#f3f4f6',color:_pendLock.locked?'white':'#6b7280',border:'2px solid '+(_pendLock.locked?'#7c2d12':'#d1d5db'),borderRadius:7,cursor:'pointer',fontWeight:700,fontSize:11,whiteSpace:'nowrap'}}>
+                    {_pendLock.locked?'🔒 限定中':'🔓 限定'}</button>}
                   {_lockResv&&onToggleLoanerLock&&<button onClick={()=>onToggleLoanerLock(dynamicLoanerId,_lockResv.id)}
                     title={_lockResv.locked?'固定を解除（最適化で動かせるようにする）':'この予約の車を固定（最適化で動かさない）'}
                     style={{padding:'0 10px',background:_lockResv.locked?'#7c2d12':'#f3f4f6',color:_lockResv.locked?'white':'#6b7280',border:`2px solid ${_lockResv.locked?'#7c2d12':'#d1d5db'}`,borderRadius:7,cursor:'pointer',fontWeight:700,fontSize:11,whiteSpace:'nowrap'}}>
@@ -8419,7 +8429,7 @@ function AppInner() {
 
     // ★修正1: モーダル確定時にpendingLoanerDataをloanerResに書き込む
     if(pendingLoanerData){
-      const {carId,startDay,endDay,startYear,startMonth,endYear,endMonth,user,color,bookingKey:_pldBk,carName,carNum}=pendingLoanerData;
+      const {carId,startDay,endDay,startYear,startMonth,endYear,endMonth,user,color,bookingKey:_pldBk,carName,carNum,locked:_pldLocked}=pendingLoanerData;
       const finalUser=cleanData.name||user;
       // ★代車の紐付け先は、車検予約を書き込むのと「まったく同じ日付」を使う。
       //   従来はここだけ別に計算しており、画面で選択中の日付(selDate)へすり替わる経路が
@@ -8434,12 +8444,12 @@ function AppInner() {
       // pendingLoanerDataのloanerRes保存（サーバー最新値ベース＋読み返し検証＝persistLres。
       //   従来はローカル全文の書き戻しを投げっぱなしにしていたため、車検側には代車ラベルが残るのに
       //   代車予約だけが無言で消えることがあった。setTimeoutで非同期化してフリーズ防止するのは従来通り）
-      const _lu = {carId,startDay,endDay,startYear,startMonth,endYear,endMonth,finalUser,color:color||RES_COLORS[0],
+      const _lu = {carId,startDay,endDay,startYear,startMonth,endYear,endMonth,finalUser,color:color||RES_COLORS[0],locked:_pldLocked,
         bk:_finalBk||_pldBk, carName, carNum};
       // idは再送しても同じ値を使う（＝着地確認が id で行えるよう mutate の外で確定させる）
       // 返却の年月はピッカーから渡された値を使う（月またぎ対応）。
       // 渡ってこない経路では従来どおり開始の年月にフォールバックする。
-      const _luRec={id:Date.now(),fy:_lu.startYear,fm:_lu.startMonth,
+      const _luRec={id:Date.now(),locked:_lu.locked||undefined,fy:_lu.startYear,fm:_lu.startMonth,
         fd:_lu.startDay,ty:_lu.endYear??_lu.startYear,tm:_lu.endMonth??_lu.startMonth,td:_lu.endDay,
         user:_lu.finalUser,color:_lu.color,bookingKey:_lu.bk,
         carName:_lu.carName,carNum:_lu.carNum};
@@ -9037,6 +9047,10 @@ function AppInner() {
     setLoanerUndo(u=>u.slice(0,-1));
   },[loanerUndo,persistLres]);
   // ⑤ 限定：この予約の代車を固定（最適化で動かさない）。locked を反転する。
+  // ★まだ保存していない（いま選んだ）代車の限定を切り替える。保存時に一緒に書かれる。
+  const togglePendingLoanerLock=useCallback(()=>{
+    setPendingLoanerData(p=>p?{...p,locked:!p.locked}:p);
+  },[]);
   const toggleLoanerLock=useCallback((cid,resId)=>{
     // 反転後の値を先に確定させる（再送のたびに反転すると値が定まらないため）
     const cur=Object.values(_resObj(loanerRes)[cid]||{}).find(r=>r&&r.id===resId);
@@ -10456,6 +10470,7 @@ function AppInner() {
         loanerRes={loanerRes} modalDk={modalDk}
         onDeleteLoaner={handleDeleteLoaner}
         onToggleLoanerLock={toggleLoanerLock}
+        onTogglePendingLoanerLock={togglePendingLoanerLock}
         currentUser={currentUser}
         setItems={setItems}
         onOpenSetItemEdit={()=>setShowSetItemEdit(true)}
