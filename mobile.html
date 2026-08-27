@@ -12,7 +12,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1787818851606';
+  window.__APP_BUILD='build-1787820466205';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -78,7 +78,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.07';
+const MOBILE_VERSION='2.08';
 const GAS_URL='https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 const GAS_API_KEY='hub2026co-f466kt5vs3vnDQDPuwWeS6XM';
 const STOR='hub-v8-dev-';
@@ -488,7 +488,7 @@ const CalendarView=({inspData,closedDays,closedDates,overrideOpen,vsId,onSelectD
   );
 };
 
-const DayDetailModal=({dk,y,m,d,inspData,schedDataH,schedDataS,memoDataH,memoDataS,vsId,onClose,onGoSchedule})=>{
+const DayDetailModal=({dk,y,m,d,inspData,schedDataH,schedDataS,memoDataH,memoDataS,vsId,onClose,onGoSchedule,onToggleArrived,arrivedOv})=>{
   const sc=vsId==='honten'?'#1d4ed8':'#dc2626';
   const irows=(inspData[dk]||[]).filter(r=>r&&r.name&&!r.pendingApproval&&r.bookingStatus!=='cancelled');
   const sorted=[...irows.filter(r=>normStore(r.store)===vsId),...irows.filter(r=>!normStore(r.store)),...irows.filter(r=>normStore(r.store)&&normStore(r.store)!==vsId)];
@@ -501,7 +501,7 @@ const DayDetailModal=({dk,y,m,d,inspData,schedDataH,schedDataS,memoDataH,memoDat
   Object.keys(inspData||{}).forEach(wdk=>{ if(wdk===dk)return;
     (inspData[wdk]||[]).forEach(r=>{ if(!r||!r.name||r.entryDate!==dk||r.bookingStatus==='cancelled')return;
       if((normStore(r.store)||'honten')!==vsId)return;
-      dropoffs.push({r,wdk});
+      dropoffs.push({r,wdk,ix:(inspData[wdk]||[]).indexOf(r)});
     });
   });
   const dow=new Date(y,m,d).getDay();
@@ -542,9 +542,17 @@ const DayDetailModal=({dk,y,m,d,inspData,schedDataH,schedDataS,memoDataH,memoDat
           {dropoffs.length>0&&(
               <div style={{marginBottom:14,background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:12,padding:'8px 11px'}}>
                 <div style={{fontWeight:800,fontSize:12,color:'#c2410c',marginBottom:6}}>🚗 事前入庫（{dropoffs.length}件・この日に入庫）</div>
-                {dropoffs.map(({r,wdk},i)=>{const wl=wdk.split('-');return(
+                {dropoffs.map(({r,wdk,ix},i)=>{const wl=wdk.split('-');
+                  // ★事前入庫の日こそ実際に車が入る日。ここでもチェックできる（印は本体の車検予約に付く）。
+                  const _ak=wdk+'|'+(r.seq||r.custId||r.name);
+                  const _arr=(arrivedOv&&_ak in arrivedOv)?!!arrivedOv[_ak]:!!r.arrived;
+                  return(
                   <div key={i} onClick={()=>onGoSchedule(Number(wl[0]),Number(wl[1])-1,Number(wl[2]))}
                     style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',padding:'7px 2px',borderTop:i>0?'1px dashed #fed7aa':'none',cursor:'pointer'}}>
+                    <span onClick={e=>{e.preventDefault();e.stopPropagation();if(onToggleArrived&&ix>=0)onToggleArrived('insp',wdk,ix);}}
+                      style={{width:22,height:22,flexShrink:0,display:'inline-flex',alignItems:'center',justifyContent:'center',borderRadius:6,
+                        background:_arr?'#fde047':'transparent',border:_arr?'2px solid #dc2626':'2px solid #fed7aa',
+                        color:'#dc2626',fontWeight:900,fontSize:13,lineHeight:1}}>{_arr?'✓':''}</span>
                     {r.time&&<span style={{fontSize:11,fontWeight:800,color:'#9a3412'}}>{r.time}</span>}
                     <span style={{fontWeight:800,fontSize:13}}>{r.name}</span>
                     {r.carType&&<span style={{fontSize:11,color:'#64748b'}}>🚗{r.carType}</span>}
@@ -1835,42 +1843,67 @@ const App=()=>{
   // ★押した直後の状態を20秒だけ手元で保持する（PC版と同じ）。GASは読み取りを5秒
   //   キャッシュするため、直後の取得が「まだチェック前」の古い値を返し、点いたり消えたり
   //   して見えることがある。保存が届けば自然に一致する。
+  const ARRIVED_OV_MS=45000;      // 押した状態を手元で優先する時間（保存＋読み返しより十分長く）
+  const ARRIVED_DEBOUNCE_MS=400;  // 連打をまとめる。最後の状態だけを1回書く。
   const [arrivedOv,setArrivedOv]=useState({});
+  // ★refにも同じ値を持つ。連打の2回目が「今の表示」を即座に読むために必要
+  //   （stateだけだと2回目が古い値を読み、押しても変わらない＝さらに連打になる）。
+  const arrivedOvRef=useRef({});
+  const arrivedStamp=useRef({});
   const markArrivedOv=useCallback((k,v)=>{
-    setArrivedOv(p=>({...p,[k]:v}));
-    setTimeout(()=>setArrivedOv(p=>{const n={...p};delete n[k];return n;}),20000);
+    arrivedOvRef.current={...arrivedOvRef.current,[k]:v};
+    arrivedStamp.current={...arrivedStamp.current,[k]:Date.now()};
+    setArrivedOv(arrivedOvRef.current);
+    setTimeout(()=>{
+      const ts=arrivedStamp.current[k];
+      if(ts&&Date.now()-ts<ARRIVED_OV_MS-500)return; // 押し直された分は生かす
+      const n={...arrivedOvRef.current};delete n[k];arrivedOvRef.current=n;setArrivedOv(n);
+    },ARRIVED_OV_MS);
   },[]);
-  const toggleArrived=useCallback(async(type,dk,idxOrSlot)=>{
+  // ★タップした瞬間に色を変えるための仕掛け。保存(GAS)は1回2〜3秒かかるので、
+  //   同じ処理の中で始めると画面の描き替えが後回しになり「押したのに変わらない→
+  //   もう一度押す」の連打になる（2026-08-27にユーザーが報告）。描き替えが出てから
+  //   保存を始め、連打された分は最後の状態だけを1回にまとめて書く。
+  const arrivedTimers=useRef({});
+  const runAfterPaint=useCallback((k,fn)=>{
+    const t=arrivedTimers.current;
+    if(t[k])clearTimeout(t[k]);
+    t[k]=setTimeout(()=>{delete t[k];requestAnimationFrame(()=>setTimeout(fn,0));},ARRIVED_DEBOUNCE_MS);
+  },[]);
+  const shownArrived=useCallback((k,row)=>(k in arrivedOvRef.current)?!!arrivedOvRef.current[k]:!!(row&&row.arrived),[]);
+  const toggleArrived=useCallback((type,dk,idxOrSlot)=>{
     try{
       if(type==='insp'){
         const cur=(hotInsp[dk]||[])[idxOrSlot];
         if(!cur||!cur.name)return;
-        const next=!cur.arrived;
-        markArrivedOv(dk+'|'+(cur.seq||cur.custId||cur.name),next);
-        await writeShared(STOR+'insp',hotInsp,base=>{
+        const k=dk+'|'+(cur.seq||cur.custId||cur.name);
+        const next=!shownArrived(k,cur); // 今の「表示」を反転（連打しても1回ごとに切り替わる）
+        markArrivedOv(k,next);           // ここで即座に色が変わる
+        runAfterPaint(k,()=>writeShared(STOR+'insp',hotInsp,base=>{
           const rows=[...((base[dk])||[])];
           const r=rows[idxOrSlot];
           if(!r||r.name!==cur.name)return base;           // 行がズレていたら触らない
           rows[idxOrSlot]=next?{...r,arrived:true}:(()=>{const {arrived,...rest}=r;return rest;})();
           return {...base,[dk]:rows};
-        },v=>setInspData(applyOverlays(STOR+'insp',v)),null,true);
+        },v=>setInspData(applyOverlays(STOR+'insp',v)),null,true).catch(e=>console.warn('入庫チェックを保存できませんでした',e)));
       }else{
         const key=storKey('sched',vsId);
         const day=(vsId==='honten'?schedDataH:schedDataS)[dk]||{};
         const cur=day[idxOrSlot];
         if(!cur||!cur.name)return;
-        const next=!cur.arrived;
-        markArrivedOv(dk+'|'+(cur.name||idxOrSlot),next);
-        await writeShared(key,(vsId==='honten'?schedDataH:schedDataS),base=>{
+        const k=dk+'|'+(cur.name||idxOrSlot);
+        const next=!shownArrived(k,cur);
+        markArrivedOv(k,next);           // ここで即座に色が変わる
+        runAfterPaint(k,()=>writeShared(key,(vsId==='honten'?schedDataH:schedDataS),base=>{
           const d={...((base[dk])||{})};
           const r=d[idxOrSlot];
           if(!r||r.name!==cur.name)return base;
           d[idxOrSlot]=next?{...r,arrived:true}:(()=>{const {arrived,...rest}=r;return rest;})();
           return {...base,[dk]:d};
-        },v=>{ if(vsId==='honten')setSchedDataH(applyOverlays(key,v)); else setSchedDataS(applyOverlays(key,v)); },null,true);
+        },v=>{ if(vsId==='honten')setSchedDataH(applyOverlays(key,v)); else setSchedDataS(applyOverlays(key,v)); },null,true).catch(e=>console.warn('入庫チェックを保存できませんでした',e)));
       }
     }catch(e){ console.warn('入庫チェックを保存できませんでした',e); }
-  },[hotInsp,schedDataH,schedDataS,vsId]);
+  },[hotInsp,schedDataH,schedDataS,vsId,shownArrived,runAfterPaint,markArrivedOv]);
 
   const openEdit=useCallback((req)=>{
     // req: {type:'insp'|'sched', dk, idx?, slot?, isNew}
@@ -2337,7 +2370,7 @@ const App=()=>{
         {tab==='loaner'&&<LoanerView loanerResH={loanerResH} loanerResS={loanerResS} rentalResData={rentalResData} rentalCars={rentalCars}
           loanerCarsH={loanerCarsH} loanerCarsS={loanerCarsS} vsId={vsId}/>}
       </div>
-      {dayDetail&&<DayDetailModal {...dayDetail} inspData={inspData} schedDataH={schedDataH} schedDataS={schedDataS} memoDataH={memoDataH} memoDataS={memoDataS} vsId={vsId}
+      {dayDetail&&<DayDetailModal {...dayDetail} inspData={inspData} schedDataH={schedDataH} schedDataS={schedDataS} memoDataH={memoDataH} memoDataS={memoDataS} vsId={vsId} onToggleArrived={toggleArrived} arrivedOv={arrivedOv}
         onClose={()=>setDayDetail(null)}
         onGoSchedule={(y,m,d)=>{setSchedInitDate({y,m,d});setTab('sched');setDayDetail(null);}}/>}
       {editMode&&<EditModal

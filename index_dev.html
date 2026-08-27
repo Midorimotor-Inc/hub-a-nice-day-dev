@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787818851606';
+    window.__APP_BUILD='build-1787820466205';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.07';
+const APP_VERSION = '2.08';
 
 
 
@@ -8842,11 +8842,39 @@ function AppInner() {
   // ★押した直後の状態を20秒だけ手元で保持する。GASは読み取りを5秒キャッシュするため、
   //   書いた直後のポーリングが古い値（チェック前）を返し、点いたり消えたりして見えた
   //   （2026-08-27にユーザーが報告）。保存が届けば自然に一致するので、その間だけ手元を優先する。
+  // 押した状態を手元で優先する時間。GAS保存(2〜3秒)＋読み返し＋ポーリング(15秒)より
+  // 十分長くとる。短すぎるとサーバーの古い値に戻って点滅して見える。
+  const ARRIVED_OV_MS=45000;
+  const ARRIVED_DEBOUNCE_MS=400; // 連打をまとめる。最後の状態だけを1回書く。
   const [arrivedOv,setArrivedOv]=useState({});
+  // ★refにも同じ値を持つ。連打の2回目が「今の表示」を即座に読むために必要。
+  //   stateだけだと2回目が1回目より前の値を読み、押しても変わらない＝連打の原因になる。
+  const arrivedOvRef=useRef({});
   const arrivedKey=(dk,row,idx)=>`${dk}|${(row&&(row.seq||row.custId||row.name))||idx}`;
   const markArrivedOv=useCallback((k,v)=>{
-    setArrivedOv(p=>({...p,[k]:{v,ts:Date.now()}}));
-    setTimeout(()=>setArrivedOv(p=>{const n={...p};delete n[k];return n;}),20000);
+    arrivedOvRef.current={...arrivedOvRef.current,[k]:{v,ts:Date.now()}};
+    setArrivedOv(arrivedOvRef.current);
+    setTimeout(()=>{
+      const c=arrivedOvRef.current[k];
+      if(!c||Date.now()-c.ts<ARRIVED_OV_MS-500)return; // 押し直された分は生かす
+      const n={...arrivedOvRef.current};delete n[k];arrivedOvRef.current=n;setArrivedOv(n);
+    },ARRIVED_OV_MS);
+  },[]);
+  // ★押した瞬間に色を変えるための仕掛け。
+  //   保存(GAS)は1回2〜3秒かかる。同じ処理の中で保存を始めると画面の描き替えが
+  //   その分だけ後回しになり「押したのに変わらない→もう一度押す」の連打になっていた
+  //   （2026-08-27にユーザーが報告）。描き替えが画面に出てから保存を始め、連打された
+  //   分は最後の状態だけを1回にまとめて書く。
+  const arrivedTimers=useRef({});
+  const runAfterPaint=useCallback((k,fn)=>{
+    const t=arrivedTimers.current;
+    if(t[k])clearTimeout(t[k]);
+    t[k]=setTimeout(()=>{delete t[k];requestAnimationFrame(()=>setTimeout(fn,0));},ARRIVED_DEBOUNCE_MS);
+  },[]);
+  // 今そのマスに出ている状態（手元の保持を優先）。押した値を反転させる基準に使う。
+  const shownArrived=useCallback((k,row)=>{
+    const o=arrivedOvRef.current[k];
+    return o?!!o.v:!!(row&&row.arrived);
   },[]);
   const applyArrivedOv=useCallback((dk,row,idx)=>{
     if(!row||!row.name)return row;
@@ -8858,29 +8886,31 @@ function AppInner() {
   const toggleInspArrived=useCallback((dk,idx)=>{
     const cur=(inspData[dk]||[])[idx];
     if(!cur||!cur.name)return;
-    const next=!cur.arrived;
-    markArrivedOv(arrivedKey(dk,cur,idx),next);
+    const k=arrivedKey(dk,cur,idx);
+    const next=!shownArrived(k,cur); // 今の「表示」を反転する（連打しても1回ごとに切り替わる）
+    markArrivedOv(k,next);           // ここで即座に色が変わる
     const _tgt={custId:cur.custId,seq:(cur.seq!=null)?cur.seq:null,name:cur.name,no:cur.no,idx,limit:inspLimits[dk]??6};
-    persistInsp(
+    runAfterPaint(k,()=>persistInsp( // 保存は画面が描き替わってから
       base=>patchInspBooking(base,dk,_tgt,{arrived:next||undefined}),
       back=>{const rows=(back&&back[dk])||[];const j=rows.findIndex(_inspMatcher(_tgt));return j>=0&&!!rows[j].arrived===next;},
       {name:cur.name,verb:next?'入庫チェック':'入庫チェックの解除',dk,alert:false}
-    );
-  },[inspData,inspLimits,persistInsp]);
+    ));
+  },[inspData,inspLimits,persistInsp,shownArrived,runAfterPaint,markArrivedOv]);
 
   // 一般予約（タイムスケジュール）側の入庫済みチェック
   const toggleSchedArrived=useCallback((dk,slotKey)=>{
     const cur=(schedData[dk]||{})[slotKey];
     if(!cur||!cur.name)return;
-    const next=!cur.arrived;
-    markArrivedOv(arrivedKey(dk,cur,slotKey),next);
-    setSchedData(prev=>{
+    const k=arrivedKey(dk,cur,slotKey);
+    const next=!shownArrived(k,cur);
+    markArrivedOv(k,next);           // ここで即座に色が変わる
+    runAfterPaint(k,()=>setSchedData(prev=>{ // 保存は画面が描き替わってから
       const day={...((prev&&prev[dk])||{})};
       const r=day[slotKey]; if(!r)return prev;
       day[slotKey]=next?{...r,arrived:true}:(()=>{const {arrived,...rest}=r;return rest;})();
       return {...prev,[dk]:day};
-    });
-  },[schedData,setSchedData]);
+    }));
+  },[schedData,setSchedData,shownArrived,runAfterPaint,markArrivedOv]);
 
   const handleApprove=useCallback((dk,idx)=>{
     const cur=(inspData[dk]||[])[idx];
@@ -10247,10 +10277,17 @@ function AppInner() {
                               const wl=wdk.split('-');
                               const dl=getLoanerLabel(loanerRes,wdk,r.name,`insp-${wdk}-${ix}`);
                               const loaner=r.rentalLabel||dl||'';
+                              // ★事前入庫の日こそ実際に車が入る日。ここでもチェックできる。
+                              //   印は本体（車検日）の予約に付くので、両方の日で同じチェックが見える。
+                              const _ak=arrivedKey(wdk,r,ix);
+                              const _arr=arrivedOv[_ak]?!!arrivedOv[_ak].v:!!r.arrived;
                               return(
                                 <tr key={'do-'+wdk+'-'+ix} onClick={()=>handleOpenModal('insp',wdk,ix,null,false)}
                                   style={{background:'#fff7ed',cursor:'pointer'}} title="事前入庫の車検（クリックで車検を編集）">
-                                  <td style={{...TD,width:50,maxWidth:50,paddingLeft:6,paddingRight:3,whiteSpace:isSpecialSlot(slot)?'normal':'nowrap',lineHeight:isSpecialSlot(slot)?1.12:undefined,color:'#9a3412',fontWeight:700,fontSize:isSpecialSlot(slot)?10:11,borderLeft:'3px solid #ea580c'}}>{isSpecialSlot(slot)?specialSlotLabel(slot):slot}</td>
+                                  <td onClick={e=>{e.preventDefault();e.stopPropagation();toggleInspArrived(wdk,ix);}}
+                                    title={_arr?'入庫済み（クリックで解除）':'入庫したらクリック'}
+                                    style={{...TD,width:50,maxWidth:50,cursor:'pointer',textAlign:_arr?'center':undefined,background:_arr?'#fde047':undefined,paddingLeft:6,paddingRight:3,whiteSpace:isSpecialSlot(slot)?'normal':'nowrap',lineHeight:isSpecialSlot(slot)?1.12:undefined,color:'#9a3412',fontWeight:700,fontSize:isSpecialSlot(slot)?10:11,borderLeft:'3px solid #ea580c'}}>
+                                    {_arr?<span style={{fontWeight:900,color:'#dc2626',fontSize:15,lineHeight:1}}>✓</span>:(isSpecialSlot(slot)?specialSlotLabel(slot):slot)}</td>
                                   <td style={TD}>
                                     <div style={{lineHeight:1.25}}>
                                       <span style={{fontSize:10,fontWeight:800,color:'white',background:'#ea580c',borderRadius:20,padding:'1px 7px',whiteSpace:'nowrap'}}>🚗 事前入庫</span>
@@ -10273,6 +10310,9 @@ function AppInner() {
                             {/* 納車（この日に納車する車検・予定）を読み取り専用で表示。クリックで元の予約を開く */}
                             {(_dlBySlot[slot]||[]).map((d,di)=>{
                               const r=d.r,wl=d.wdk.split('-');
+                              // ★納車行も同じ予約の姿。ここでのチェックも元の予約に付く。
+                              const _ak=arrivedKey(d.wdk,r,d.kind==='insp'?d.ix:d.sk);
+                              const _arr=arrivedOv[_ak]?!!arrivedOv[_ak].v:!!r.arrived;
                               const loaner=d.kind==='insp'
                                 ?(r.rentalLabel||getLoanerLabel(loanerRes,d.wdk,r.name,`insp-${d.wdk}-${d.ix}`)||r.loaner||'')
                                 :(r.rentalLabel||r.loaner||'');
@@ -10281,7 +10321,10 @@ function AppInner() {
                                 <tr key={'dl-'+d.kind+'-'+d.wdk+'-'+(d.ix??d.sk)+'-'+di}
                                   onClick={()=>d.kind==='insp'?handleOpenModal('insp',d.wdk,d.ix,null,false):handleOpenModal('sched',d.wdk,null,d.sk,false)}
                                   style={{background:'#ecfdf5',cursor:'pointer'}} title="納車予定（クリックで元の予約を編集）">
-                                  <td style={{...TD,width:50,maxWidth:50,paddingLeft:6,paddingRight:3,whiteSpace:isSpecialSlot(slot)?'normal':'nowrap',lineHeight:isSpecialSlot(slot)?1.12:undefined,color:'#065f46',fontWeight:700,fontSize:isSpecialSlot(slot)?10:11,borderLeft:'3px solid #059669'}}>{isSpecialSlot(slot)?specialSlotLabel(slot):slot}</td>
+                                  <td onClick={e=>{e.preventDefault();e.stopPropagation();d.kind==='insp'?toggleInspArrived(d.wdk,d.ix):toggleSchedArrived(d.wdk,d.sk);}}
+                                    title={_arr?'入庫済み（クリックで解除）':'入庫したらクリック'}
+                                    style={{...TD,width:50,maxWidth:50,cursor:'pointer',textAlign:_arr?'center':undefined,background:_arr?'#fde047':undefined,paddingLeft:6,paddingRight:3,whiteSpace:isSpecialSlot(slot)?'normal':'nowrap',lineHeight:isSpecialSlot(slot)?1.12:undefined,color:'#065f46',fontWeight:700,fontSize:isSpecialSlot(slot)?10:11,borderLeft:'3px solid #059669'}}>
+                                    {_arr?<span style={{fontWeight:900,color:'#dc2626',fontSize:15,lineHeight:1}}>✓</span>:(isSpecialSlot(slot)?specialSlotLabel(slot):slot)}</td>
                                   <td style={{...TD,fontWeight:700,color:'#064e3b',whiteSpace:'nowrap'}}>{r.name}</td>
                                   <td style={TD}><span style={{fontWeight:700,color:'#374151',fontSize:13}}>{r.carType||'—'}</span></td>
                                   <td style={TD}></td>
