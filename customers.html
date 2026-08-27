@@ -15,7 +15,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1787820466205';
+  window.__APP_BUILD='build-1787824613580';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -100,7 +100,7 @@ const STOR='hub-v8-dev-';
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.08'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.09'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -191,15 +191,22 @@ const loadFileChunked=async(name)=>{
   const chunks=await Promise.all(
     Array.from({length:idx.chunks},async(_,i)=>{
       let c=await sGet(STOR+'cf-'+sn+'-chunk-'+i);
-      if(!Array.isArray(c)){await new Promise(r=>setTimeout(r,800));c=await sGet(STOR+'cf-'+sn+'-chunk-'+i);}
+      // ★読めるまで待って3回まで試す。1回だけの再試行では、回線や端末が遅いPCで
+      //   取りこぼして「このPCだけ一部の顧客が出ない」状態になっていた
+      //   （2026-08-27にユーザーが報告：PCによって読めたり読めなかったりする）。
+      for(let a=0;!Array.isArray(c)&&a<3;a++){
+        await new Promise(r=>setTimeout(r,800*(a+1)));
+        c=await sGet(STOR+'cf-'+sn+'-chunk-'+i);
+      }
       return Array.isArray(c)?c:null;
     })
   );
   const customers=chunks.filter(Boolean).flat();
   // _complete=false は「サーバー上のデータが欠けている」の合図。呼び出し側で警告を出す。
   const _complete=chunks.every(Boolean)&&(!idx.total||customers.length===idx.total);
-  if(!_complete)console.warn('[CF] 読み込み不完全',name,customers.length,'/',idx.total);
-  return{name:idx.name,customers,_complete,_expected:idx.total};
+  const _missing=chunks.filter(c=>!c).length;
+  if(!_complete)console.warn('[CF] 読み込み不完全',name,customers.length,'/',idx.total,'欠け',_missing,'/',idx.chunks);
+  return{name:idx.name,customers,_complete,_expected:idx.total,_missing,_chunks:idx.chunks};
 };
 // 全ファイルリスト
 let __lastCfIndex=null; // 最後に読めたサーバー側の顧客ファイル一覧（読み取り失敗時のフォールバック）
@@ -1678,7 +1685,56 @@ const App=()=>{
   const [importing,setImporting]=useState(false);
   const [importMsg,setImportMsg]=useState('');   // インポート進捗（どのファイルを保存中か）
   const [closing,setClosing]=useState(null);     // 「スケジュールに戻る」で保存完了を待っている間の表示
-  const [cfWarn,setCfWarn]=useState([]);         // サーバー上のデータが欠けている顧客ファイル名
+  const [cfWarn,setCfWarn]=useState([]);         // 読み切れなかった顧客ファイル名
+  const [cfRetrying,setCfRetrying]=useState(false); // 「サーバーから再読み込み」実行中
+  // ★サーバーから読んだファイルを画面へ反映する。取り込みは全員共有なので、
+  //   読めなかったPCは「元のExcelを選び直す」のではなく、ここでサーバーから取り直せばよい
+  //   （2026-08-27にユーザーが指摘：一人が取り込んだら全員で共有のはず）。
+  const applyServerFile=useCallback((f)=>{
+    if(!f)return;
+    const SAFE=n=>n.replace(/[^a-zA-Z0-9　-鿿゠-ヿ぀-ゟ]/g,'_').slice(0,30);
+    setFiles(prev=>{
+      const existing=prev.find(p=>p.name===f.name);
+      if(existing){
+        // ローカルのconfirm/tempをGASの古いデータで上書きしない
+        const merged={...f,customers:f.customers.map(fc=>{
+          const lc=existing.customers.find(c=>c.custId===fc.custId);
+          if(!lc)return fc;
+          const priority={cancel:4,confirm:3,temp:2,new_car:2,none:0};
+          const lp=priority[lc.status||'none']||0;
+          const fp=priority[fc.status||'none']||0;
+          if(lp>fp)return lc;
+          if(fp>lp)return fc;
+          if(fc.entryDate&&!lc.entryDate)return fc;
+          if(fc.entryDate&&lc.entryDate&&fc.entryDate!==lc.entryDate)return fc;
+          return lc;
+        })};
+        if(f._complete!==false)try{localStorage.setItem(STOR+'cf-'+SAFE(f.name),JSON.stringify(merged));}catch(e){}
+        return prev.map(p=>p.name===f.name?merged:p);
+      }
+      if(f._complete!==false)try{localStorage.setItem(STOR+'cf-'+SAFE(f.name),JSON.stringify(f));}catch(e){}
+      return [...prev,f];
+    });
+  },[]);
+  // 読めなかったファイルをサーバーから取り直す（Excelの選び直しは不要）
+  const retryLoadFiles=useCallback(async(names)=>{
+    setCfRetrying(true);
+    const stillBad=[];
+    for(const n of names){
+      let f=null;
+      for(let a=0;a<2&&!(f&&f._complete);a++){
+        f=await loadFileChunked(n).catch(()=>null);
+        if(f&&f._complete)break;
+        await new Promise(r=>setTimeout(r,1200));
+      }
+      if(f)applyServerFile(f);
+      if(!f||f._complete===false)stillBad.push(n);
+    }
+    setCfWarn(stillBad);
+    setCfRetrying(false);
+    if(stillBad.length===0)alert('サーバーから読み直しました。全件そろっています。');
+    else alert('次のファイルはサーバー側のデータが欠けています:\n'+stillBad.join('、')+'\n\nこの場合だけ、元のファイルから取り込み直してください。');
+  },[applyServerFile]);
   const [hotInsp,setInspData]=useState({});   // hot=今日以降＋直近。書き込みは全てサーバー最新(hot)から構築
   const [inspArch,setInspArch]=useState({});  // 保管箱（過去日）。起動時に1回読むだけ・書き換えない
   useEffect(()=>{ sGet(STOR+'insp-arch').then(v=>{ if(v&&typeof v==='object'&&!Array.isArray(v)) setInspArch(v); }).catch(()=>{}); },[]);
@@ -1773,38 +1829,8 @@ const App=()=>{
                 console.warn('[CF] ファイルを完全に読めませんでした:',fi.name);
                 setCfWarn(prev=>prev.includes(fi.name)?prev:[...prev,fi.name]);
               }
-              if(f){
-                // GASキャッシュが古い場合でもローカルの予約状態を守る
-                setFiles(prev=>{
-                  const existing=prev.find(p=>p.name===f.name);
-                  if(existing){
-                    // ローカルのconfirm/tempをGASの古いデータで上書きしない
-                    const merged={...f,customers:f.customers.map(fc=>{
-                      const lc=existing.customers.find(c=>c.custId===fc.custId);
-                      if(!lc)return fc;
-                      // ローカルの方がステータスが進んでいれば保持
-                      // 同優先度の場合もローカルを優先（GASの古いデータでcourse等が上書きされない）
-                      const priority={cancel:4,confirm:3,temp:2,new_car:2,none:0};
-                      const lp=priority[lc.status||'none']||0;
-                      const fp=priority[fc.status||'none']||0;
-                      if(lp>fp)return lc;
-                      if(fp>lp)return fc;
-                      // 同優先度: GAS(他端末の最新)に入庫日があってローカルに無ければGASを採用（PCごとに表示が違う問題の修正）
-                      if(fc.entryDate&&!lc.entryDate)return fc;
-                      // 同優先度で両方入庫日あり・日付が異なれば他端末の変更としてGAS優先（自端末はsaveCount中スキップで保護）
-                      if(fc.entryDate&&lc.entryDate&&fc.entryDate!==lc.entryDate)return fc;
-                      return lc;
-                    })};
-                    if(f._complete!==false)localStorage.setItem(STOR+'cf-'+SAFE(fi.name),JSON.stringify(merged));
-                    return prev.map(p=>p.name===f.name?merged:p);
-                  }
-                  if(f._complete!==false)localStorage.setItem(STOR+'cf-'+SAFE(fi.name),JSON.stringify(f));
-                  return [...prev,f];
-                  const i=prev.findIndex(x=>x.name===f.name);
-                  if(i>=0){const n=[...prev];n[i]=f;return n;}
-                  return[...prev,f];
-                });
-              }
+              // GASキャッシュが古い場合でもローカルの予約状態を守る（共通処理）
+              applyServerFile(f);
             });
           }
         }
@@ -2834,10 +2860,14 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
         <div style={{flexShrink:0,margin:'6px 14px',padding:'8px 12px',borderRadius:8,
           background:'#fef2f2',border:'1px solid #fecaca',color:'#991b1b',fontSize:12,fontWeight:700,
           display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-          <span>⚠ 次のファイルはサーバーに保存しきれていません（他のPCからは見えません）: {cfWarn.join('、')}</span>
-          <button onClick={()=>fileInputRef.current?.click()}
-            style={{padding:'4px 10px',background:'#991b1b',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700}}>
-            もう一度取り込む
+          <span>⚠ 次のファイルを最後まで読めませんでした（このPCだけの可能性があります）: {cfWarn.join('、')}</span>
+          <button disabled={cfRetrying} onClick={()=>retryLoadFiles(cfWarn)}
+            style={{padding:'4px 10px',background:cfRetrying?'#d1d5db':'#991b1b',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:cfRetrying?'wait':'pointer'}}>
+            {cfRetrying?'読み込み中…':'サーバーから再読み込み'}
+          </button>
+          <button disabled={cfRetrying} onClick={()=>fileInputRef.current?.click()}
+            style={{padding:'4px 10px',background:'none',border:'1px solid #991b1b',borderRadius:6,color:'#991b1b',fontSize:11,fontWeight:700}}>
+            元のファイルから取り込み直す
           </button>
           <button onClick={()=>setCfWarn([])}
             style={{padding:'4px 8px',background:'none',border:'none',color:'#991b1b',fontSize:11,fontWeight:700}}>
