@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787796207946';
+    window.__APP_BUILD='build-1787799735220';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.01';
+const APP_VERSION = '2.02';
 
 
 
@@ -1871,7 +1871,12 @@ const writeVerified=async(key,mutate,check,tries=3,opts)=>{
     //   付けただけで3回書いていた）。無駄な書き込みが減り、画面の揺れも止まる。
     //   応答が読めない環境('unknown')だけ従来どおり読み返して確認する。
     const _res=await sSet(key,val);
-    if(_res==='ok')return true;
+    // ★alwaysVerify を指定したキー（車検予約）は 'ok' でも必ず読み返して中身を確かめる。
+    //   'ok' は「送った内容をGASが書き終えた」証拠にすぎず、「送った内容が正しい」保証ではない。
+    //   日付変更のように行を別の日へ動かす保存は組み立てを誤っても ok が返るので、
+    //   検算を省くと間違ったまま成功として扱ってしまう（2026-08-27の日付変更の件で判明）。
+    //   予約そのものは取り返しがつかないため、1回の読み取り（約1秒）を惜しまない。
+    if(_res==='ok'&&!_o.alwaysVerify)return true;
     await new Promise(r=>setTimeout(r,1500+1500*i));
     try{ const back=await sGet(key); if(check(back))return true; }catch(e){}
     console.warn('[WRITE] 未反映→再送',key,'attempt',i+1);
@@ -7253,7 +7258,8 @@ function AppInner() {
         // ★土台に「手元の作りたての予約」を足してから変更を適用する（古いキャッシュ対策）
         base=>{ const v=mutate(mergeInspFresh(hotInspRef.current,base,Date.now())); updateLocalInspData(v); return v; },
         back=>{ try{return !!confirmFn(back);}catch(e){return false;} },
-        3,{requireBase:true} // 読めなかったサーバー値を「空」とみなして書かない
+        // 車検予約は取り返しがつかないので、GASが ok を返しても必ず読み返して検算する
+        3,{requireBase:true,alwaysVerify:true}
       );
       if(ok){
         if(o.pid)inspPendDrop(o.pid);
