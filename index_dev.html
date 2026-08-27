@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787816680778';
+    window.__APP_BUILD='build-1787818851606';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.06';
+const APP_VERSION = '2.07';
 
 
 
@@ -8872,8 +8872,8 @@ function AppInner() {
   const toggleSchedArrived=useCallback((dk,slotKey)=>{
     const cur=(schedData[dk]||{})[slotKey];
     if(!cur||!cur.name)return;
-    markArrivedOv(arrivedKey(dk,cur,slotKey),next);
     const next=!cur.arrived;
+    markArrivedOv(arrivedKey(dk,cur,slotKey),next);
     setSchedData(prev=>{
       const day={...((prev&&prev[dk])||{})};
       const r=day[slotKey]; if(!r)return prev;

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>6月17日（水） 本店 スケジュール — 印刷プレビュー</title>
+<!-- index_dev.html の印刷テンプレを実データ相当で再現（非追跡）。確認後 rm print_preview.html -->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; height: 100%; }
+  body { font-family: -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif; font-size: 13px; color: #000; background: white; }
+  @page { size: A4 landscape; margin: 6mm; }
+  .page { width: 100%; height: 196mm; display: flex; gap: 8px; }
+  .left { width: 46%; display: flex; flex-direction: column; gap: 7px; }
+  .right { width: 54%; display: flex; flex-direction: column; }
+  .right .section-box { flex: 1; display: flex; flex-direction: column; overflow: visible; }
+  h2 { font-size: 14px; font-weight: 800; padding: 5px 9px; border-radius: 4px; color: white; margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { padding: 5px 6px; font-weight: 800; font-size: 11px; text-align: left; color: white; }
+  td { padding: 5px 6px; border-bottom: 1px solid #94a3b8; vertical-align: middle; font-size: 12px; font-weight: 500; }
+  .insp-table td { font-size: 14px; padding: 7px 6px; }
+  .insp-table th { font-size: 12px; }
+  /* 車検コース：〇バッジ（マ=赤丸白字／他は丸枠のみ） */
+  .course-badge { display:inline-flex; align-items:center; justify-content:center; width:21px; height:21px; border-radius:50%; font-weight:800; font-size:12px; line-height:1; }
+  .course-ma { background:#b91c1c; color:#fff; }
+  .course-other { border:1.5px solid currentColor; background:transparent; }
+  @media print and (monochrome){
+    .course-ma { background:#000; color:#fff; }
+    .course-other { border-color:#000 !important; color:#000 !important; }
+  }
+  /* タイムスケジュール：1予約=1行・用紙1枚に収める（行高控えめ） */
+  .right .section-box > table { flex: 1; }
+  .sched-table td { font-size: 13px; padding: 5px 6px; line-height: 1.2; }
+  .sched-table th { font-size: 12px; }
+  /* 氏名・車種は折り返さず1行表示 */
+  .sched-table td:nth-child(2), .sched-table td:nth-child(3) { white-space: nowrap; }
+  /* 代車（車検・一般共通）：車種名（番号）・長さで段階縮小（emで各表の文字に追従、最長は折返し） */
+  td.loaner-fit { white-space: nowrap; }
+  td.loaner-fit.f1 { font-size: 0.82em; }
+  td.loaner-fit.f2 { font-size: 0.68em; }
+  td.loaner-fit.f3 { font-size: 0.56em; white-space: normal; line-height: 1.15; word-break: break-all; }
+  /* 内容が長い枠は段階縮小・折返し */
+  .sched-table td.note-sm { font-size: 11px; white-space: normal; }
+  .sched-table td.note-xs { font-size: 9px;  white-space: normal; line-height: 1.15; }
+  .insp-head { background: #9a3412; }
+  .sched-head { background: #0e7490; }
+  .memo-head { background: #7c3aed; }
+  .store-my { border-left: 3px solid #2563eb; }
+  .store-other { border-left: 3px solid #64748b; }
+  .slot-empty td { color: #94a3b8; background: #f1f5f9; }
+  .slot-empty td:first-child { color: #334155; font-weight: 700; }
+  .has-data td { background: white; }
+  .staff-row { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; font-size: 12px; }
+  .chip { padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+  .chip-off { background: #e2e8f0; color: #475569; }
+  .header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px; border-bottom: 2px solid #1e293b; padding-bottom: 4px; }
+  h1 { font-size: 21px; font-weight: 800; }
+  .print-info { font-size: 10px; color: #475569; }
+  .section-box { border: 1px solid #94a3b8; border-radius: 5px; overflow: hidden; }
+  .memo-section { flex: 1; display: flex; flex-direction: column; }
+  .memo-body { flex: 1; padding: 6px 9px; font-size: 12px; }
+  .memo-body.m-sm { font-size: 11px; }
+  .memo-body.m-xs { font-size: 10px; line-height: 1.3; }
+
+  /* ▼プレビュー専用：A4横の枠を画面に表示 */
+  @media screen {
+    body { background:#64748b; padding:14px; }
+    .page { background:white; box-shadow:0 4px 18px rgba(0,0,0,.35); padding:6mm;
+            width:297mm; height:210mm; margin:0 auto; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="left">
+    <div class="header">
+      <h1>🚗 6月17日（水）　本店</h1>
+      <span class="print-info">印刷：6/17 09:42</span>
+    </div>
+
+    <div class="section-box">
+      <h2 class="insp-head">🚗 車検（6台）</h2>
+      <table class="insp-table">
+        <thead><tr class="insp-head">
+          <th style="width:16px">No</th>
+          <th style="width:68px">氏名</th>
+          <th style="width:58px">車種</th>
+          <th style="width:40px">コース</th>
+          <th style="width:64px">代車</th>
+          <th style="width:24px">特典</th>
+          <th>備考</th>
+        </tr></thead>
+        <tbody>
+          <tr class="store-my">
+            <td style="font-weight:700;color:#2563eb">1</td>
+            <td style="font-weight:700">山田 太郎</td><td>プリウス</td>
+            <td><span class="course-badge course-ma">マ</span></td>
+            <td class="loaner-fit f2">ワゴンR（1234）</td>
+            <td style="text-align:center">①</td><td>9:00来店予定</td>
+          </tr>
+          <tr class="store-my">
+            <td style="font-weight:700;color:#2563eb">2</td>
+            <td style="font-weight:700">鈴木 花子</td><td>N-BOX</td>
+            <td><span class="course-badge course-other" style="color:#1d4ed8">ク</span></td>
+            <td class="loaner-fit f1">ムーヴ（5678）</td>
+            <td style="text-align:center">-</td><td></td>
+          </tr>
+          <tr class="store-other">
+            <td style="font-weight:700;color:#94a3b8">3</td>
+            <td style="font-weight:700">佐藤 一郎<span style="font-size:9px;background:#dc2626;color:white;padding:1px 4px;border-radius:2px;margin-left:3px">三</span></td><td>ヴェゼル</td>
+            <td><span class="course-badge course-other" style="color:#d97706">レ</span></td>
+            <td class="loaner-fit"></td>
+            <td style="text-align:center">-</td><td>三田からの応援枠</td>
+          </tr>
+          <tr class="store-my">
+            <td style="font-weight:700;color:#2563eb">4</td>
+            <td style="font-weight:700">田中 美咲</td><td>アクア</td>
+            <td><span class="course-badge course-ma">マ</span></td>
+            <td class="loaner-fit f3">スペーシアカスタム（0001）</td>
+            <td style="text-align:center">②</td><td>夕方引取り</td>
+          </tr>
+          <tr class="store-my">
+            <td style="font-weight:700;color:#2563eb">5</td>
+            <td style="font-weight:700">高橋 健</td><td>セレナ</td>
+            <td><span class="course-badge course-other" style="color:#d97706">レ</span></td>
+            <td class="loaner-fit f2">N-BOX（9012）</td>
+            <td style="text-align:center">-</td><td></td>
+          </tr>
+          <tr class="store-my">
+            <td style="font-weight:700;color:#2563eb">6</td>
+            <td style="font-weight:700">伊藤 さくら</td><td>ヤリス</td>
+            <td><span class="course-badge course-other" style="color:#1d4ed8">ク</span></td>
+            <td class="loaner-fit"></td>
+            <td style="text-align:center">-</td><td>代車不要・当日待ち</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="staff-row">
+      <span style="font-weight:700;color:#374151">本日の休み：</span>
+      <span class="chip chip-off">中村</span><span class="chip chip-off">小林</span>
+    </div>
+
+    <div class="section-box memo-section">
+      <h2 class="memo-head">📝 備考・メモ</h2>
+      <div class="memo-body m-sm">
+        <div style="padding:4px 0;border-bottom:1px solid #cbd5e1;color:#000">14:00 タイヤ入荷予定（山田様分）。入荷次第すぐ装着作業に入れるよう、ピットを1台分空けておくこと。</div>
+        <div style="padding:4px 0;border-bottom:1px solid #cbd5e1;color:#000">代車スペーシアは15:00以降空き。次の貸出予約が入っていないか必ず代車管理画面で確認してから案内する。</div>
+        <div style="padding:4px 0;border-bottom:1px solid #cbd5e1;color:#000">夕方は来客が重なりやすいので受付の応援を1名お願いします。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div style="margin-top:14px"></div>
+    <div class="section-box">
+      <h2 class="sched-head">⏰ タイムスケジュール（9:00〜18:00）</h2>
+      <table class="sched-table">
+        <thead><tr class="sched-head">
+          <th style="width:34px">時間</th>
+          <th style="width:92px">氏名</th>
+          <th style="width:78px">車種</th>
+          <th style="width:42px">作業</th>
+          <th style="width:84px">代車</th>
+          <th>内容</th>
+        </tr></thead>
+        <tbody>
+          <tr class="has-data"><td style="font-weight:700;color:#0e7490;white-space:nowrap">9:00</td><td style="font-weight:700">山田 太郎</td><td>プリウス</td><td style="text-align:center">Q</td><td class="loaner-fit f2">ワゴンR（1234）</td><td>受付・代車貸出</td></tr>
+          <tr class="slot-empty"><td style="font-weight:700;color:#0e7490;white-space:nowrap">9:30</td><td></td><td></td><td></td><td class="loaner-fit"></td><td></td></tr>
+          <tr class="has-data"><td style="font-weight:700;color:#0e7490;white-space:nowrap">10:00</td><td style="font-weight:700">鈴木 花子</td><td>N-BOX</td><td style="text-align:center">⑫</td><td class="loaner-fit f1">ムーヴ（5678）</td><td>受付</td></tr>
+          <tr class="slot-empty"><td style="font-weight:700;color:#0e7490;white-space:nowrap">10:30</td><td></td><td></td><td></td><td class="loaner-fit"></td><td></td></tr>
+          <tr class="has-data"><td style="font-weight:700;color:#0e7490;white-space:nowrap">11:00</td><td style="font-weight:700">佐藤 一郎</td><td>ヴェゼル</td><td style="text-align:center">商</td><td class="loaner-fit"></td><td>三田応援</td></tr>
+          <tr class="slot-empty"><td style="font-weight:700;color:#0e7490;white-space:nowrap">11:30</td><td></td><td></td><td></td><td class="loaner-fit"></td><td></td></tr>
+          <tr class="slot-empty"><td style="font-weight:700;color:#0e7490;white-space:nowrap">12:00</td><td></td><td></td><td></td><td class="loaner-fit"></td><td></td></tr>
+          <tr class="has-data"><td style="font-weight:700;color:#0e7490;white-space:nowrap">13:00</td><td style="font-weight:700">田中 美咲</td><td>アクア</td><td style="text-align:center">B</td><td class="loaner-fit f3">スペーシアカスタム（0001）</td><td>受付</td></tr>
+          <tr class="slot-empty"><td style="font-weight:700;color:#0e7490;white-space:nowrap">13:30</td><td></td><td></td><td></td><td class="loaner-fit"></td><td></td></tr>
+          <tr class="has-data"><td style="font-weight:700;color:#0e7490;white-space:nowrap">14:00</td><td style="font-weight:700">高橋 健</td><td>セレナ</td><td style="text-align:center">M12</td><td class="loaner-fit f2">N-BOX（9012）</td><td>受付・タイヤ交換</td></tr>
+          <tr class="has-data"><td style="font-weight:700;color:#0e7490;white-space:nowrap"></td><td style="font-weight:700">岡田 涼</td><td>フィット</td><td style="text-align:center">納</td><td class="loaner-fit f1">タント（3456）</td><td class="note-xs">ナビ更新も依頼、ワイパー交換希望。終了後に電話連絡すること</td></tr>
+          <tr class="slot-empty"><td style="font-weight:700;color:#0e7490;white-space:nowrap">14:30</td><td></td><td></td><td></td><td class="loaner-fit"></td><td></td></tr>
+          <tr class="slot-empty"><td style="font-weight:700;color:#0e7490;white-space:nowrap">15:00</td><td></td><td></td><td></td><td class="loaner-fit"></td><td></td></tr>
+          <tr class="has-data"><td style="font-weight:700;color:#0e7490;white-space:nowrap">15:30</td><td style="font-weight:700">伊藤 さくら</td><td>ヤリス</td><td style="text-align:center">Q</td><td class="loaner-fit"></td><td>当日待ち</td></tr>
+          <tr class="slot-empty"><td style="font-weight:700;color:#0e7490;white-space:nowrap">16:00</td><td></td><td></td><td></td><td class="loaner-fit"></td><td></td></tr>
+          <tr class="slot-empty"><td style="font-weight:700;color:#0e7490;white-space:nowrap">16:30</td><td></td><td></td><td></td><td class="loaner-fit"></td><td></td></tr>
+          <tr class="has-data"><td style="font-weight:700;color:#0e7490;white-space:nowrap">17:00</td><td style="font-weight:700">山田 太郎</td><td>プリウス</td><td style="text-align:center">納</td><td class="loaner-fit f2">スペーシア（0001）</td><td>納車・精算</td></tr>
+          <tr class="slot-empty"><td style="font-weight:700;color:#0e7490;white-space:nowrap">17:30</td><td></td><td></td><td></td><td class="loaner-fit"></td><td></td></tr>
+          <tr class="slot-empty"><td style="font-weight:700;color:#0e7490;white-space:nowrap">18:00</td><td></td><td></td><td></td><td class="loaner-fit"></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</body></html>

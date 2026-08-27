@@ -12,7 +12,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1787816680778';
+  window.__APP_BUILD='build-1787818851606';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -78,7 +78,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.06';
+const MOBILE_VERSION='2.07';
 const GAS_URL='https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 const GAS_API_KEY='hub2026co-f466kt5vs3vnDQDPuwWeS6XM';
 const STOR='hub-v8-dev-';
@@ -920,7 +920,7 @@ const EditModal=({mode,initial,vsId,currentUser,staffList,loanerCars,rentalCars,
   );
 };
 
-const ScheduleView=({inspData,schedDataH,schedDataS,memoDataH,memoDataS,loanerResH,loanerResS,loanerCarsH,loanerCarsS,vsId,initDate,onOpenEdit,onToggleArrived,schedRestrictions,staffList,dayOffData,closedDays,closedDates,overrideOpen,inspLimits})=>{
+const ScheduleView=({inspData,schedDataH,schedDataS,memoDataH,memoDataS,loanerResH,loanerResS,loanerCarsH,loanerCarsS,vsId,initDate,onOpenEdit,onToggleArrived,arrivedOv,schedRestrictions,staffList,dayOffData,closedDays,closedDates,overrideOpen,inspLimits})=>{
   const today=new Date();
   const [ds,setDs]=useState({y:today.getFullYear(),m:today.getMonth(),d:today.getDate()});
   useEffect(()=>{if(initDate)setDs(initDate);},[initDate]);
@@ -1051,6 +1051,9 @@ const ScheduleView=({inspData,schedDataH,schedDataS,memoDataH,memoDataS,loanerRe
             sorted.map(({r,idx},i)=>{
               const c=COURSES.find(co=>co.id===Number(r.course));
               const isOther=normStore(r.store)&&normStore(r.store)!==vsId;
+              // ★入庫済みチェック。押した直後は手元の保持を優先（古いキャッシュで点滅しないように）
+              const _ovk=dk+'|'+(r.seq||r.custId||r.name);
+              const _arr=(arrivedOv&&_ovk in arrivedOv)?arrivedOv[_ovk]:!!r.arrived;
               // PC版と同じ解決順（rentalLabel → 代車予約(lres) → 行が持つloaner文字列）。
               // 代車予約が無く loaner 文字列だけ持つ行があるため、r.loaner へのフォールバックは必須。
               const loaner=getLoanerLabel(myLoanerRes,dk,r.name,r.bookingKey||`insp-${dk}-${idx}`,myCars)||'';
@@ -1062,10 +1065,10 @@ const ScheduleView=({inspData,schedDataH,schedDataS,memoDataH,memoDataS,loanerRe
                          誤操作のもとになるため、ここへ移した（2026-08-27にユーザーが要望）。 */}
                     <span onClick={e=>{if(!isOther&&onToggleArrived){e.preventDefault();e.stopPropagation();onToggleArrived('insp',dk,idx);}}}
                       style={{minWidth:26,height:26,flexShrink:0,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',
-                        fontWeight:900,fontSize:r.arrived?15:14,
-                        color:r.arrived?'#dc2626':(isOther?'#64748b':sc),
-                        background:r.arrived?'#fde047':'transparent',
-                        border:r.arrived?'2px solid #dc2626':'2px solid transparent'}}>{r.arrived?'✓':(i+1)+'.'}</span>
+                        fontWeight:900,fontSize:_arr?15:14,
+                        color:_arr?'#dc2626':(isOther?'#64748b':sc),
+                        background:_arr?'#fde047':'transparent',
+                        border:_arr?'2px solid #dc2626':'2px solid transparent'}}>{_arr?'✓':(i+1)+'.'}</span>
                     <span style={{fontWeight:800,fontSize:15,flex:1}}>{r.name}</span>
                     {r.pendingApproval&&<span style={{padding:'2px 7px',borderRadius:10,background:'#fef3c7',color:'#b45309',fontSize:10,fontWeight:800}}>⏳ 承認待ち</span>}
                     {c&&<span style={{padding:'2px 8px',borderRadius:10,background:c.bg,color:c.color,fontSize:10,fontWeight:700}}>{c.name}</span>}
@@ -1206,11 +1209,16 @@ const ScheduleView=({inspData,schedDataH,schedDataS,memoDataH,memoDataS,loanerRe
               // 制限中でも「制限解除の作業」の予約が入っている枠は、入庫時間の欄だけ制限色を残して
               // 案件の内容は白背景にする（入庫できる案件だと一目で分かるように・PC版と共通の考え方）
               const exemptInSlot=restricted&&dks.some(k=>restrExemptIds.includes(day[k]&&day[k].work));
+              // ★入庫済みチェック。押した直後は手元の保持を優先（古いキャッシュで点滅しないように）
+              const _r0=dks[0]&&day[dks[0]];
+              const _sk=_r0?dk+'|'+(_r0.name||dks[0]):null;
+              const _schedArr=_r0?((arrivedOv&&_sk in arrivedOv)?arrivedOv[_sk]:!!_r0.arrived):false;
               return(
                 <div key={slot} style={{display:'flex',borderBottom:'1px solid #f0fdfa',background:restricted?'#fee2e2':isEmpty?(spc?'#fdfaff':'white'):(spc?'#f5f0ff':'#f0fdfa')}}>
                   {/* ★時刻欄をタップすると、その枠の予約に入庫済みチェックが入る */}
-                  <div onClick={()=>{const k=dks[0];const r0=k&&day[k];if(r0&&r0.name&&onToggleArrived)onToggleArrived('sched',dk,k);}}
-                    style={{width:44,flexShrink:0,padding:'8px 4px',fontSize:11,fontWeight:700,color:(dks[0]&&day[dks[0]]&&day[dks[0]].arrived)?'#dc2626':(spc?(isEmpty?'#7c3aed':'#9333ea'):(isEmpty?'#475569':'#0e7490')),background:(dks[0]&&day[dks[0]]&&day[dks[0]].arrived)?'#fde047':undefined,textAlign:'center',borderRight:`2px solid ${spc?(isEmpty?'#f3e8ff':'#d8b4fe'):(isEmpty?'#f0f9ff':'#99f6e4')}`}}>{(dks[0]&&day[dks[0]]&&day[dks[0]].arrived)?'✓':slot}</div>
+                  {/* 押した直後は手元の保持を優先（古いキャッシュで点滅しないように） */}
+                  <div onClick={e=>{e.preventDefault();e.stopPropagation();const k=dks[0];const r0=k&&day[k];if(r0&&r0.name&&onToggleArrived)onToggleArrived('sched',dk,k);}}
+                    style={{width:44,flexShrink:0,padding:'8px 4px',fontSize:11,fontWeight:700,color:_schedArr?'#dc2626':(spc?(isEmpty?'#7c3aed':'#9333ea'):(isEmpty?'#475569':'#0e7490')),background:_schedArr?'#fde047':undefined,textAlign:'center',borderRight:`2px solid ${spc?(isEmpty?'#f3e8ff':'#d8b4fe'):(isEmpty?'#f0f9ff':'#99f6e4')}`}}>{_schedArr?'✓':slot}</div>
                   <div style={{flex:1,padding:'5px 9px',background:exemptInSlot?'white':undefined}}>
                     {dks.map((key,ki)=>{
                       const r=day[key];
@@ -1824,12 +1832,21 @@ const App=()=>{
 
   // ★入庫済みチェックの切り替え（PC版と同じ arrived フラグ）。
   //   予約内容そのものは変えない、表示上の印。サーバー最新値ベースで1項目だけ書く。
+  // ★押した直後の状態を20秒だけ手元で保持する（PC版と同じ）。GASは読み取りを5秒
+  //   キャッシュするため、直後の取得が「まだチェック前」の古い値を返し、点いたり消えたり
+  //   して見えることがある。保存が届けば自然に一致する。
+  const [arrivedOv,setArrivedOv]=useState({});
+  const markArrivedOv=useCallback((k,v)=>{
+    setArrivedOv(p=>({...p,[k]:v}));
+    setTimeout(()=>setArrivedOv(p=>{const n={...p};delete n[k];return n;}),20000);
+  },[]);
   const toggleArrived=useCallback(async(type,dk,idxOrSlot)=>{
     try{
       if(type==='insp'){
         const cur=(hotInsp[dk]||[])[idxOrSlot];
         if(!cur||!cur.name)return;
         const next=!cur.arrived;
+        markArrivedOv(dk+'|'+(cur.seq||cur.custId||cur.name),next);
         await writeShared(STOR+'insp',hotInsp,base=>{
           const rows=[...((base[dk])||[])];
           const r=rows[idxOrSlot];
@@ -1843,6 +1860,7 @@ const App=()=>{
         const cur=day[idxOrSlot];
         if(!cur||!cur.name)return;
         const next=!cur.arrived;
+        markArrivedOv(dk+'|'+(cur.name||idxOrSlot),next);
         await writeShared(key,(vsId==='honten'?schedDataH:schedDataS),base=>{
           const d={...((base[dk])||{})};
           const r=d[idxOrSlot];
@@ -2309,7 +2327,7 @@ const App=()=>{
       )}
       <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minHeight:0}}>
         {tab==='sched'&&<ScheduleView inspData={inspData} schedDataH={schedDataH} schedDataS={schedDataS} memoDataH={memoDataH} memoDataS={memoDataS}
-          loanerResH={loanerResH} loanerResS={loanerResS} loanerCarsH={loanerCarsH} loanerCarsS={loanerCarsS} vsId={vsId} initDate={schedInitDate} onOpenEdit={openEdit} onToggleArrived={toggleArrived}
+          loanerResH={loanerResH} loanerResS={loanerResS} loanerCarsH={loanerCarsH} loanerCarsS={loanerCarsS} vsId={vsId} initDate={schedInitDate} onOpenEdit={openEdit} onToggleArrived={toggleArrived} arrivedOv={arrivedOv}
           schedRestrictions={schedRestrictions}
           staffList={((vsId==='honten'?staffH:staffS).length>0?(vsId==='honten'?staffH:staffS):DEFAULT_STAFF.filter(s=>s.store===vsId)).filter(s=>s.badge!=='president'&&s.myNumber!==0)}
           dayOffData={vsId==='honten'?dayOffH:dayOffS}
