@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787903048018';
+    window.__APP_BUILD='build-1787909250318';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.11';
+const APP_VERSION = '2.12';
 
 
 
@@ -6077,6 +6077,23 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
   },[selDate,dateRange]);
 
   const getRes=(cid,y,m,d)=>{const num=toNum(y,m,d);return Object.values(loanerRes[cid]||{}).find(r=>num>=toNum(r.fy,r.fm,r.fd)&&num<=toNum(r.ty,r.tm,r.td));};
+  // ★同じ日を覆う予約を「全部」返す。表示は1台1日1件しか描けないので、2件目以降は
+  //   画面から消えてしまう。二重取りが起きても気づけないため、件数を数えて警告に使う
+  //   （2026-08-28にユーザーが報告：8/29のｆｆｄｂｚが代車管理に出てこない。
+  //    アルトに木村さん(車検)とｆｆｄｂｚ(一般)の2件が同じ日に入っていた）。
+  const getResAll=(cid,y,m,d)=>{const num=toNum(y,m,d);return Object.values(loanerRes[cid]||{}).filter(r=>r&&num>=toNum(r.fy,r.fm,r.fd)&&num<=toNum(r.ty,r.tm,r.td));};
+  // 表示中の期間で二重取りになっている車と日を集める
+  const dupWarn=useMemo(()=>{
+    const out=[];
+    (LOANERS_LOCAL||[]).forEach(car=>{
+      (dateRange||[]).forEach(d=>{
+        const rs=getResAll(car.id,d.year,d.month,d.day);
+        if(rs.length>1)out.push({car:`${car.name}${car.num?` (${car.num})`:''}`,
+          date:`${d.month+1}/${d.day}`,users:rs.map(r=>r.user||'(名前なし)')});
+      });
+    });
+    return out;
+  },[loanerRes,dateRange,LOANERS_LOCAL]);
   const hasConflict=(cid,sy,sm,sd,ey,em,ed)=>{
     const start=new Date(sy,sm,sd);
     const end=new Date(ey,em,ed);
@@ -6108,7 +6125,10 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
     if(!pickMode||!isDragging.current||!drag)return;
     isDragging.current=false;
     const {carId,start,end}=drag;
-    if(hasConflict(carId,start.year,start.month,start.day,end.year,end.month,end.day)){setDrag(null);return;}
+    if(hasConflict(carId,start.year,start.month,start.day,end.year,end.month,end.day)){
+      // 従来は無言で何も起きず、選べない理由が分からなかった（2026-08-28）
+      setDrag(null);alert('その期間はこの代車が既に使われています。\n別の車か別の期間を選んでください。');return;
+    }
     setConfirm({carId,start,end});
     setDrag(null);
     setPickUser(savedModalData?.name||'');
@@ -6276,6 +6296,18 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
           今月
         </button>
       </div>}
+
+      {/* ★二重取りの警告。1台1日1件しか描けないので、これが無いと2件目は画面から消えたままになる */}
+      {dupWarn.length>0&&(
+        <div style={{flexShrink:0,margin:'0 0 8px',padding:'8px 12px',borderRadius:8,
+          background:'#fef2f2',border:'1px solid #fecaca',color:'#991b1b',fontSize:12,fontWeight:700}}>
+          <div>⚠ 同じ代車が同じ日に2件以上入っています（表の帯には1件しか出ません）</div>
+          {dupWarn.slice(0,8).map((w,i)=>(
+            <div key={i} style={{fontWeight:600,marginTop:3}}>・{w.date} {w.car}：{w.users.join(' ／ ')}</div>
+          ))}
+          {dupWarn.length>8&&<div style={{fontWeight:600,marginTop:3}}>ほか {dupWarn.length-8} 件</div>}
+        </div>
+      )}
 
       {/* グリッド：overflow:hiddenでズレ防止 */}
       <div ref={gridRef} className="fat-hscroll"
@@ -8486,6 +8518,32 @@ function AppInner() {
         fd:_lu.startDay,ty:_lu.endYear??_lu.startYear,tm:_lu.endMonth??_lu.startMonth,td:_lu.endDay,
         user:_lu.finalUser,color:_lu.color,bookingKey:_lu.bk,
         carName:_lu.carName,carNum:_lu.carNum};
+      // ★確定の瞬間にもう一度、同じ車が同じ期間で使われていないか見る。
+      //   重複チェックは「代車を選ぶ瞬間」にしか無く、選んでから「✓予約確定」を押すまでの
+      //   間に他の予約がその車を取ると、そのまま二重で登録されていた。代車管理は1台1日1件
+      //   しか描けないので、2件目は画面から消えて気づけない
+      //   （2026-08-28にユーザーが報告：8/29のｆｆｄｂｚ。アルトに木村さんと2件入っていた）。
+      {
+        const _cur=(vsId==='honten'?lresHRef.current:lresSRef.current)||{};
+        const _sN=toNum(_lu.startYear,_lu.startMonth,_lu.startDay);
+        const _eN=toNum(_lu.endYear??_lu.startYear,_lu.endMonth??_lu.startMonth,_lu.endDay);
+        const _clash=Object.values(_cur[_lu.carId]||{}).filter(r=>r&&r.id!==_luRec.id&&r.bookingKey!==_lu.bk&&r.bookingKey!==_pldBk
+          &&_sN<=toNum(r.ty,r.tm,r.td)&&_eN>=toNum(r.fy,r.fm,r.fd));
+        if(_clash.length>0){
+          const _lbl=`${_lu.carName||'代車'}${_lu.carNum?` (${_lu.carNum})`:''}`;
+          const _who=_clash.map(r=>`${r.user||'(名前なし)'}（${r.fm+1}/${r.fd}〜${r.tm+1}/${r.td}）`).join('、');
+          if(!window.confirm(`⚠ ${_lbl} はこの期間に既に使われています。
+
+既存の予約：${_who}
+今回の期間：${_lu.startMonth+1}/${_lu.startDay}〜${(_lu.endMonth??_lu.startMonth)+1}/${_lu.endDay}
+
+このまま2件とも登録しますか？
+（代車管理の表には1件しか出ません）`)){
+            setPendingLoanerData(null);setPendingLoanerId(null);
+            return; // 保存そのものを中止。選び直してもらう。
+          }
+        }
+      }
       markJustAdded(_luRec.id);
       setTimeout(()=>persistLres(
         // ★キーは「年-月-日」（"日"だけだと別の月で同じ日に始まる予約とキーが衝突する。
