@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787824613580';
+    window.__APP_BUILD='build-1787902198027';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.09';
+const APP_VERSION = '2.10';
 
 
 
@@ -1563,11 +1563,16 @@ const spanDays = (from,to)=>{
 // loanerResからbookingKeyで代車を動的に取得
 // bookingKey = "insp-dk-idx" または "sched-dk-slot"
 // 名前一致ではなくキー一致で確実に紐付け
-const getLoanerByKey = (loanerRes, bookingKey) => {
+// ★rowName を渡すと「氏名も一致すること」を条件に加える。
+//   bookingKey は "insp-日付-行番号" ＝ 行の位置で作られるため、他端末との衝突で
+//   行がずれると、代車だけが別の行（多くは空き行）に付いて見える。実例として
+//   2026-08-28に「9/1 岩田の下にN-BOX(9012)だけの行が出る」報告があった。
+//   （岩田の代車は insp-2026-9-1-0 を指していたが、岩田本人は行2に配置されていた）
+const getLoanerByKey = (loanerRes, bookingKey, rowName) => {
   if(!bookingKey) return null;
   for(const cid of Object.keys(loanerRes)){
     for(const r of Object.values(loanerRes[cid]||{})){
-      if(r.bookingKey===bookingKey){
+      if(r.bookingKey===bookingKey&&(!rowName||!r.user||r.user===rowName)){
         if(r.carName) return {label:`${r.carName}${r.carNum?` (${r.carNum})`:''}`,id:cid};
         const car=LOANERS.find(c=>c.id===Number(cid));
         return car?{label:`${car.name} (${car.num})`,id:Number(cid)}:null;
@@ -1581,14 +1586,14 @@ const getLoanerByKey = (loanerRes, bookingKey) => {
 //   探し方は getLoanerLabel と同じ（bookingKey優先 → 名前＋日付のフォールバック）。
 const getLoanerLocked = (loanerRes, dk, rowName, bookingKey) => {
   if(!dk||!loanerRes)return false;
+  if(!rowName)return false; // 氏名の無い行は代車を持てない
   if(bookingKey){
     for(const cid of Object.keys(loanerRes)){
       for(const r of Object.values(loanerRes[cid]||{})){
-        if(r&&r.bookingKey===bookingKey)return !!r.locked;
+        if(r&&r.bookingKey===bookingKey&&(!r.user||r.user===rowName))return !!r.locked;
       }
     }
   }
-  if(!rowName)return false;
   const parts=dk.split('-').map(Number);
   const dateNum=toNum(parts[0],parts[1]-1,parts[2]);
   for(const cid of Object.keys(loanerRes)){
@@ -1600,13 +1605,15 @@ const getLoanerLocked = (loanerRes, dk, rowName, bookingKey) => {
 };
 const getLoanerLabel = (loanerRes, dk, rowName, bookingKey) => {
   if(!dk)return'';
-  // まずbookingKeyで検索
+  // ★氏名の無い行（空き枠）は代車を持てない。ここを通していたため、行がずれた時に
+  //   空き行へ代車だけが表示されていた（2026-08-28にユーザーが報告）。
+  if(!rowName)return'';
+  // まずbookingKeyで検索（氏名も一致すること）
   if(bookingKey){
-    const found=getLoanerByKey(loanerRes,bookingKey);
+    const found=getLoanerByKey(loanerRes,bookingKey,rowName);
     if(found)return found.label;
   }
   // フォールバック：名前一致（旧データ互換）
-  if(!rowName)return'';
   const parts=dk.split('-').map(Number);
   const [y,m,d]=[parts[0],parts[1]-1,parts[2]];
   const dateNum=toNum(y,m,d);
@@ -1623,11 +1630,11 @@ const getLoanerLabel = (loanerRes, dk, rowName, bookingKey) => {
 };
 const getLoanerIdForRow = (loanerRes, dk, rowName, bookingKey) => {
   if(!dk)return null;
+  if(!rowName)return null; // 氏名の無い行は代車を持てない
   if(bookingKey){
-    const found=getLoanerByKey(loanerRes,bookingKey);
+    const found=getLoanerByKey(loanerRes,bookingKey,rowName);
     if(found)return found.id;
   }
-  if(!rowName)return null;
   const parts=dk.split('-').map(Number);
   const [y,m,d]=[parts[0],parts[1]-1,parts[2]];
   const dateNum=toNum(y,m,d);
@@ -8437,6 +8444,9 @@ function AppInner() {
         console.log('[SAVE] 移動先idx',modalIdx,'は使用中→空きスロット',_dcPlaceIdx,'へ配置');
       }
     }
+    // この保存で代車／レンタカーを _dcPlaceIdx のbookingKeyで登録するか（後で付け替えるかの判断に使う）
+    const _hadLoanerForBk=!!pendingLoanerData;
+    const _hadRentalForBk=!!(pendingRentalId!=null&&pendingRentalRec);
 
     // ★修正1: モーダル確定時にpendingLoanerDataをloanerResに書き込む
     if(pendingLoanerData){
@@ -8615,6 +8625,18 @@ function AppInner() {
               const rows=(obj&&obj[_vDk])||[];
               return rows.some(r=>r&&r.bookingStatus!=='cancelled'&&(_vCust?r.custId===_vCust:(r.name===_vName&&String(r.no||'')===String(_vNo||''))));
             };
+            // ★実際に置かれた行番号を控える。代車のbookingKeyは保存前に「置く予定の行」で
+            //   発行しているが、サーバー最新値で見ると別の予約が居て空き行へ逃がされることがある。
+            //   その場合に付け替えないと、代車は元の行番号を指したままになり、後からその行が
+            //   空くと「空き行に代車だけが表示される」状態になる
+            //   （2026-08-28にユーザーが報告：9/1 岩田の下にN-BOX(9012)だけの行）。
+            let _placedIdx=null;
+            // ★まず手元のデータで組み立てて画面に出す。
+            //   従来は「サーバー最新値を読む → 組み立てる → 画面に出す」の順で、
+            //   最初の読み取り(2〜3秒)が終わるまで予約も代車も画面に出なかった
+            //   （2026-08-28にユーザーが報告：代車の反映が少し遅い）。
+            //   実際に書けた内容は、この後の mutate と着地確認で必ず上書きされる。
+            try{ updateLocalInspData(prev=>buildInspSave(prev,_saveParams).result); }catch(e){}
             (async()=>{
               const ok=await writeVerified(STOR+'insp',
                 base=>{
@@ -8622,6 +8644,7 @@ function AppInner() {
                   // 書き込み待ちの間にポーリングが走っても予約が一瞬消えないようにする。
                   const b=buildInspSave(base,_saveParams);
                   if(b.relocated)console.warn('[SAVE insp] 配置先が他端末の予約で埋まっていたため空き行へ移しました idx=',b.idxPlace);
+                  _placedIdx=b.idxPlace;
                   updateLocalInspData(b.result);
                   return b.result;
                 },
@@ -8629,6 +8652,14 @@ function AppInner() {
               );
               if(ok){
                 console.log('[VERIFY insp] ok',_vName,_vDk);
+                // 行が動いていたら代車・レンタカーの紐付けを実際の行番号へ直す
+                if(_placedIdx!=null&&_placedIdx!==_dcPlaceIdx&&(_hadLoanerForBk||_hadRentalForBk)){
+                  const _oldBk=`insp-${_dcTargetDk}-${_dcPlaceIdx}`;
+                  const _newBk=`insp-${_dcTargetDk}-${_placedIdx}`;
+                  console.warn('[SAVE insp] 代車の紐付けを付け替えます',_oldBk,'→',_newBk);
+                  if(_hadLoanerForBk)persistLres(base=>retagResBk(base,_oldBk,_newBk),back=>resHasBk(back,_newBk),{verb:'紐付け直し',name:_vName});
+                  if(_hadRentalForBk)persistRres(base=>retagResBk(base,_oldBk,_newBk),back=>resHasBk(back,_newBk),{verb:'紐付け直し',name:_vName});
+                }
                 inspPendDrop(_pid);
                 // 画面を「実際に書けたサーバー最新値」に合わせ直す（他端末の予約も取り込む）
                 try{ const fresh=await sGet(STOR+'insp'); if(fresh&&typeof fresh==='object'&&!Array.isArray(fresh)) updateLocalInspData(fresh); }catch(e){}
