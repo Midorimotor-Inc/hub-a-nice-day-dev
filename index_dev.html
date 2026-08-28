@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787902198027';
+    window.__APP_BUILD='build-1787903048018';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.10';
+const APP_VERSION = '2.11';
 
 
 
@@ -2003,6 +2003,18 @@ const sSet=async(k,v,retries=4)=>{
   }).catch(e=>{console.error('[WRITE] 例外',k,e);return false;});
   __gasWriteQueue=job.then(()=>{},()=>{});
   try{return await job;}finally{try{window.__hubWriteBusy=Math.max(0,(window.__hubWriteBusy||1)-1);}catch(e){}}
+};
+
+// ★保存の「サーバー最新値を読む → 書く → 読み返して検算する」全体を〈保存中〉として扱う。
+//   ポーリングは window.__hubWriteBusy>0 の間だけサーバー値で画面を上書きしない仕組みだが、
+//   この印は sSet の間しか立っておらず、その手前の「読む」1〜3秒は素通りできた。
+//   画面に先に出した予約が、その隙のポーリングで一瞬消えることがある
+//   （2026-08-28、即時表示を入れた際にユーザーが「ポーリング問題は大丈夫か」と指摘して判明）。
+//   読み取りから検算までを一続きで守る。sGet/sSet/useShared 自体は変更しない。
+const withSaveBusy=async(fn)=>{
+  try{ window.__hubWriteBusy=(window.__hubWriteBusy||0)+1; }catch(e){}
+  try{ return await fn(); }
+  finally{ try{ window.__hubWriteBusy=Math.max(0,(window.__hubWriteBusy||1)-1); }catch(e){} }
 };
 
 // ── 時点スナップショット/復旧（GAS v10。sGet/sSetは触らず新規に追加） ──
@@ -7287,13 +7299,13 @@ function AppInner() {
     // 即時反映（ローカルのみ）
     updateLocalInspData(prev=>{ try{return mutate(prev);}catch(e){return prev;} });
     (async()=>{
-      const ok=await writeVerified(STOR+'insp',
+      const ok=await withSaveBusy(()=>writeVerified(STOR+'insp',
         // ★土台に「手元の作りたての予約」を足してから変更を適用する（古いキャッシュ対策）
         base=>{ const v=mutate(mergeInspFresh(hotInspRef.current,base,Date.now())); updateLocalInspData(v); return v; },
         back=>{ try{return !!confirmFn(back);}catch(e){return false;} },
         // 車検予約は取り返しがつかないので、GASが ok を返しても必ず読み返して検算する
         3,{requireBase:true,alwaysVerify:true}
-      );
+      ));
       if(ok){
         if(o.pid)inspPendDrop(o.pid);
         // 丸ごと置き換えず、作りたての行を残してマージする（古いキャッシュで消えないように）
@@ -7391,7 +7403,7 @@ function AppInner() {
     const o=opts||{};
     updateLocal(prev=>{ try{ const v=mutate(prev); return v===undefined?prev:v; }catch(e){ return prev; } });
     (async()=>{
-      const ok=await writeVerified(key,
+      const ok=await withSaveBusy(()=>writeVerified(key,
         // ★書き込みの土台（サーバー最新値）に、手元の「作られたばかりの予約」を必ず足してから
         //   変更を適用する。GASは読み取りを60秒キャッシュするため、直前に自分が入れた予約が
         //   まだ入っていない古い値が土台として返ることがある。そのまま書くと、その予約が
@@ -7405,7 +7417,7 @@ function AppInner() {
         },
         back=>{ try{return !!confirmFn(back);}catch(e){return false;} },
         3,{requireBase:true} // 読めなかったサーバー値を「空」とみなして書かない
-      );
+      ));
       if(ok){
         // ★サーバー値で「丸ごと置き換え」しない。ポーリングと同じ規則でマージする。
         //   GASは読み取り結果を60秒キャッシュしており、書き込み前に始まった読み取りが
@@ -8638,7 +8650,7 @@ function AppInner() {
             //   実際に書けた内容は、この後の mutate と着地確認で必ず上書きされる。
             try{ updateLocalInspData(prev=>buildInspSave(prev,_saveParams).result); }catch(e){}
             (async()=>{
-              const ok=await writeVerified(STOR+'insp',
+              const ok=await withSaveBusy(()=>writeVerified(STOR+'insp',
                 base=>{
                   // 毎回サーバー最新値から組み立て直す。組み立てた結果は画面にも即反映して、
                   // 書き込み待ちの間にポーリングが走っても予約が一瞬消えないようにする。
@@ -8649,7 +8661,7 @@ function AppInner() {
                   return b.result;
                 },
                 back=>_has(back)
-              );
+              ));
               if(ok){
                 console.log('[VERIFY insp] ok',_vName,_vDk);
                 // 行が動いていたら代車・レンタカーの紐付けを実際の行番号へ直す
