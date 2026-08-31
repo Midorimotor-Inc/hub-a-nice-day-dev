@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1787909250318';
+    window.__APP_BUILD='build-1788166228107';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.12';
+const APP_VERSION = '2.13';
 
 
 
@@ -1709,12 +1709,22 @@ const buildInspSave = (base, p)=>{
   const prevRows=(data[p.targetDk]||[]).map(r=>r||blankInsp());
   let rows=[...prevRows];
   const occupied=r=>!!(r&&r.name&&r.bookingStatus!=='cancelled');
+  // ★この保存自身が書いた行かどうかの判定（Kyoshi承認のBLOCK-B変更・2026-08-31）。
+  //   seq は保存1回につき1つのスナップショット(_saveParams.seq)で、writeVerified が再送しても
+  //   同じ値のままなので、自分が1回目に書いた行を確実に見分けられる。
+  //   氏名+No では別人と衝突しうるため使わない（上書き消失を防ぐ従来の保証を弱めないため）。
+  const isSelfSeq=r=>!!(r&&p.seq!=null&&r.seq!=null&&r.seq===p.seq);
   let idxPlace=p.isDateChange?p.dcPlaceIdx:p.modalIdx;
   let relocated=false;
   // 新規予約または日付変更で配置先が埋まっているとき＝他端末が先にその行を使った（or 移動先が衝突）。
   // 上書き消失だけは絶対に起こさないので空き行へ逃がす。既存予約の編集(wasEditing)はその行が
   // 自分の予約なのでそのまま上書きする（従来どおりの挙動）。
-  if((!p.wasEditing||p.isDateChange)&&occupied(rows[idxPlace])){
+  // ★ただし配置先に居るのが「自分が1回目に書いた行」なら逃がさない。writeVerified は着地を
+  //   確認できないと再送するが、GASの読み取りキャッシュ(60秒)で古い値が返ると未反映と誤判定する。
+  //   その2回目ではサーバー最新値に自分の行が入っており、これを他端末の予約と誤認して空き行へ
+  //   逃がすため、同じ予約が2行に増えていた
+  //   （2026-08-31 ユーザー報告：9/1で3行目に保存すると4行目にも同じ人が一瞬出る）。
+  if((!p.wasEditing||p.isDateChange)&&occupied(rows[idxPlace])&&!isSelfSeq(rows[idxPlace])){
     const fb=rows.findIndex(r=>!occupied(r));
     idxPlace=fb>=0?fb:rows.length;
     relocated=true;
@@ -1736,6 +1746,16 @@ const buildInspSave = (base, p)=>{
     newRow.bookingKey=`insp-${p.targetDk}-${idxPlace}`;
   }
   rows[idxPlace]=newRow;
+  // ★同じ保存(seq)の行が他の位置にも残っていたら空きに戻す＝再送で増えた重複の自己修復
+  //   （Kyoshi承認のBLOCK-B変更・2026-08-31）。既に重複しているデータも、その予約を保存し直せば直る。
+  //   位置は splice で詰めず blankInsp にする（後続行の bookingKey＝代車紐付けを壊さない）。
+  //   同じお客様が同じ日に2台入れる場合は保存操作が別＝seq が違うので巻き添えにしない。
+  if(newRow.seq!=null){
+    for(let i=0;i<rows.length;i++){
+      if(i===idxPlace)continue;
+      if(occupied(rows[i])&&rows[i].seq===newRow.seq)rows[i]=blankInsp();
+    }
+  }
   // 予約順(seq)で承認状態を再計算（既存の確定行は確定のまま＝編集で承認を再要求しない）
   rows=recomputeInspApproval(rows,dayLimit);
   const result={...data,[p.targetDk]:rows};
