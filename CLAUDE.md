@@ -17,12 +17,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | | DEV（このリポジトリ） | 本番 |
 |---|---|---|
-| パス | `C:\Users\A\HUB-A-NICE-DAY-DEV` | `C:\Users\A\hub-a-nice-day` |
-| GitHub | `Midorimotor-Inc/hub-a-nice-day-dev`（旧 `kyoshi-egawa/HUB-A-NICE-DAY-DEV` は切り戻し用に温存） | `Midorimotor-Inc/hub-a-nice-day`（旧 `kyoshi-egawa/hub-a-nice-day-main` は切り戻し用に温存） |
+| フォルダ名 | `HUB-A-NICE-DAY-DEV` | `hub-a-nice-day` |
+| GitHub | `Midorimotor-Inc/hub-a-nice-day-dev` | `Midorimotor-Inc/hub-a-nice-day` |
 | Pages URL | `https://midorimotor-inc.github.io/hub-a-nice-day-dev/` | `https://midorimotor-inc.github.io/hub-a-nice-day/` |
 | STORプレフィックス | `hub-v8-dev-` | `hub-v8-` |
 | スケジュール本体 | `index_dev.html`（`index.html`がリダイレクト） | `index_main.html`（`index.html`がリダイレクト） |
 | 顧客リスト | `customers.html` | `customers.html` |
+
+- **2つのフォルダは必ず同じ親フォルダの直下に、上の名前で置く**（`port_to_main.js` が `../hub-a-nice-day` を本番として探すため）。親フォルダの場所はどこでもよく、Windowsのユーザー名にも依存しない。別PCでの構築手順は `SETUP_NEW_PC.md`。
+- **会社アカウント以外は使わない。** GitHubは `Midorimotor-Inc`、メールは `hubaniceday.system@gmail.com` のみ。`kyoshi-egawa` / `egachan28` / `kabu.midorimotors@gmail.com` / `ega.turbo.go.go.go@gmail.com` は**すべて個人用で使用禁止**。
+- 旧・個人アカウントのリポジトリ（`kyoshi-egawa/HUB-A-NICE-DAY-DEV`・`kyoshi-egawa/hub-a-nice-day-main`）は**2026-08-30にPagesをUnpublishして配信停止**、ローカルの `old-kyoshi` リモートも削除済み。リポジトリ自体は記録として残るが、**再接続・再公開しないこと**（v1.75のまま会社の本番GASを指す設定なので、配信を復活させると本番データを壊しうる）。
 
 - **`index.html` は中身がなく `index_dev.html` / `index_main.html` へ `location.replace` するだけ。** 実装は `index_dev.html`（DEV）/ `index_main.html`（本番）にある。
 - DEVと本番でファイルが**乖離している**ことがある（片方だけ修正されたまま）。**片方を直したら必ずもう片方も確認すること。** 過去に useShared のマージロジックがDEVだけ新しく、本番で代車が消えるバグが出た。
