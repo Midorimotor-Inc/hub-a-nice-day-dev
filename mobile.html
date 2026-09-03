@@ -12,7 +12,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1788437886988';
+  window.__APP_BUILD='build-1788439217350';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -78,7 +78,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.16';
+const MOBILE_VERSION='2.17';
 const GAS_URL='https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 const GAS_API_KEY='hub2026co-f466kt5vs3vnDQDPuwWeS6XM';
 const STOR='hub-v8-dev-';
@@ -301,6 +301,28 @@ const lockKeyOf=(type,dk,idx,slot)=>type==='insp'?`lock-insp-${dk}-${idx}`:`lock
 const LOCK_TTL=30*1000;
 // 代車ラベル解決（PC版と同じ優先順位: bookingKey一致 → 日付範囲×氏名一致。
 // 予約レコード自身の carName/carNum を最優先し、動的リスト→静的の順にフォールバック）
+// ★その予約の代車が「限定（＝最適化で動かさない）」かどうか。表示用。
+//   探し方は getLoanerLabel と同じ（bookingKey優先 → 氏名＋日付のフォールバック）。
+//   PC側と同じ規則にそろえるために追加した（2026-09-03 ユーザー指摘：
+//   限定のバッジが画面によって鍵だったりロックだったりしていた）。
+const getLoanerLocked=(loanerRes,dk,rowName,bookingKey)=>{
+  if(!dk||!rowName||!loanerRes)return false;
+  if(bookingKey){
+    for(const cid of Object.keys(loanerRes)){
+      for(const r of Object.values(loanerRes[cid]||{})){
+        if(r&&r.bookingKey===bookingKey&&(!r.user||r.user===rowName))return !!r.locked;
+      }
+    }
+  }
+  const p=dk.split('-').map(Number);
+  const dn=toNum(p[0],p[1]-1,p[2]);
+  for(const cid of Object.keys(loanerRes)){
+    for(const r of Object.values(loanerRes[cid]||{})){
+      if(r&&r.user===rowName&&dn>=toNum(r.fy,r.fm,r.fd)&&dn<=toNum(r.ty,r.tm,r.td))return !!r.locked;
+    }
+  }
+  return false;
+};
 const getLoanerLabel=(loanerRes,dk,rowName,bookingKey,carsList)=>{
   if(!dk)return'';
   const carLabel=(r,cid)=>{
@@ -1087,7 +1109,7 @@ const ScheduleView=({inspData,schedDataH,schedDataS,memoDataH,memoDataS,loanerRe
                     {!isOther&&<span style={{fontSize:13,color:'#cbd5e1'}}>›</span>}
                   </div>
                   <div style={{marginTop:3,fontSize:11,color:'#64748b',display:'flex',gap:7,flexWrap:'wrap'}}>
-                    {(r.entryDate&&r.entryDate!==dk)?(()=>{const p=r.entryDate.split('-');return <span style={{color:'#c2410c',fontWeight:800}}>🚗{String(p[1]).padStart(2,'0')}/{String(p[2]).padStart(2,'0')}入庫{r.time?` ${r.time}`:''}</span>;})():(r.time&&<span>⏰ {r.time}</span>)}{r.carType&&<span>🚗 {r.carType}</span>}{loaner&&<span style={{color:'#0284c7'}}>🔑 {loaner}</span>}{!loaner&&r.rentalLabel&&<span style={{color:'#7c3aed'}}>{r.rentalLabel}</span>}{r.tokuten&&r.tokuten!=='-'&&<span style={{color:'#7c3aed'}}>🎁 {r.tokuten}</span>}{r.staff&&<span>👤 {r.staff}</span>}
+                    {(r.entryDate&&r.entryDate!==dk)?(()=>{const p=r.entryDate.split('-');return <span style={{color:'#c2410c',fontWeight:800}}>🚗{String(p[1]).padStart(2,'0')}/{String(p[2]).padStart(2,'0')}入庫{r.time?` ${r.time}`:''}</span>;})():(r.time&&<span>⏰ {r.time}</span>)}{r.carType&&<span>🚗 {r.carType}</span>}{loaner&&<span style={{color:'#0284c7'}}>{getLoanerLocked(myLoanerRes,dk,r.name,r.bookingKey||`insp-${dk}-${idx}`)&&'🔒 '}{loaner}</span>}{!loaner&&r.rentalLabel&&<span style={{color:'#7c3aed'}}>{r.rentalLabel}</span>}{r.tokuten&&r.tokuten!=='-'&&<span style={{color:'#7c3aed'}}>🎁 {r.tokuten}</span>}{r.staff&&<span>👤 {r.staff}</span>}
                   </div>
                   {r.note&&<div style={{marginTop:4,fontSize:11,color:'#374151',background:'#f8fafc',borderRadius:7,padding:'3px 7px'}}>{r.note}</div>}
                 </div>
@@ -1156,7 +1178,7 @@ const ScheduleView=({inspData,schedDataH,schedDataS,memoDataH,memoDataS,loanerRe
                     {r.time&&<span style={{fontSize:11,fontWeight:800,color:'#9a3412'}}>{r.time}</span>}
                     <span style={{fontWeight:800,fontSize:13}}>{r.name}</span>
                     {r.carType&&<span style={{fontSize:11,color:'#64748b'}}>🚗{r.carType}</span>}
-                    {loaner&&<span style={{fontSize:11,color:'#0284c7'}}>🔑{loaner}</span>}
+                    {loaner&&<span style={{fontSize:11,color:'#0284c7'}}>{!r.rentalLabel&&getLoanerLocked(myLoanerRes,wdk,r.name,r.bookingKey||`insp-${wdk}-${ix}`)&&'🔒 '}{loaner}</span>}
                     <span style={{marginLeft:'auto',fontSize:10,fontWeight:800,color:'#9a3412',whiteSpace:'nowrap'}}>→ {wl[1]}/{wl[2]}車検 ›</span>
                   </div>
                   );
@@ -1199,7 +1221,7 @@ const ScheduleView=({inspData,schedDataH,schedDataS,memoDataH,memoDataS,loanerRe
                     <span style={{fontSize:11,fontWeight:800,color:'#047857'}}>{deliverySlotLabel(r.deliveryTime||'未定')}</span>
                     <span style={{fontWeight:800,fontSize:13}}>{r.name}</span>
                     {r.carType&&<span style={{fontSize:11,color:'#64748b'}}>🚗{r.carType}</span>}
-                    {loaner&&<span style={{fontSize:11,color:'#0284c7'}}>🔑{loaner}</span>}
+                    {loaner&&<span style={{fontSize:11,color:'#0284c7'}}>{!r.rentalLabel&&d.kind==='insp'&&getLoanerLocked(myLoanerRes,d.wdk,r.name,`insp-${d.wdk}-${d.ix}`)&&'🔒 '}{loaner}</span>}
                     <span style={{marginLeft:'auto',fontSize:10,fontWeight:800,color:'#047857',whiteSpace:'nowrap'}}>{wl[1]}/{wl[2]}{d.kind==='insp'?'車検':'予定'} → 納車 ›</span>
                   </div>
                   );
@@ -1241,7 +1263,7 @@ const ScheduleView=({inspData,schedDataH,schedDataS,memoDataH,memoDataS,loanerRe
                           <span style={{fontWeight:800,fontSize:13}}>{r.name}</span>
                           {r.carType&&<span style={{fontSize:11,color:'#64748b',marginLeft:5}}>{r.carType}</span>}
                           {(w||r.workType)&&<span style={{marginLeft:5,padding:'1px 5px',background:'#ccfbf1',color:'#0f766e',borderRadius:6,fontSize:10,fontWeight:700}}>{w?w.name:r.workType}</span>}
-                          {loanerTxt&&<span style={{marginLeft:5,fontSize:10,color:'#0284c7'}}>🔑{loanerTxt}</span>}
+                          {loanerTxt&&<span style={{marginLeft:5,fontSize:10,color:'#0284c7'}}>{loanerTxt}</span>}
                           <span style={{fontSize:12,color:'#cbd5e1',marginLeft:4}}>›</span>
                           {r.content&&<div style={{fontSize:11,color:'#64748b',marginTop:1}}>{r.content}</div>}
                         </div>

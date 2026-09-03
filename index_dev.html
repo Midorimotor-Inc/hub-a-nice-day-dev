@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1788437886988';
+    window.__APP_BUILD='build-1788439217350';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.16';
+const APP_VERSION = '2.17';
 
 
 
@@ -10478,7 +10478,13 @@ function AppInner() {
                                   </td>
                                   <td style={TD}><span style={{fontWeight:700,color:'#374151',fontSize:13}}>{r.carType||'—'}</span></td>
                                   <td style={TD}><span style={{color:'#9ca3af'}}>—</span></td>
-                                  <td style={TD}>{loaner?<span style={{fontSize:11,color:'#065f46',fontWeight:700}}>🔑 {loaner}</span>:<span style={{color:'#9ca3af'}}>—</span>}</td>
+                                  {/* ★代車のバッジは本体の行と同じ規則にそろえる（2026-09-03 ユーザー指摘）。
+                                      限定のときだけ 🔒、限定でなければ何も付けない。
+                                      従来はここだけ 🔑 を付けており、🔑 はレンタカーの記号なので紛らわしかった。
+                                      （レンタカーはラベル自体に 🔑 が入っているので二重にならない） */}
+                                  <td style={TD}>{loaner?<span style={{fontSize:11,color:'#065f46',fontWeight:700}}>
+                                    {!r.rentalLabel&&getLoanerLocked(loanerRes,wdk,r.name,`insp-${wdk}-${ix}`)&&<span title="限定：この代車は最適化で動かしません" style={{marginRight:3}}>🔒</span>}
+                                    {loaner}</span>:<span style={{color:'#9ca3af'}}>—</span>}</td>
                                   <td style={TD}><span style={{color:'#9ca3af'}}>—</span></td>
                                   <td style={TD}>
                                     <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
@@ -10510,7 +10516,10 @@ function AppInner() {
                                   <td style={{...TD,fontWeight:700,color:'#064e3b',whiteSpace:'nowrap'}}>{r.name}</td>
                                   <td style={TD}><span style={{fontWeight:700,color:'#374151',fontSize:13}}>{r.carType||'—'}</span></td>
                                   <td style={TD}></td>
-                                  <td style={TD}>{loaner&&<span style={{fontSize:11,color:'#065f46',fontWeight:700}}>🔑 {loaner}</span>}</td>
+                                  {/* ★同上：限定のときだけ 🔒、それ以外はバッジなし */}
+                                  <td style={TD}>{loaner&&<span style={{fontSize:11,color:'#065f46',fontWeight:700}}>
+                                    {!r.rentalLabel&&d.kind==='insp'&&getLoanerLocked(loanerRes,d.wdk,r.name,`insp-${d.wdk}-${d.ix}`)&&<span title="限定：この代車は最適化で動かしません" style={{marginRight:3}}>🔒</span>}
+                                    {loaner}</span>}</td>
                                   <td style={TD}></td>
                                   <td style={TD}>
                                     <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
