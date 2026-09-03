@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1788434887609';
+    window.__APP_BUILD='build-1788436816332';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.14';
+const APP_VERSION = '2.15';
 
 
 
@@ -9257,10 +9257,59 @@ function AppInner() {
   // ⑤ 最適化の適用：現在店舗の代車予約を丸ごと差し替えるだけ（実行前に戻す用スナップショットを積む）。
   //   スケジュール行の表示は bookingKey 一致の getLoanerLabel が予約側の carName から再計算するため
   //   自動で新しい車に追従する（insp側は触らないので「↶ 戻す」で完全に元へ戻せる）。
-  const applyLoanerOptimize=useCallback((newLoanerRes)=>{
+  const applyLoanerOptimize=useCallback((newLoanerRes,moves)=>{
     setLoanerUndo(u=>[...u,{prevState:loanerRes}]);
     persistLres(()=>newLoanerRes,back=>JSON.stringify(back)===JSON.stringify(newLoanerRes),{verb:'最適化の適用'});
-  },[loanerRes,persistLres]);
+    // ★最適化は代車予約(lres)だけを動かすが、予約カード側にも代車名(loaner/loanerId)が
+    //   保存されている。ここを書き換えないと古い車名が残り、実際と食い違う。
+    //   （2026-09-03 ユーザー報告：9/1でERエクスプレスと岩田さんに同じ N-BOX(9012) が
+    //     出ていた。lresでは ER=スペーシア／岩田=N-BOX と正しく分かれており、
+    //     ERの予約カードに古い N-BOX の文字が残っていたのが原因）
+    const _label=bk=>{
+      for(const cid of Object.keys(newLoanerRes||{})){
+        for(const r of Object.values(newLoanerRes[cid]||{})){
+          if(r&&r.bookingKey===bk)return{label:r.carName?`${r.carName}${r.carNum?` (${r.carNum})`:''}`:'',id:Number(cid)};
+        }
+      }
+      return null;
+    };
+    const _inspMoves=[],_schedMoves=[];
+    (moves||[]).forEach(mv=>{
+      if(!mv||!mv.bookingKey)return;
+      const info=_label(mv.bookingKey); if(!info)return;
+      const m=String(mv.bookingKey).match(/^(insp|sched)-(\d+-\d+-\d+)-(.+)$/); if(!m)return;
+      (m[1]==='insp'?_inspMoves:_schedMoves).push({dk:m[2],at:m[3],user:mv.user,...info});
+    });
+    if(_inspMoves.length){
+      persistInsp(base=>{
+        const out={...(base||{})};
+        _inspMoves.forEach(mv=>{
+          const rows=[...(out[mv.dk]||[])]; const i=Number(mv.at);
+          const row=rows[i];
+          // 行がずれている可能性があるので、氏名が一致する時だけ書き換える（取り違え防止）
+          if(!row||!row.name||row.name!==mv.user)return;
+          rows[i]={...row,loaner:mv.label,loanerId:mv.id};
+          out[mv.dk]=rows;
+        });
+        return out;
+      },back=>_inspMoves.every(mv=>{
+        const row=((back||{})[mv.dk]||[])[Number(mv.at)];
+        return !row||row.name!==mv.user||row.loaner===mv.label;
+      }),{verb:'代車名の更新',alert:false});
+    }
+    if(_schedMoves.length){
+      setSchedData(prev=>{
+        const out={...(prev||{})};
+        _schedMoves.forEach(mv=>{
+          const day={...(out[mv.dk]||{})}; const row=day[mv.at];
+          if(!row||!row.name||row.name!==mv.user)return;
+          day[mv.at]={...row,loaner:mv.label,loanerId:mv.id};
+          out[mv.dk]=day;
+        });
+        return out;
+      });
+    }
+  },[loanerRes,persistLres,persistInsp,setSchedData]);
   const handleLockCar  =useCallback(cid=>acquireLock(`lock-loaner-${cid}`,currentUser.name),[acquireLock,currentUser]);
   const handleUnlockCar=useCallback(cid=>releaseLock(`lock-loaner-${cid}`),[releaseLock]);
 
