@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1788440258922';
+    window.__APP_BUILD='build-1788443278888';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.18';
+const APP_VERSION = '2.19';
 
 
 
@@ -1941,7 +1941,21 @@ const notifyFailMail = async (detail, user)=>{
 //  STEP 5: 下記URLをGASデプロイ後のウェブアプリURLに書き換える
 // ===========================================================
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
-const GAS_API_KEY = 'hub2026co-f466kt5vs3vnDQDPuwWeS6XM';
+// ★利用者認証（v14以降・Kyoshi承認のBLOCK-B変更・2026-09-03）
+//   GASへの要求には apiKey を「本来のキー|利用証」の形で送る。GAS側は '|' の前だけを
+//   本来のキーとして照合し、後ろを利用証として検証する。
+//   こうすることで、既存の通信コード（3ファイル・22箇所）に一切手を入れずに
+//   利用証を全経路へ乗せられる。触るのは各ファイルこの1箇所だけ。
+const HUB_BASE_KEY = 'hub2026co-f466kt5vs3vnDQDPuwWeS6XM';
+let GAS_API_KEY = HUB_BASE_KEY;
+// 利用証を差し替える。空を渡せば認証前の状態（本来のキーだけ）に戻る。
+const hubApplyToken = t => { GAS_API_KEY = t ? (HUB_BASE_KEY + '|' + t) : HUB_BASE_KEY; };
+// 端末に保存した利用証を起動時に載せる。壊れていても読み飛ばして通常起動する。
+const HUB_TOKEN_KEY = STOR + 'auth-token';
+try {
+  const _t = localStorage.getItem(HUB_TOKEN_KEY);
+  if (_t) hubApplyToken(_t);
+} catch (e) {}
 
 const GAS_READY = GAS_URL !== 'YOUR_GAS_URL_HERE' && GAS_URL !== '';
 
