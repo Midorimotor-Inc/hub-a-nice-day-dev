@@ -15,7 +15,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1788436816332';
+  window.__APP_BUILD='build-1788437886988';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -100,7 +100,7 @@ const STOR='hub-v8-dev-';
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.15'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.16'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -1197,6 +1197,10 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
   const [showCal,setShowCal]=useState(true);
   const [selCarId,setSelCarId]=useState(null);
   const [selDays,setSelDays]=useState([]);
+  // ★代車の『限定』（この車でないとダメ＝最適化で動かさない）。
+  //   スケジュール側の予約カードには前からある機能だが、リストからの予約では付けられず、
+  //   あとでスケジュールを開き直す必要があった（2026-09-03 ユーザー要望）。
+  const [selLocked,setSelLocked]=useState(false);
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState('');
   // キーボード操作用state/ref（Hooksはreturnより前に全定義）
@@ -1238,7 +1242,7 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
     // await完了まで待つと「保存中...」のままフリーズして見えるため。
     // 予約はローカルstateへ即時反映されるので、閉じても予約内容は失われない。
     onClose();
-    Promise.resolve(onSave({...form,isTemp,selCarId,selDays},customer))
+    Promise.resolve(onSave({...form,isTemp,selCarId,selDays,selLocked},customer))
       .catch(e=>console.error('onSave error:',e))
       .finally(()=>setSaving(false));
   };
@@ -1514,7 +1518,24 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
                   {[...dynListH,...dynListS].find(c=>c.id===selCarId)?.name}　{selDays.length}日間選択中
                 </span>
               )}
+              {/* ★限定（この車でないとダメ）。付けておくと代車管理の最適化で入れ替わらない。
+                  高さ制限などで車種が決まっているお客様に使う。車を選んだ時だけ出す。 */}
+              {selCarId&&selDays.length>0&&(
+                <button type="button" onClick={()=>setSelLocked(v=>!v)}
+                  title={selLocked?'限定を解除（最適化で動かせるようにする）':'この車に限定する（最適化で動かさない）'}
+                  style={{marginLeft:8,padding:'2px 9px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:700,
+                    border:'1.5px solid '+(selLocked?'#c2410c':'#cbd5e1'),
+                    background:selLocked?'#ffedd5':'white',
+                    color:selLocked?'#c2410c':'#64748b'}}>
+                  {selLocked?'🔒 限定中':'🔓 限定'}
+                </button>
+              )}
             </label>
+            {selCarId&&selDays.length>0&&selLocked&&(
+              <div style={{marginBottom:5,fontSize:10.5,color:'#c2410c',fontWeight:600}}>
+                この代車は、代車管理の「最適化」で別の車に入れ替わりません。
+              </div>
+            )}
             <div style={{border:'2px solid #bfdbfe',borderRadius:10,padding:8,background:'#eff6ff'}}>
               <LoanerGrid storeId={form.store} entryDate={form.entryDate} loanerRes={loanerRes}
                 loanerList={form.store==='honten'?loanerListH:loanerListS}
@@ -2296,7 +2317,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
     const _bg=[]; // 裏で走らせる保存。全部終わってからカウンタを戻す
     try{ window.__hubBusyOps=(window.__hubBusyOps||0)+1; }catch(_e){}
     try{
-    const{entryDate,store,bookingTime,course,tokuten,staff,note,isTemp,selCarId,selDays,preEntry,deliveryDate,deliveryTime}=form;
+    const{entryDate,store,bookingTime,course,tokuten,staff,note,isTemp,selCarId,selDays,selLocked,preEntry,deliveryDate,deliveryTime}=form;
     const status=isTemp?'temp':'confirm';
     // 予約1件の保存（insp／顧客ファイル）を1つのIDで追跡し、両方の反映が確認できるまで
     // localStorageの控え（pending）を消さない。消えていなければ起動時に「未反映の予約」として拾える。
@@ -2448,6 +2469,9 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
             color:null, // setLoanerResH/S 内で計算
             carName:car?.name||'',
             carNum:car?.num||'',
+            // ★限定＝最適化で動かさない印。false の時はキー自体を持たせない
+            //   （index側の作法に合わせる。undefined は JSON.stringify で消える）
+            locked:selLocked?true:undefined,
           };
           // ★保存キーは「年-月-日」。日だけだと別の月の同じ日で衝突する
           //   （index側は v1.76 で直したが、リスト側が直し漏れていた）。
