@@ -15,7 +15,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1788439217350';
+  window.__APP_BUILD='build-1788440258922';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function banner(){
@@ -100,7 +100,7 @@ const STOR='hub-v8-dev-';
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.17'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.18'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -250,7 +250,12 @@ const applyBookingToInsp=(base,{customer,dkFormatted,row,inspLimits})=>{
   }
   const sameDay=!!(oldRow&&oldDk===dkFormatted);
   // 同じ日への再保存は予約順(seq)と手動承認(approved)を引き継ぐ。日付変更は移動先の最後尾＝新seq
+  // ★代車名(loaner/loanerId)は、今回の保存で指定が無ければ元の行の値を引き継ぐ。
+  //   この行は丸ごと入れ替える作りなので、引き継がないとリストから保存し直すたびに
+  //   スケジュール側で入れた代車名が消える。代車予約(lres)は残るので画面上は
+  //   出続けるが、カードの中身と食い違う（2026-09-03 実データで発見：コイズミさん）。
   const newRow={...row,
+    ...(row.loaner===undefined&&oldRow?{loaner:oldRow.loaner||'',loanerId:oldRow.loanerId??null}:{}),
     seq:(sameDay&&oldRow.seq!=null)?oldRow.seq:(row.seq||Date.now()),
     ...(sameDay&&oldRow.approved?{approved:true}:{})};
   if(!Array.isArray(data[dkFormatted]))data[dkFormatted]=[];
@@ -2390,6 +2395,14 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
           entryDate:preEntry||'',
           deliveryDate:deliveryDate||'',
           deliveryTime:deliveryDate?(deliveryTime||'未定'):'',
+          // ★代車を選んだときは、予約カード側にも車名を持たせる（スケジュール側と同じ項目名）。
+          //   ここが空だと「代車予約はあるのにカードの代車欄は空」という食い違いになる。
+          //   選んでいないときはキー自体を渡さず、applyBookingToInsp が元の値を引き継ぐ。
+          ...(selCarId?(()=>{
+            const _cars=[...(loanerListH.length>0?loanerListH:LOANERS_H),...(loanerListS.length>0?loanerListS:LOANERS_S)];
+            const _c=_cars.find(c=>c.id===selCarId);
+            return {loaner:_c?`${_c.name}${_c.num?` (${_c.num})`:''}`:'',loanerId:selCarId};
+          })():{}),
         };
         // ★保存を始める前に「予約したという事実」を端末に残す（未反映なら起動時に検出して再送できる）
         pendAdd({pid,ts:Date.now(),custId:customer.custId,name:customer.name,no:customer.no,
