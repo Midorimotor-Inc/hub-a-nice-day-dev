@@ -1,5 +1,8 @@
 const fs=require('fs'),vm=require('vm');
-const src=fs.readFileSync(require('path').join(__dirname,'GAS_server_v10_snapshots.gs'),'utf8');
+// 対象ファイルは引数で差し替えられる（例: node gas_v12_test.js GAS_server_v14_auth.gs）。
+// 認証を足した生成物に対しても、既存ロジックが壊れていないことを確かめるため。
+const TARGET=process.argv[2]||'GAS_server_v10_snapshots.gs';
+const src=fs.readFileSync(require('path').join(__dirname,TARGET),'utf8');
 
 // ── モックのスプレッドシート ──
 function makeSheet(rows){ // rows: [[key,value,updated],...]（1行目はヘッダー）
@@ -23,6 +26,10 @@ const sandbox={
   LockService:{getScriptLock:()=>({waitLock(){},releaseLock(){}})},
   ContentService:{createTextOutput:t=>({setMimeType(){return this;},_t:t,getContent:()=>t}),MimeType:{TEXT:'t'}},
   Utilities:{},console,
+  // v14の認証モジュールが使う。ここでは「利用証は必須にしない（移行期間中）」の状態を模擬し、
+  // 既存ロジックが認証の追加で壊れていないことだけを確かめる。
+  PropertiesService:{getScriptProperties:()=>({getProperty:()=>null,setProperty(){}})},
+  MailApp:{sendEmail(){}},
 };
 sandbox.global=sandbox;
 vm.createContext(sandbox);

@@ -1,0 +1,1296 @@
+// Hub a Nice Day - GAS server v10 (snapshots / restore)  ※v11・v12・v13 追記あり（下記）
+// v13 追加（2026-08-26・要再デプロイ）: 読み取りキャッシュの寿命を60秒→5秒に短縮。
+//   書き込みは invalidateCache でキャッシュを消すが、書き込みの「前」に始まった読み取りが
+//   書き込みの「後」にキャッシュへ古い値を書き戻すことがある。すると直後の読み取りが最大60秒
+//   古い値を返し続け、フロントの「書いた→読み返して確認」が失敗して再送を繰り返す。
+//   実測(2026-08-26): 代車を1件付けただけで lres の書き込みが3回再送され、画面上では
+//   代車が消えて数秒後に復活した。読み取りは1秒前後で終わるためキャッシュの利得は小さい。
+// v12 追加（2026-08-25・要再デプロイ）: 書き込みが「データ量に関係なく1本10〜27秒」かかる原因を潰す。
+//   実測(DEV・数バイトの値): 読み取り1.1秒 に対し 書き込み4.8〜11.4秒 ＝ 遅さはGAS側の処理そのものだった。
+//   ①invalidateCache が cache.remove() を1+100回ループしていた → removeAll で1往復にまとめる
+//   ②writeRow が値と更新日時を setValue×2 で書いていた → setValues 1回にまとめる
+//   ③書き込みのたびに findRow と deleteChunks でキー列(A列)を2回フルスキャンしていた → 1回に集約し、
+//     __chunk 行が無ければシートに触らない（v9のDrive保管移行後は通常0行）
+//   ④doPost action=setMany … 複数キーを1リクエスト・1回のロックで書く（最大20件）。
+//     1予約の保存が insp/lres/custbk と複数キーに散るため、1本ずつロックを取り直すのをやめる。
+//     ★①②③はフロント無変更で効く。④はフロントが caps.setMany を見てオプトインするまで未使用。
+// v11 追加（2026-07-29・要再デプロイ／すべて追加のみで既存経路は不変）:
+//  - doGet ?action=caps … 使える機能を返す（フロントが起動時に検出して経路を切り替えるため）。
+//  - doPost action=patchInsp … insp の「指定した日付キーだけ」をロック内で原子的にマージ（差分書き込み）。
+//    body.dates={ "YYYY-M-D":[行...] | null }。null の日付は削除。insp 全体を送らずに済む。
+//  - 通常書き込み(doPost)に「write key=… len=…」の実行ログを追加（どのキーが重いか診断用）。
+//  ※フロントの patchInsp 利用は caps 検出でオプトインする段階的移行（未デプロイ環境では従来の全文書き込み）。
+//
+// Big values are stored as Google Drive files (not spreadsheet cells),
+// so the sheet stays small and every write is fast. Small values stay in the sheet.
+// Backward compatible: still reads old single-cell and old __CHUNKED__ row data.
+//
+// v10 追加（時点スナップショット & 復旧）:
+//  - 30分ごと(intradaySnapshot)と毎朝2時(dailySnapshot)に、実データ（Drive実体まで解決した実値）を
+//    Driveの hubdata_snapshots フォルダへJSONで丸ごと保存。本番/DEVを別々に保存。
+//  - doGet ?action=snapList  … その環境の保存時点の一覧（新しい順・要約件数つき）
+//  - doGet ?action=snapRead  … 指定した時点の中身（プレビュー用）
+//  - doPost action=snapRestore … 指定した時点に全データを戻す（実行直前に現状も自動保存＝やり直し可）
+//  - doPost action=snapAddBack  … 指定日に「消えた予約だけ」を追記（部分復旧・丸ごと上書きしない）
+//  - doPost action=snapRestoreStore … 店別復旧。指定店の整備/メモ/整備代車だけ戻す（車検と他店には触らない）
+//  - 30分ごとの保存は48時間分、日次は90日分を保持し、超過分は自動削除。
+//  ※既存の毎朝2時 dailyBackup（シート丸ごとコピー）はそのまま残す（従来の安全網）。
+//    ただしシートコピーは大きいデータ(Drive保管)の実体を含まないため、復旧は必ずスナップショットを使うこと。
+//  ※初回のみ setupSnapshotTriggers() をGASエディタから1回実行してトリガー登録が必要。DriveApp権限の再承認も要る。
+//
+// v10 追加（inspスリム化）:
+//  - archiveOldInsp/archiveOldInspAll … 今日−14日より古い日付を insp→insp-arch(保管箱)へ退避（毎日3時トリガー）。
+//    保管箱は永久保持。フロントは「読み=insp+insp-arch合体／書き=insp(hot)だけ（古い日付を除去）」で対応。
+//  ※スリム化を始める順番（厳守）：①フロント v1.64 を配信（済）→ ②このGASを再デプロイ →
+//    ③ setupSnapshotTriggers() を再実行（archiveトリガー登録）→ ④ runInitialArchiveDev() でDEVを仕分け →
+//    DEV実機で表示・保存を確認 → ⑤ runInitialArchiveMain() で本番を仕分け。各実行前に自動で控えを取る。
+
+const SHEET_NAME = 'hubdata';
+const BACKUP_SHEET_PREFIX = 'backup_';
+const BACKUP_KEEP_DAYS = 90;
+const HUB_API_KEY = 'hub2026co-f466kt5vs3vnDQDPuwWeS6XM';
+
+var BIG_THRESHOLD = 30000;            // values longer than this go to Drive
+var FILE_MARKER = '__DRIVEFILE__';    // cell marker meaning "value is in a Drive file"
+var CHUNK_MARKER = '__CHUNKED__:';    // legacy marker (v7/v8), read-only support
+var DRIVE_FOLDER = 'hubdata_blobs';
+// ★v13: 読み取りキャッシュの寿命（秒）。従来は60秒だった。
+//   書き込みは invalidateCache でキャッシュを消すが、書き込みの「前」に始まった読み取りが
+//   書き込みの「後」にキャッシュへ古い値を書き戻すことがある。その場合、直後の読み取りが
+//   最大60秒ものあいだ古い値を返し続け、フロントの「書いた→読み返して確認」が失敗して
+//   再送を繰り返し、画面上では予約や代車が消えたり復活したりする（2026-08-26に実測）。
+//   読み取り自体は1秒前後で終わるのでキャッシュの利得は小さい。寿命を短くして被害を断つ。
+var READ_CACHE_SEC = 5;
+
+function getSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME);
+    sheet.getRange(1, 1).setValue('key');
+    sheet.getRange(1, 2).setValue('value');
+    sheet.getRange(1, 3).setValue('updated');
+  }
+  return sheet;
+}
+
+// read ONLY column 1 (keys) - never load big value cells
+function findRow(sheet, key) {
+  var last = sheet.getLastRow();
+  if (last < 1) return -1;
+  var keys = sheet.getRange(1, 1, last, 1).getValues();
+  for (var i = 1; i < keys.length; i++) {
+    if (keys[i][0] === key) return i + 1;
+  }
+  return -1;
+}
+
+function makeResponse(text) {
+  var output = ContentService.createTextOutput(text);
+  output.setMimeType(ContentService.MimeType.TEXT);
+  return output;
+}
+
+// v12: キー列(A列)の読み取りを1回に集約するためのヘルパー。
+//   従来は writeRow の findRow と deleteChunks で毎回2回フルスキャンしていた。
+function readKeyCol(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 1) return [];
+  return sheet.getRange(1, 1, last, 1).getValues();
+}
+function findRowIn(keysCol, key) {
+  for (var i = 1; i < keysCol.length; i++) {
+    if (keysCol[i][0] === key) return i + 1;
+  }
+  return -1;
+}
+
+function writeRow(sheet, key, value, now) {
+  writeRowAt(sheet, findRow(sheet, key), key, value, now);
+}
+// v12: 値と更新日時を1回の setValues で書く（従来は setValue を2回＝往復2回）。
+function writeRowAt(sheet, row, key, value, now) {
+  if (row === -1) {
+    sheet.appendRow([key, value, now]);
+  } else {
+    sheet.getRange(row, 2, 1, 2).setValues([[value, now]]);
+  }
+}
+
+// legacy cleanup: remove old key__chunkN rows (column 1 only, fast)
+function deleteChunks(sheet, key) {
+  deleteChunksFrom(sheet, readKeyCol(sheet), key);
+}
+// v12: 既に読んであるキー列を使い回す。該当行が無ければシートに一切触らない
+//   （v9でDrive保管に移行して以降 __chunk 行は作られないので、通常はここで終わる）。
+//   削除した行数を返す（>0 なら行番号がずれるので、呼び出し側はキー列を読み直すこと）。
+function deleteChunksFrom(sheet, keysCol, key) {
+  if (!keysCol || keysCol.length < 2) return 0;
+  var prefix = key + '__chunk';
+  var rowsToDelete = [];
+  for (var i = 1; i < keysCol.length; i++) {
+    var k = keysCol[i][0];
+    if (k && String(k).indexOf(prefix) === 0) rowsToDelete.push(i + 1);
+  }
+  if (rowsToDelete.length === 0) return 0;
+  rowsToDelete.sort(function(a, b) { return b - a; });
+  rowsToDelete.forEach(function(r) { sheet.deleteRow(r); });
+  return rowsToDelete.length;
+}
+
+// v12: キャッシュ削除は removeAll で1往復にまとめる。
+//   従来は cache.remove() を 1+100 回ループしており、値が数バイトでも書き込みが
+//   数秒伸びていた（CacheServiceは1回ごとにリモート往復する）。
+//   複数キー分をまとめて消せるよう、キー配列も受け取れるようにする。
+function cacheKeysFor(key) {
+  var ks = [key];
+  for (var i = 0; i < 100; i++) ks.push(key + '__chunk' + i);
+  return ks;
+}
+function invalidateCache(key) { invalidateCacheMany([key]); }
+function invalidateCacheMany(keys) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var all = [];
+    for (var i = 0; i < keys.length; i++) all = all.concat(cacheKeysFor(keys[i]));
+    // removeAll の上限に配慮して分割（1回あたり500件まで）
+    for (var j = 0; j < all.length; j += 500) cache.removeAll(all.slice(j, j + 500));
+  } catch (ce) {}
+}
+
+function getBlobFolder() {
+  var it = DriveApp.getFoldersByName(DRIVE_FOLDER);
+  if (it.hasNext()) return it.next();
+  return DriveApp.createFolder(DRIVE_FOLDER);
+}
+
+function driveWrite(key, content) {
+  var folder = getBlobFolder();
+  var fname = key + '.txt';
+  var it = folder.getFilesByName(fname);
+  if (it.hasNext()) {
+    it.next().setContent(content);
+  } else {
+    folder.createFile(fname, content);
+  }
+}
+
+function driveRead(key) {
+  var folder = getBlobFolder();
+  var it = folder.getFilesByName(key + '.txt');
+  if (it.hasNext()) return it.next().getBlob().getDataAsString();
+  return null;
+}
+
+// 1キー分の値文字列を読む（キャッシュ→シート→Drive/レガシーチャンクの順。doGetの単発・一括の共通部）
+// rowHint: 呼び出し側が既に行番号を知っていれば渡す（-2なら未調査＝ここでfindRowする）
+function readOneValue(sheet, cache, key, rowHint) {
+  var cached = cache.get(key);
+  if (cached !== null && cached.indexOf(CHUNK_MARKER) !== 0 && cached !== FILE_MARKER) {
+    return cached;
+  }
+  var row = (rowHint === -2) ? findRow(sheet, key) : rowHint;
+  if (row === -1) return 'null';
+  var value = sheet.getRange(row, 2).getValue();
+  value = (value === '' || value === null || value === undefined) ? 'null' : String(value);
+
+  // value lives in a Drive file
+  if (value === FILE_MARKER) {
+    var c = driveRead(key);
+    if (c === null || c === '') c = 'null';
+    try { if (c.length < 90000) cache.put(key, c, READ_CACHE_SEC); } catch (ce) {}
+    return c;
+  }
+
+  // legacy chunked (v7/v8) - read separate __chunkN rows and join
+  if (value.indexOf(CHUNK_MARKER) === 0) {
+    var numChunks = parseInt(value.substring(CHUNK_MARKER.length), 10) || 0;
+    var result = '';
+    for (var j = 0; j < numChunks; j++) {
+      var cr = findRow(sheet, key + '__chunk' + j);
+      if (cr !== -1) {
+        var cv = sheet.getRange(cr, 2).getValue();
+        result += (cv === null || cv === undefined) ? '' : String(cv);
+      }
+    }
+    if (!result) result = 'null';
+    try { if (result.length < 90000) cache.put(key, result, READ_CACHE_SEC); } catch (ce) {}
+    return result;
+  }
+
+  try { cache.put(key, value, READ_CACHE_SEC); } catch (ce) {}
+  return value;
+}
+
+function doGet(e) {
+  // v14: apiKey は "本来のキー|利用証" の形で届くことがある。照合は '|' の前だけを見る。
+  if (!e.parameter || authBaseKey_(e.parameter.apiKey) !== HUB_API_KEY) {
+    return makeResponse('unauthorized');
+  }
+  // v14: 認証そのもの（コード送信・照合）は利用証を要求しない
+  if (e.parameter.action === 'authRequest') {
+    return authRequest_(e.parameter.email, authPrefixOf_(e.parameter));
+  }
+  if (e.parameter.action === 'authVerify') {
+    return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua);
+  }
+  // v14: 利用証の門番。HUB_AUTH_ENFORCE='1' を入れるまでは素通りする（段階移行）
+  var _gate = authGate_(e.parameter.apiKey, e.parameter.action, authPrefixOf_(e.parameter));
+  if (_gate) return _gate;
+  try {
+    var cache = CacheService.getScriptCache();
+
+    // v10: 保存時点の一覧（その環境の index をそのまま返す。新しい順・要約件数つき）
+    if (e.parameter.action === 'snapList') {
+      var pfxL = String(e.parameter.prefix || '');
+      if (SNAP_ENV_PREFIXES.indexOf(pfxL) < 0) return makeResponse('error: bad prefix');
+      var sheetL = getSheet();
+      var raw = readOneValue(sheetL, cache, pfxL + 'snap-index', -2);
+      return makeResponse((raw && raw !== 'null') ? raw : '[]');
+    }
+    // v10: 指定した時点の中身（プレビュー用。ファイル名は必ずその環境プレフィックスで始まること）
+    if (e.parameter.action === 'snapRead') {
+      var pfxR = String(e.parameter.prefix || '');
+      var fileR = String(e.parameter.file || '');
+      if (SNAP_ENV_PREFIXES.indexOf(pfxR) < 0 || fileR.indexOf(pfxR) !== 0) return makeResponse('error: bad params');
+      var folderR = snapFolder();
+      var itR = folderR.getFilesByName(fileR);
+      if (!itR.hasNext()) return makeResponse('error: not found');
+      return makeResponse(itR.next().getBlob().getDataAsString());
+    }
+
+    // v11: 機能検出。フロントは起動時に1回だけ読み、使える機能に応じて経路を切り替える。
+    //   （通常のGETなので応答を読める。POSTはno-corsで応答が読めないため能力検出はGETで行う）
+    if (e.parameter.action === 'caps') {
+      return makeResponse(JSON.stringify({ patchInsp: true, notifyFail: true, snapshots: true, setMany: true, auth: true, enforced: { prod: authEnforced_('hub-v8-'), dev: authEnforced_('hub-v8-dev-') }, ver: 'v14' }));
+    }
+
+    // 一括読み: ?keys=a,b,c → {"a":"<値文字列|null>", ...} のJSON。
+    // フロントのポーリングを21リクエスト→1リクエストにするための同時実行数対策。
+    if (e.parameter.keys) {
+      var ks = String(e.parameter.keys).split(',').slice(0, 40);
+      var sheet0 = getSheet();
+      // キー列を1回だけ読んで行番号を索引化（キー数ぶんfindRowを繰り返さない）
+      var last = sheet0.getLastRow();
+      var rowOf = {};
+      if (last >= 1) {
+        var colKeys = sheet0.getRange(1, 1, last, 1).getValues();
+        for (var i = 1; i < colKeys.length; i++) {
+          var kk = colKeys[i][0];
+          if (kk && !(kk in rowOf)) rowOf[kk] = i + 1;
+        }
+      }
+      var out = {};
+      for (var m = 0; m < ks.length; m++) {
+        var k = ks[m];
+        if (!k) continue;
+        out[k] = readOneValue(sheet0, cache, k, (k in rowOf) ? rowOf[k] : -1);
+      }
+      return makeResponse(JSON.stringify(out));
+    }
+
+    var key = e.parameter && e.parameter.key;
+    if (!key) return makeResponse('null');
+    // 単発読みはキャッシュヒット時にシートを開かない（従来動作の維持）
+    var cachedOne = cache.get(key);
+    if (cachedOne !== null && cachedOne.indexOf(CHUNK_MARKER) !== 0 && cachedOne !== FILE_MARKER) {
+      return makeResponse(cachedOne);
+    }
+    var sheet = getSheet();
+    return makeResponse(readOneValue(sheet, cache, key, -2));
+  } catch (err) {
+    return makeResponse('error: ' + err.message);
+  }
+}
+
+// 保存失敗の通知メール。宛先はシート上の notify-emails マップに登録済みのアドレスのみ
+// （リクエストで任意の宛先を指定できるとAPIキー漏洩時に踏み台になるため、宛先はサーバー側で解決する）。
+// 予約操作者本人が登録済みならその人へ、未登録なら登録者全員へ送る。
+// 注意: MailApp を使うため、初回はデプロイ更新時に権限の再承認が必要。
+function handleNotifyFail(body) {
+  try {
+    var emailsKey = String(body.emailsKey || '');
+    if (!/^hub-v8-(dev-)?notify-emails$/.test(emailsKey)) return makeResponse('error: bad emailsKey');
+    var sheet = getSheet();
+    var row = findRow(sheet, emailsKey);
+    if (row === -1) return makeResponse('error: no recipients');
+    var raw = String(sheet.getRange(row, 2).getValue() || '');
+    if (raw === FILE_MARKER) raw = driveRead(emailsKey) || '';
+    var map;
+    try { map = JSON.parse(raw); } catch (ex) { return makeResponse('error: no recipients'); }
+    if (!map || typeof map !== 'object') return makeResponse('error: no recipients');
+    var to = map[body.user] ? [map[body.user]] : Object.keys(map).map(function(k){ return map[k]; });
+    to = to.filter(function(a){ return a && String(a).indexOf('@') > 0; });
+    if (to.length === 0) return makeResponse('error: no recipients');
+    var env = body.env === 'DEV' ? '【DEV】' : '';
+    MailApp.sendEmail(
+      to.join(','),
+      env + '【Hub a Nice Day】予約の保存が確認できませんでした',
+      String(body.detail || '予約の保存が確認できませんでした。アプリで該当日を確認してください。') +
+      '\n\n--\nこのメールは Hub a Nice Day の自動通知です（返信不要）。'
+    );
+    return makeResponse('ok');
+  } catch (err) {
+    return makeResponse('error: ' + err.message);
+  }
+}
+
+function doPost(e) {
+  var contents = e.postData && e.postData.contents;
+  if (!contents) return makeResponse('error: no body');
+  var body;
+  try { body = JSON.parse(contents); } catch (ex) { return makeResponse('error: invalid JSON'); }
+  // v14: apiKey は "本来のキー|利用証" の形で届くことがある。照合は '|' の前だけを見る。
+  if (authBaseKey_(body.apiKey) !== HUB_API_KEY) { return makeResponse('unauthorized'); }
+  // v14: 利用証の門番。HUB_AUTH_ENFORCE='1' を入れるまでは素通りする（段階移行）
+  var _gateP = authGate_(body.apiKey, body.action, authPrefixOf_(body));
+  if (_gateP) return _gateP;
+
+  // 通知メールはシートを書かないのでロック不要。混雑（ロック詰まり）の時こそ送れる必要がある
+  if (body.action === 'notifyFail') return handleNotifyFail(body);
+
+  // v10: 復旧（指定した時点に全データを戻す）。実行直前に現状も自動保存する（やり直し可）
+  if (body.action === 'snapRestore') {
+    var lockR = LockService.getScriptLock();
+    var lockedR = false;
+    try { lockR.waitLock(25000); lockedR = true; } catch (leR) { return makeResponse('error: lock_timeout'); }
+    try {
+      var pfxRs = String(body.prefix || '');
+      if (SNAP_ENV_PREFIXES.indexOf(pfxRs) < 0) return makeResponse('error: bad prefix');
+      return makeResponse(snapRestore(pfxRs, String(body.file || '')));
+    } catch (erR) { return makeResponse('error: ' + erR.message); }
+    finally { if (lockedR) lockR.releaseLock(); }
+  }
+  // v10: 手動スナップショット（動作確認・任意保存用）
+  if (body.action === 'snapNow') {
+    var pfxN = String(body.prefix || '');
+    if (SNAP_ENV_PREFIXES.indexOf(pfxN) < 0) return makeResponse('error: bad prefix');
+    try { return makeResponse(snapCreate(pfxN, 'manual', String(body.label || ''))); }
+    catch (erN) { return makeResponse('error: ' + erN.message); }
+  }
+  // v10: 部分復旧（消えた予約だけ insp に足す。丸ごと上書きしない＝新データを壊さない）
+  if (body.action === 'snapAddBack') {
+    var lockA = LockService.getScriptLock();
+    var lockedA = false;
+    try { lockA.waitLock(25000); lockedA = true; } catch (leA) { return makeResponse('error: lock_timeout'); }
+    try {
+      var pfxA = String(body.prefix || '');
+      if (SNAP_ENV_PREFIXES.indexOf(pfxA) < 0) return makeResponse('error: bad prefix');
+      return makeResponse(snapAddBack(pfxA, String(body.date || ''), body.rows));
+    } catch (erA) { return makeResponse('error: ' + erA.message); }
+    finally { if (lockedA) lockA.releaseLock(); }
+  }
+  // v10: 店別復旧（本店だけ／三田だけ。整備・メモ・“整備に紐づく代車”のみ戻し、車検と他店には触らない）
+  if (body.action === 'snapRestoreStore') {
+    var lockS = LockService.getScriptLock();
+    var lockedS = false;
+    try { lockS.waitLock(25000); lockedS = true; } catch (leS) { return makeResponse('error: lock_timeout'); }
+    try {
+      var pfxS = String(body.prefix || '');
+      if (SNAP_ENV_PREFIXES.indexOf(pfxS) < 0) return makeResponse('error: bad prefix');
+      return makeResponse(snapRestoreStore(pfxS, String(body.file || ''), String(body.store || '')));
+    } catch (erS) { return makeResponse('error: ' + erS.message); }
+    finally { if (lockedS) lockS.releaseLock(); }
+  }
+
+  // v11: insp の差分書き込み（指定した日付キーだけをロック内で原子的にマージする）。
+  //   body.dates = { "2026-7-27":[行...], "2026-7-28":null, ... }。値が null の日付は削除。
+  //   フロントが insp 全体（4KB前後）を送らず変更した日付だけ送れるようにするための経路。
+  //   ★サーバー側で read→merge→write をロック内で完結するので、指定日以外の日付は絶対に触らない。
+  //     ただし「指定した日付の中身」はフロントが渡したもので上書きするので、フロントは必ず
+  //     サーバー最新値を読んでからその日を組み立てて送ること（＝writeVerified/persistInsp と同じ規約）。
+  if (body.action === 'patchInsp') {
+    var lockP = LockService.getScriptLock();
+    var lockedP = false;
+    try { lockP.waitLock(25000); lockedP = true; } catch (leP) { return makeResponse('error: lock_timeout'); }
+    try {
+      var pfxP = String(body.prefix || '');
+      if (SNAP_ENV_PREFIXES.indexOf(pfxP) < 0) return makeResponse('error: bad prefix');
+      var datesP = body.dates;
+      if (!datesP || typeof datesP !== 'object') return makeResponse('error: no dates');
+      var keyP = pfxP + 'insp';
+      var sheetP = getSheet();
+      var cacheP = CacheService.getScriptCache();
+      var rawP = readOneValue(sheetP, cacheP, keyP, -2);
+      var objP;
+      try { objP = (rawP && rawP !== 'null') ? JSON.parse(rawP) : {}; } catch (peP) { objP = {}; }
+      if (!objP || typeof objP !== 'object' || objP instanceof Array) objP = {};
+      var changedP = 0;
+      for (var dkP in datesP) {
+        if (!Object.prototype.hasOwnProperty.call(datesP, dkP)) continue;
+        var valP = datesP[dkP];
+        if (valP === null) { if (dkP in objP) { delete objP[dkP]; changedP++; } }
+        else { objP[dkP] = valP; changedP++; }
+      }
+      var strP = JSON.stringify(objP);
+      var nowP = new Date().toLocaleString('ja-JP');
+      if (strP.length <= BIG_THRESHOLD) { writeRow(sheetP, keyP, strP, nowP); }
+      else { driveWrite(keyP, strP); writeRow(sheetP, keyP, FILE_MARKER, nowP); }
+      deleteChunks(sheetP, keyP);
+      invalidateCache(keyP);
+      Logger.log('patchInsp ' + keyP + ' dates=' + Object.keys(datesP).join(',') + ' changed=' + changedP + ' len=' + strP.length);
+      return makeResponse('ok');
+    } catch (erP) { return makeResponse('error: ' + erP.message); }
+    finally { if (lockedP) lockP.releaseLock(); }
+  }
+
+  // v12: 複数キーを1リクエスト・1回のロックでまとめて書く。
+  //   body.items = [{key:"…", value:"<JSON文字列>"}, …]（最大20件）。
+  //   1予約の保存が insp / lres / custbk … と複数キーに散るため、従来は1本ずつ
+  //   ロックを取り直して10〜27秒×本数かかっていた。ここを1回にまとめる。
+  //   応答は {"ok":[書けたキー], "failed":[{key,error}]} のJSON。
+  //   ★フロントは caps.setMany を見てオプトインする（未対応環境では従来の1本ずつ経路）。
+  if (body.action === 'setMany') {
+    var itemsM = body.items;
+    if (!itemsM || !itemsM.length) return makeResponse('error: no items');
+    if (itemsM.length > 20) return makeResponse('error: too many items');
+    var lockM = LockService.getScriptLock();
+    var lockedM = false;
+    try { lockM.waitLock(25000); lockedM = true; } catch (leM) { return makeResponse('error: lock_timeout'); }
+    try {
+      var sheetM = getSheet();
+      var keysColM = readKeyCol(sheetM);
+      var nowM = new Date().toLocaleString('ja-JP');
+      var okM = [], failM = [], touchedM = [];
+      for (var iM = 0; iM < itemsM.length; iM++) {
+        var itM = itemsM[iM] || {};
+        var kM = itM.key;
+        if (!kM) { failM.push({ key: '', error: 'no key' }); continue; }
+        try {
+          var sM = (itM.value === null || itM.value === undefined) ? '' : String(itM.value);
+          Logger.log('setMany key=' + kM + ' len=' + sM.length);
+          var rowM = findRowIn(keysColM, kM);
+          if (sM.length <= BIG_THRESHOLD) {
+            writeRowAt(sheetM, rowM, kM, sM, nowM);
+          } else {
+            driveWrite(kM, sM);
+            writeRowAt(sheetM, rowM, kM, FILE_MARKER, nowM);
+          }
+          var delM = deleteChunksFrom(sheetM, keysColM, kM);
+          // ★行の増減があったらキー列を読み直す。append で伸びた時だけでなく、
+          //   旧chunk行を削除して行番号が繰り上がった時も読み直さないと、
+          //   次のキーを別の行に書いてしまう（モック単体テストで検出）。
+          if (rowM === -1 || delM > 0) keysColM = readKeyCol(sheetM);
+          touchedM.push(kM);
+          okM.push(kM);
+        } catch (eM) {
+          failM.push({ key: kM, error: String(eM && eM.message ? eM.message : eM) });
+        }
+      }
+      if (touchedM.length) invalidateCacheMany(touchedM);
+      return makeResponse(JSON.stringify({ ok: okM, failed: failM }));
+    } catch (erM) {
+      return makeResponse('error: ' + erM.message);
+    } finally {
+      if (lockedM) lockM.releaseLock();
+    }
+  }
+
+  var lock = LockService.getScriptLock();
+  var locked = false;
+  try { lock.waitLock(25000); locked = true; } catch (le) {
+    return makeResponse('error: lock_timeout');
+  }
+  try {
+    var key = body.key;
+    var value = body.value;
+    if (!key) return makeResponse('error: no key');
+
+    var sheet = getSheet();
+    var now = new Date().toLocaleString('ja-JP');
+    var str = (value === null || value === undefined) ? '' : String(value);
+
+    // v11: どのキーに何バイト書いたかを実行ログに残す（どのキーが重いか診断できるように）。
+    Logger.log('write key=' + key + ' len=' + str.length);
+
+    // v12: キー列は1回だけ読んで findRow と deleteChunks で共有する。
+    var keysCol = readKeyCol(sheet);
+    var row = findRowIn(keysCol, key);
+
+    // Write new data FIRST, then clean up old chunk rows last.
+    // This way, if anything fails midway, the old data is still readable.
+    if (str.length <= BIG_THRESHOLD) {
+      // small value: keep in the sheet
+      writeRowAt(sheet, row, key, str, now);
+    } else {
+      // big value: store in Drive (must succeed), then mark the sheet
+      driveWrite(key, str);
+      writeRowAt(sheet, row, key, FILE_MARKER, now);
+    }
+
+    // legacy cleanup only after the new value is safely written
+    deleteChunksFrom(sheet, keysCol, key);
+
+    invalidateCache(key);
+    return makeResponse('ok');
+  } catch (err) {
+    return makeResponse('error: ' + err.message);
+  } finally {
+    if (locked) lock.releaseLock();
+  }
+}
+
+function dailyBackup() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var source = getSheet();
+  var now = new Date();
+  var y = now.getFullYear();
+  var m = String(now.getMonth() + 1).padStart(2, '0');
+  var d = String(now.getDate()).padStart(2, '0');
+  var sheetName = BACKUP_SHEET_PREFIX + y + m + d;
+  var existing = ss.getSheetByName(sheetName);
+  if (existing) ss.deleteSheet(existing);
+  var copy = source.copyTo(ss);
+  copy.setName(sheetName);
+  // トリガー実行にはアクティブシートが無く、moveActiveSheet だけだと
+  // "Please select an active sheet first." で落ちて cleanupOldBackups に到達しない。
+  ss.setActiveSheet(copy);
+  ss.moveActiveSheet(ss.getSheets().length);
+  cleanupOldBackups();
+  Logger.log('backup done: ' + sheetName);
+}
+
+function cleanupOldBackups() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  var now = new Date();
+  var limitMs = BACKUP_KEEP_DAYS * 24 * 60 * 60 * 1000;
+  sheets.forEach(function(sheet) {
+    var name = sheet.getName();
+    if (name.indexOf(BACKUP_SHEET_PREFIX) !== 0) return;
+    var dateStr = name.replace(BACKUP_SHEET_PREFIX, '');
+    if (dateStr.length !== 8) return;
+    var y = parseInt(dateStr.substring(0, 4), 10);
+    var m = parseInt(dateStr.substring(4, 6), 10) - 1;
+    var d = parseInt(dateStr.substring(6, 8), 10);
+    var sheetDate = new Date(y, m, d);
+    if (now - sheetDate > limitMs) {
+      ss.deleteSheet(sheet);
+      Logger.log('deleted old backup: ' + name);
+    }
+  });
+}
+
+function setupTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'dailyBackup') {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+  ScriptApp.newTrigger('dailyBackup')
+    .timeBased()
+    .everyDays(1)
+    .atHour(2)
+    .create();
+  Logger.log('trigger registered');
+}
+
+// One-time: restore loaner data from the latest backup sheet, if it was lost.
+function restoreFromLatestBackup() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  var backups = [];
+  sheets.forEach(function(s){ if (s.getName().indexOf(BACKUP_SHEET_PREFIX) === 0) backups.push(s.getName()); });
+  backups.sort();
+  if (backups.length === 0) { Logger.log('no backup found'); return; }
+  var latest = backups[backups.length - 1];
+  Logger.log('using backup: ' + latest);
+  var bsheet = ss.getSheetByName(latest);
+  var bdata = bsheet.getDataRange().getValues();
+  var target = ['hub-v8-honten-lres', 'hub-v8-sanda-lres'];
+  var sheet = getSheet();
+  target.forEach(function(tkey){
+    for (var i = 1; i < bdata.length; i++) {
+      if (bdata[i][0] === tkey) {
+        var val = String(bdata[i][1]);
+        writeRow(sheet, tkey, val, new Date().toLocaleString('ja-JP'));
+        invalidateCache(tkey);
+        Logger.log('restored ' + tkey + ' (length=' + val.length + ')');
+        break;
+      }
+    }
+  });
+}
+
+// Move ALL big values currently in the sheet to Drive, so the sheet stays light.
+// Run this once manually from the GAS editor.
+function migrateAllBigToDrive() {
+  var sheet = getSheet();
+  var last = sheet.getLastRow();
+  if (last < 2) { Logger.log('empty'); return; }
+  var keys = sheet.getRange(1, 1, last, 1).getValues();
+  var moved = 0;
+  for (var i = 1; i < keys.length; i++) {
+    var k = keys[i][0];
+    if (!k) continue;
+    if (String(k).indexOf('__chunk') >= 0) continue;        // skip legacy chunk rows
+    var v = String(sheet.getRange(i + 1, 2).getValue());
+    if (v === FILE_MARKER) continue;                         // already in Drive
+    if (v.indexOf(CHUNK_MARKER) === 0) continue;             // legacy chunked (read elsewhere)
+    if (v.length > BIG_THRESHOLD) {
+      driveWrite(k, v);
+      sheet.getRange(i + 1, 2).setValue(FILE_MARKER);
+      invalidateCache(k);
+      Logger.log('moved to Drive: ' + k + ' len=' + v.length);
+      moved++;
+    }
+  }
+  Logger.log('migrateAllBigToDrive done, moved=' + moved);
+}
+
+// Restore loaner data from the backup that has the MOST honten loaner data
+// (the latest backup may be from after the data was lost).
+function restoreLoanerBestBackup() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  var best = null, bestLen = -1;
+  sheets.forEach(function(s) {
+    if (s.getName().indexOf(BACKUP_SHEET_PREFIX) !== 0) return;
+    var d = s.getDataRange().getValues();
+    var hl = 0;
+    for (var i = 1; i < d.length; i++) {
+      if (d[i][0] === 'hub-v8-honten-lres') hl = String(d[i][1]).length;
+    }
+    Logger.log(s.getName() + ' honten-lres=' + hl);
+    if (hl > bestLen) { bestLen = hl; best = s.getName(); }
+  });
+  if (!best) { Logger.log('no backup found'); return; }
+  Logger.log('BEST backup = ' + best + ' (honten-lres len=' + bestLen + ')');
+  var bd = ss.getSheetByName(best).getDataRange().getValues();
+  var sheet = getSheet();
+  ['hub-v8-honten-lres', 'hub-v8-sanda-lres'].forEach(function(tk) {
+    for (var i = 1; i < bd.length; i++) {
+      if (bd[i][0] === tk) {
+        var val = String(bd[i][1]);
+        writeRow(sheet, tk, val, new Date().toLocaleString('ja-JP'));
+        invalidateCache(tk);
+        Logger.log('restored ' + tk + ' len=' + val.length);
+        break;
+      }
+    }
+  });
+}
+
+// ============================================================
+//  v10: 時点スナップショット & 復旧（Snapshot / Restore）
+// ============================================================
+var SNAP_FOLDER = 'hubdata_snapshots';
+var SNAP_INTRADAY_KEEP_HOURS = 48;                    // 30分ごと(auto/manual/pre-restore)を残す時間＝2日
+var SNAP_DAILY_KEEP_DAYS = 90;                        // 毎朝2時(daily)を残す日数
+var SNAP_ENV_PREFIXES = ['hub-v8-', 'hub-v8-dev-'];   // 本番・DEVを別々にスナップショット
+var SNAP_EXTRA_KEYS = ['schedRestrictions'];          // プレフィックス無しの共有キー（本番の保存に明示的に含める）
+
+function snapFolder() {
+  var it = DriveApp.getFoldersByName(SNAP_FOLDER);
+  if (it.hasNext()) return it.next();
+  return DriveApp.createFolder(SNAP_FOLDER);
+}
+
+// prefix配下の保存対象キー一覧。full=falseは30分ごと用（大きい顧客ファイル cf-* を除外して軽くする）。
+// チャンク行・indexキー自身・別envキーは常に除外。
+function snapTargetKeys(sheet, prefix, full) {
+  var last = sheet.getLastRow();
+  var out = [];
+  if (last >= 1) {
+    var col = sheet.getRange(1, 1, last, 1).getValues();
+    for (var i = 1; i < col.length; i++) {
+      var k = col[i][0];
+      if (!k) continue; k = String(k);
+      if (k.indexOf(prefix) !== 0) continue;
+      if (prefix === 'hub-v8-' && k.indexOf('hub-v8-dev-') === 0) continue; // 本番にDEVキーを混ぜない
+      if (k.indexOf('__chunk') >= 0) continue;             // レガシー分割行は除外（indexから辿るので不要）
+      if (k === prefix + 'snap-index') continue;           // インデックス自身は保存しない
+      if (!full && k.indexOf(prefix + 'cf-') === 0) continue; // 大きい顧客ファイルは日次(full)のみ
+      if (!full && k === prefix + 'insp-arch') continue;   // 保管箱は大きいので日次(full)のみ
+      out.push(k);
+    }
+  }
+  if (prefix === 'hub-v8-') {
+    for (var e = 0; e < SNAP_EXTRA_KEYS.length; e++) {
+      if (out.indexOf(SNAP_EXTRA_KEYS[e]) < 0) out.push(SNAP_EXTRA_KEYS[e]);
+    }
+  }
+  return out;
+}
+
+// プレビュー用の要約件数（車検・整備・代車/レンタカー・メモ）。壊れていても0を返すだけ（表示用なので実害なし）。
+function snapSummary(getVal, prefix) {
+  function j(base) { try { var v = getVal(prefix + base); return (v && v !== 'null') ? JSON.parse(v) : null; } catch (e) { return null; } }
+  function inspN(o) { var n = 0; if (o) for (var d in o) { var a = o[d] || []; for (var i = 0; i < a.length; i++) { var r = a[i]; if (r && r.name && r.bookingStatus !== 'cancelled') n++; } } return n; }
+  function schedN(o) { var n = 0; if (o) for (var d in o) { var day = o[d] || {}; for (var s in day) { if (day[s] && day[s].name) n++; } } return n; }
+  function objN(o) { var n = 0; if (o) for (var c in o) { var b = o[c] || {}; for (var kk in b) n++; } return n; } // lres/rres: {carId:{key:予約}}
+  function memoN(o) { var n = 0; if (o) for (var d in o) { n += (o[d] || []).length; } return n; }
+  return {
+    insp: inspN(j('insp')),
+    sched: schedN(j('honten-sched')) + schedN(j('sanda-sched')),
+    loaner: objN(j('honten-lres')) + objN(j('sanda-lres')) + objN(j('rres')),
+    memo: memoN(j('honten-memo')) + memoN(j('sanda-memo'))
+  };
+}
+
+// 1プレフィックス分のスナップショットを作成し、indexへ1件追加する。作成したファイル名を返す。
+function snapCreate(prefix, kind, label) {
+  var sheet = getSheet();
+  var cache = CacheService.getScriptCache();
+  var full = (kind === 'daily');
+  var keys = snapTargetKeys(sheet, prefix, full);
+  var data = {};
+  for (var i = 0; i < keys.length; i++) {
+    data[keys[i]] = readOneValue(sheet, cache, keys[i], -2); // Drive実体まで解決した実値
+  }
+  var now = new Date();
+  var stamp = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss');
+  var getVal = function(k) { return data.hasOwnProperty(k) ? data[k] : null; };
+  var summary = snapSummary(getVal, prefix);
+  var payload = { ts: now.getTime(), tsText: now.toLocaleString('ja-JP'), kind: kind, label: label || '', prefix: prefix, summary: summary, keys: data };
+  var fname = prefix + stamp + '_' + kind + '.json';
+  snapFolder().createFile(fname, JSON.stringify(payload), 'application/json');
+
+  // index更新（プレフィックス別の通常キーとして保存。中身(keys)は含めず、要約とファイル名だけ）
+  var idxKey = prefix + 'snap-index';
+  var idxRaw = readOneValue(sheet, cache, idxKey, -2);
+  var idx;
+  try { idx = (idxRaw && idxRaw !== 'null') ? JSON.parse(idxRaw) : []; } catch (e) { idx = []; }
+  idx.unshift({ file: fname, ts: payload.ts, tsText: payload.tsText, kind: kind, label: payload.label, summary: summary });
+  idx = snapPrune(idx);
+  var idxStr = JSON.stringify(idx);
+  var nowStr = now.toLocaleString('ja-JP');
+  if (idxStr.length <= BIG_THRESHOLD) { writeRow(sheet, idxKey, idxStr, nowStr); }
+  else { driveWrite(idxKey, idxStr); writeRow(sheet, idxKey, FILE_MARKER, nowStr); }
+  invalidateCache(idxKey);
+  return fname;
+}
+
+// 保持ルールでindexを間引き、期限切れのDriveファイルを削除する。残すindexを返す。
+function snapPrune(idx) {
+  var now = Date.now();
+  var folder = snapFolder();
+  var keep = [];
+  for (var i = 0; i < idx.length; i++) {
+    var en = idx[i];
+    var age = now - (en.ts || 0);
+    var limit = (en.kind === 'daily') ? SNAP_DAILY_KEEP_DAYS * 24 * 3600 * 1000 : SNAP_INTRADAY_KEEP_HOURS * 3600 * 1000;
+    if (age <= limit) { keep.push(en); }
+    else { try { var it = folder.getFilesByName(en.file); if (it.hasNext()) it.next().setTrashed(true); } catch (ex) {} }
+  }
+  return keep;
+}
+
+// 指定した時点に全データを戻す。実行直前に現状も pre-restore として保存（やり直し用）。
+function snapRestore(prefix, fname) {
+  var folder = snapFolder();
+  var it = folder.getFilesByName(fname);
+  if (!it.hasNext()) return 'error: snapshot not found';
+  try { snapCreate(prefix, 'pre-restore', '復旧直前の自動保存'); } catch (e) {} // 失敗しても復旧自体は続行
+  var payload;
+  try { payload = JSON.parse(it.next().getBlob().getDataAsString()); } catch (pe) { return 'error: broken snapshot'; }
+  if (!payload || payload.prefix !== prefix || !payload.keys) return 'error: prefix mismatch';
+  var sheet = getSheet();
+  var now = new Date().toLocaleString('ja-JP');
+  var keys = Object.keys(payload.keys);
+  var restored = 0;
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    var v = payload.keys[k];
+    var str = (v === null || v === undefined) ? '' : String(v);
+    if (str.length <= BIG_THRESHOLD) { writeRow(sheet, k, str, now); }
+    else { driveWrite(k, str); writeRow(sheet, k, FILE_MARKER, now); }
+    deleteChunks(sheet, k);
+    invalidateCache(k);
+    restored++;
+  }
+  return 'ok: restored ' + restored + ' keys';
+}
+
+// 部分復旧: 指定日の insp に「消えていた予約(rows)」だけを追加する。
+// 既にある予約（氏名+時間+車種が一致・非cancelled）は足さない＝今入っている新データを壊さない。
+// ロック内で「サーバー最新値を読む→追記→書き戻す」ので、no-cors無音失敗や後勝ち上書きが起きない。
+function snapAddBack(prefix, date, rows) {
+  if (!date || !rows || !rows.length) return 'error: no rows';
+  var sheet = getSheet();
+  var cache = CacheService.getScriptCache();
+  var key = prefix + 'insp';
+  var raw = readOneValue(sheet, cache, key, -2);
+  var insp;
+  try { insp = (raw && raw !== 'null') ? JSON.parse(raw) : {}; } catch (e) { insp = {}; }
+  if (!insp[date]) insp[date] = [];
+  var day = insp[date];
+  function sig(r) { return [String((r && r.name) || ''), String((r && r.time) || ''), String((r && r.carType) || '')].join('|'); }
+  var have = {};
+  for (var i = 0; i < day.length; i++) {
+    if (day[i] && day[i].name && day[i].bookingStatus !== 'cancelled') have[sig(day[i])] = true;
+  }
+  var added = 0;
+  for (var j = 0; j < rows.length; j++) {
+    var r = rows[j];
+    if (!r || !r.name) continue;
+    if (have[sig(r)]) continue;      // 既にある＝スキップ（新データ保護）
+    day.push(r);
+    have[sig(r)] = true;
+    added++;
+  }
+  if (added === 0) return 'ok: added 0';
+  var str = JSON.stringify(insp);
+  var now = new Date().toLocaleString('ja-JP');
+  if (str.length <= BIG_THRESHOLD) { writeRow(sheet, key, str, now); }
+  else { driveWrite(key, str); writeRow(sheet, key, FILE_MARKER, now); }
+  invalidateCache(key);
+  return 'ok: added ' + added;
+}
+
+// bookingKey の種類判定（reservationの.bookingKey優先、無ければmapキー）
+function _bkStarts(res, mapKey, pre) {
+  var bk = String((res && res.bookingKey) || mapKey || '');
+  return bk.indexOf(pre) === 0;
+}
+
+// 店別復旧: 指定店の「整備(sched)・メモ(memo)・整備に紐づく代車(sched-のlres)」だけを snapshot に戻す。
+// 車検(insp)・車検に紐づく代車(insp-のlres)・もう片方の店・共有キー(rres/custbk等)には一切触らない。
+// これにより「整備の世界」だけを一貫して戻し、紐付けのズレを起こさない。実行直前にpre-restore控えを取る。
+function snapRestoreStore(prefix, fname, store) {
+  if (store !== 'honten' && store !== 'sanda') return 'error: bad store';
+  var folder = snapFolder();
+  var it = folder.getFilesByName(fname);
+  if (!it.hasNext()) return 'error: snapshot not found';
+  try { snapCreate(prefix, 'pre-restore', '店別復旧(' + store + ')直前の自動保存'); } catch (e) {}
+  var payload;
+  try { payload = JSON.parse(it.next().getBlob().getDataAsString()); } catch (pe) { return 'error: broken snapshot'; }
+  if (!payload || payload.prefix !== prefix || !payload.keys) return 'error: prefix mismatch';
+  var sheet = getSheet();
+  var cache = CacheService.getScriptCache();
+  var restored = [];
+
+  // 整備・メモ: その店のキーを丸ごと戻す（スロット/日付管理・位置番号に依存しない）
+  ['-sched', '-memo'].forEach(function (suf) {
+    var k = prefix + store + suf;
+    if (!payload.keys.hasOwnProperty(k)) return;
+    putValue(sheet, k, String(payload.keys[k] == null ? '' : payload.keys[k]));
+    restored.push(store + suf);
+  });
+
+  // 代車(lres): 整備に紐づく代車(sched-)だけ snapshot に戻し、車検に紐づく代車(insp-)は今のまま残す。
+  var lresKey = prefix + store + '-lres';
+  if (payload.keys.hasOwnProperty(lresKey)) {
+    var snapLres = {}, curLres = {};
+    try { snapLres = JSON.parse(payload.keys[lresKey] || '{}') || {}; } catch (e) {}
+    var curRaw = readOneValue(sheet, cache, lresKey, -2);
+    try { curLres = (curRaw && curRaw !== 'null') ? JSON.parse(curRaw) : {}; } catch (e) {}
+    var carIds = {}, cx;
+    for (cx in curLres) carIds[cx] = 1;
+    for (cx in snapLres) carIds[cx] = 1;
+    var merged = {};
+    for (var car in carIds) {
+      var out = {}, bk;
+      var cur = curLres[car] || {};
+      for (bk in cur) { if (_bkStarts(cur[bk], bk, 'insp-')) out[bk] = cur[bk]; }   // 車検代車=現状維持
+      var snp = snapLres[car] || {};
+      for (bk in snp) { if (_bkStarts(snp[bk], bk, 'sched-')) out[bk] = snp[bk]; }   // 整備代車=snapshotへ
+      if (Object.keys(out).length) merged[car] = out;
+    }
+    putValue(sheet, lresKey, JSON.stringify(merged));
+    restored.push(store + '-lres(整備分のみ)');
+  }
+  return 'ok: ' + store + ' restored [' + restored.join(', ') + ']';
+}
+
+// ============================================================
+//  v10: inspスリム化（古い日付を insp → insp-arch へ退避）
+//  ねらい: 毎回書き戻す insp を今日以降＋バッファ日数だけに保ち、書き込みを軽く・詰まりを減らす。
+//  過去日は insp-arch（保管箱）へ。永久保持（このコードは削除しない）。
+// ============================================================
+var ARCHIVE_BUFFER_DAYS = 14;   // 今日からこの日数より古い日付をアーカイブへ（境界）
+
+// "YYYY-M-D"（ゼロ詰めなし）を Date に変換。不正なら null。
+function parseDateKey(k) {
+  var pp = String(k).split('-');
+  if (pp.length !== 3) return null;
+  var y = parseInt(pp[0], 10), m = parseInt(pp[1], 10), d = parseInt(pp[2], 10);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
+// 値を書く（30KB超はDriveへ。既存の書き込みと同じ規則）
+function putValue(sheet, key, str) {
+  var now = new Date().toLocaleString('ja-JP');
+  if (str.length <= BIG_THRESHOLD) { writeRow(sheet, key, str, now); }
+  else { driveWrite(key, str); writeRow(sheet, key, FILE_MARKER, now); }
+  invalidateCache(key);
+}
+
+// hotのinspから「今日−ARCHIVE_BUFFER_DAYS」より古い日付を insp-arch へ移す。1プレフィックス分。
+// arch を先に保存してから hot を削るので、途中で失敗してもデータは失われない（最悪は一時的な重複だけ）。
+function archiveOldInsp(prefix) {
+  var sheet = getSheet();
+  var cache = CacheService.getScriptCache();
+  var hotKey = prefix + 'insp', archKey = prefix + 'insp-arch';
+  var hotRaw = readOneValue(sheet, cache, hotKey, -2);
+  var hot; try { hot = (hotRaw && hotRaw !== 'null') ? JSON.parse(hotRaw) : {}; } catch (e) { return 'error: hot parse'; }
+  var cutoff = new Date(); cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - ARCHIVE_BUFFER_DAYS);
+  var moved = {}, cnt = 0;
+  for (var k in hot) {
+    var dt = parseDateKey(k);
+    if (dt && dt.getTime() < cutoff.getTime()) { moved[k] = hot[k]; delete hot[k]; cnt++; }
+  }
+  if (cnt === 0) return 'ok: moved 0';
+  var archRaw = readOneValue(sheet, cache, archKey, -2);
+  var arch; try { arch = (archRaw && archRaw !== 'null') ? JSON.parse(archRaw) : {}; } catch (e) { arch = {}; }
+  for (var mk in moved) { arch[mk] = moved[mk]; }   // 日付単位でマージ（hot優先＝編集済みを反映）
+  putValue(sheet, archKey, JSON.stringify(arch));    // 先に保管箱を保存
+  putValue(sheet, hotKey, JSON.stringify(hot));      // その後hotを軽くする
+  return 'ok: moved ' + cnt + ' dates (arch=' + Object.keys(arch).length + ' / hot=' + Object.keys(hot).length + ')';
+}
+
+// 毎日3時トリガーの本体（本番・DEV両方）。ロックを取って通常書き込みと直列化する。
+function archiveOldInspAll() {
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); } catch (e) { Logger.log('archive lock timeout'); return; }
+  try {
+    for (var i = 0; i < SNAP_ENV_PREFIXES.length; i++) {
+      try { Logger.log(SNAP_ENV_PREFIXES[i] + ': ' + archiveOldInsp(SNAP_ENV_PREFIXES[i])); }
+      catch (e) { Logger.log('archive fail ' + SNAP_ENV_PREFIXES[i] + ': ' + e.message); }
+    }
+  } finally { lock.releaseLock(); }
+}
+
+// 初回の手動仕分け（GASエディタから実行）。実行前にその環境のスナップショットを取ってから仕分ける。
+// ★推奨順: まず runInitialArchiveDev() でDEVを仕分け→DEV実機で表示・保存を確認→問題なければ runInitialArchiveMain()。
+function _initialArchiveOne(prefix) {
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); } catch (e) { Logger.log('lock timeout'); return; }
+  try {
+    try { snapCreate(prefix, 'manual', 'pre-archive（初回仕分け直前の控え）'); } catch (e) {}
+    Logger.log(prefix + ': ' + archiveOldInsp(prefix));
+  } finally { lock.releaseLock(); }
+}
+function runInitialArchiveDev()  { _initialArchiveOne('hub-v8-dev-'); }   // DEVだけ仕分け（先にこちら）
+function runInitialArchiveMain() { _initialArchiveOne('hub-v8-'); }       // 本番だけ仕分け（DEV確認後）
+
+// 30分ごとトリガーの本体（本番・DEV両方）
+function intradaySnapshot() {
+  for (var i = 0; i < SNAP_ENV_PREFIXES.length; i++) {
+    try { snapCreate(SNAP_ENV_PREFIXES[i], 'auto', ''); }
+    catch (e) { Logger.log('intraday snap fail ' + SNAP_ENV_PREFIXES[i] + ': ' + e.message); }
+  }
+}
+
+// 毎朝2時トリガーの本体（大きい顧客ファイルも含めた完全スナップショット）
+function dailySnapshot() {
+  for (var i = 0; i < SNAP_ENV_PREFIXES.length; i++) {
+    try { snapCreate(SNAP_ENV_PREFIXES[i], 'daily', ''); }
+    catch (e) { Logger.log('daily snap fail ' + SNAP_ENV_PREFIXES[i] + ': ' + e.message); }
+  }
+}
+
+// 初回1回だけGASエディタから実行：スナップショット用トリガーを登録（既存の dailyBackup トリガーはそのまま）
+function setupSnapshotTriggers() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    var f = t.getHandlerFunction();
+    if (f === 'intradaySnapshot' || f === 'dailySnapshot' || f === 'archiveOldInspAll') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('intradaySnapshot').timeBased().everyMinutes(30).create();
+  ScriptApp.newTrigger('dailySnapshot').timeBased().everyDays(1).atHour(2).create();
+  ScriptApp.newTrigger('archiveOldInspAll').timeBased().everyDays(1).atHour(3).create(); // 日次スナップショット(2時)の後に仕分け
+  Logger.log('snapshot + archive triggers registered');
+}
+
+// 動作確認用：DEVプレフィックスで手動スナップショット→一覧を確認（GASエディタから実行）
+function testSnapshotDev() {
+  var f = snapCreate('hub-v8-dev-', 'manual', 'test');
+  Logger.log('created: ' + f);
+  var sheet = getSheet();
+  Logger.log('index: ' + readOneValue(sheet, CacheService.getScriptCache(), 'hub-v8-dev-snap-index', -2));
+}
+
+
+// ============================================================================
+//  Hub a Nice Day — 利用者認証（v14 / 2026-09-01 追加）
+// ----------------------------------------------------------------------------
+//  目的: URLとHTMLに書かれたAPIキーさえ知っていれば誰でも読み書きできる状態を塞ぐ。
+//        リポジトリが公開なのでAPIキーは秘密にできない。よって「APIキー＋利用証」の
+//        2つが揃った要求だけを通す。利用証はGASだけが持つ秘密鍵で署名するので偽造できない。
+//
+//  フロントとの取り決め:
+//    apiKey パラメータに "本来のキー|利用証" の形で同梱して送る（'|' で区切る）。
+//    こうすることで既存の通信コード（3ファイル22箇所）に一切手を入れずに済む。
+//    利用証が無い場合は従来どおり "本来のキー" だけが届く。
+//
+//  段階移行:
+//    スクリプトプロパティ HUB_AUTH_ENFORCE が '1' のときだけ利用証を必須にする。
+//    未設定のうちは利用証なしでも通る（＝全員の登録が済むまで誰も締め出されない）。
+//
+//  設置に必要なスクリプトプロパティ:
+//    HUB_AUTH_SECRET  … 署名鍵。未設定なら初回に自動生成する（手動設定不要）
+//    HUB_AUTH_ENFORCE … '1' で利用証必須。切替の最後に手で設定する
+// ============================================================================
+
+var AUTH_TTL_DAYS        = 90;    // 利用証の有効期間
+var AUTH_CODE_TTL_SEC    = 600;   // 6桁コードの有効時間（10分）
+var AUTH_MAX_SEND_PER_HR = 5;     // 同じアドレスへの送信上限（メール枠の保護）
+var AUTH_MAX_TRY         = 5;     // コード入力の試行上限
+
+// 認証そのものに使うアクションは、当然ながら利用証を要求しない
+var AUTH_OPEN_ACTIONS = ['authRequest', 'authVerify', 'caps'];
+
+// ── 署名鍵（GASの中だけに存在する。HTMLには決して出さない）──────────────
+function authSecret_() {
+  var props = PropertiesService.getScriptProperties();
+  var s = props.getProperty('HUB_AUTH_SECRET');
+  if (!s) {
+    s = Utilities.base64EncodeWebSafe(Utilities.getUuid() + Utilities.getUuid());
+    props.setProperty('HUB_AUTH_SECRET', s);
+  }
+  return s;
+}
+
+// 利用証を必須にするかどうか。★環境ごとに別のスイッチにしてある。
+//   DEVと本番は同じGASプロジェクトを共有しているため、スイッチが1つだと
+//   DEVで試した瞬間に本番も必須になってしまう。先にDEVだけで安全に試せるように分ける。
+//     HUB_AUTH_ENFORCE_DEV = '1' … DEV(hub-v8-dev-)だけ必須
+//     HUB_AUTH_ENFORCE     = '1' … 本番(hub-v8-)だけ必須
+// 全リクエストで通る処理なので、
+//   ①60秒キャッシュしてプロパティ読み取りの往復を減らす（切替の反映は最大60秒）
+//   ②何かの拍子に読めなくても例外で全滅しないよう try/catch で包む
+// 読めなかった場合は「必須にしない」＝サービスを止めない側に倒す
+// （プロパティが読めない状況は攻撃者が作れるものではないため、可用性を優先する）。
+function authEnforced_(prefix) {
+  var isDev = String(prefix || '').indexOf('dev') >= 0;
+  var prop = isDev ? 'HUB_AUTH_ENFORCE_DEV' : 'HUB_AUTH_ENFORCE';
+  try {
+    var cache = CacheService.getScriptCache();
+    var ck = 'authenforce:' + prop;
+    var c = cache.get(ck);
+    if (c !== null && c !== undefined) return c === '1';
+    var v = PropertiesService.getScriptProperties().getProperty(prop) === '1' ? '1' : '0';
+    cache.put(ck, v, 60);
+    return v === '1';
+  } catch (e) { return false; }
+}
+
+// ── 利用証の発行と検証 ──────────────────────────────────────────────
+//   形式: base64url(本文).base64url(HMAC-SHA256署名)
+//   本文: {n:氏名, m:ナンバー, s:店舗, j:端末ID, x:失効時刻}
+function authMakeToken_(name, myNumber, store, jti) {
+  var payload = JSON.stringify({
+    n: String(name || ''), m: (myNumber == null ? '' : myNumber),
+    s: String(store || ''), j: String(jti || ''),
+    x: Date.now() + AUTH_TTL_DAYS * 86400000
+  });
+  var p64 = Utilities.base64EncodeWebSafe(Utilities.newBlob(payload).getBytes());
+  var sig = Utilities.computeHmacSha256Signature(p64, authSecret_());
+  return p64 + '.' + Utilities.base64EncodeWebSafe(sig);
+}
+
+// 署名と期限だけを見る（端末の取り消し確認は authValid_ で行う）
+function authReadToken_(token) {
+  try {
+    if (!token) return null;
+    var parts = String(token).split('.');
+    if (parts.length !== 2) return null;
+    var expect = Utilities.base64EncodeWebSafe(
+      Utilities.computeHmacSha256Signature(parts[0], authSecret_()));
+    if (expect !== parts[1]) return null;   // 署名が違う＝偽造・改ざん
+    var payload = JSON.parse(
+      Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString());
+    if (!payload || !payload.x || Date.now() > payload.x) return null;  // 期限切れ
+    return payload;
+  } catch (e) { return null; }
+}
+
+// ── 登録済み端末の台帳（管理者が一覧・取り消しできるようにシートへ置く）────
+//   キー: <prefix>auth-devices   値: { 端末ID: {n,m,s,at,exp,ua} }
+function authDevicesKey_(prefix) { return String(prefix || '') + 'auth-devices'; }
+
+function authLoadDevices_(prefix) {
+  try {
+    var key = authDevicesKey_(prefix);
+    var cache = CacheService.getScriptCache();
+    var raw = readOneValue(getSheet(), cache, key, -2);
+    if (!raw || raw === 'null') return {};
+    var o = JSON.parse(raw);
+    return (o && typeof o === 'object' && !(o instanceof Array)) ? o : {};
+  } catch (e) { return {}; }
+}
+
+//   書き込みは既存の作法に合わせる（30,000字超はドライブへ逃がす・キャッシュを捨てる）。
+//   台帳は数十件程度なのでドライブ行きにはならないが、他のキーと同じ経路にしておく。
+function authSaveDevices_(prefix, map) {
+  var key = authDevicesKey_(prefix);
+  var str = JSON.stringify(map);
+  var now = new Date().toLocaleString('ja-JP');
+  var sheet = getSheet();
+  if (str.length <= BIG_THRESHOLD) { writeRow(sheet, key, str, now); }
+  else { driveWrite(key, str); writeRow(sheet, key, FILE_MARKER, now); }
+  invalidateCache(key);
+}
+
+// 端末が今も有効か（取り消されていないか）。台帳に無い端末IDは無効とする。
+function authValid_(payload, prefix) {
+  if (!payload || !payload.j) return false;
+  var devices = authLoadDevices_(prefix);
+  var d = devices[payload.j];
+  if (!d) return false;                       // 管理者が取り消した／存在しない
+  if (d.exp && Date.now() > d.exp) return false;
+  return true;
+}
+
+// ── 要求がどの環境（本番/DEV）のものかを判定する ─────────────────────────
+//   端末の台帳は環境ごとに分かれているので、どちらを見るかをここで決める。
+//   明示の prefix があればそれを使い、無ければ key / keys / items から推定する。
+//   'hub-v8-dev-' は 'hub-v8-' でも前方一致するので、必ず長いほうを先に判定すること。
+function authPrefixOf_(o) {
+  if (!o) return 'hub-v8-';
+  var p = String(o.prefix || '');
+  if (SNAP_ENV_PREFIXES.indexOf(p) >= 0) return p;
+  var k = String(o.key || o.keys || o.emailsKey || '');
+  if (!k && o.items && o.items.length && o.items[0]) k = String(o.items[0].key || '');
+  if (k.indexOf('hub-v8-dev-') === 0) return 'hub-v8-dev-';
+  return 'hub-v8-';
+}
+
+// ── 入口の門番。doGet / doPost の apiKey 検査の直後に呼ぶ ─────────────────
+//   戻り値: null なら通過。文字列の応答が返ったらそれをそのまま return する。
+function authGate_(rawApiKey, action, prefix) {
+  var token = '';
+  var i = String(rawApiKey || '').indexOf('|');
+  if (i >= 0) token = String(rawApiKey).slice(i + 1);
+
+  if (AUTH_OPEN_ACTIONS.indexOf(String(action || '')) >= 0) return null;  // 認証系は素通り
+  if (!authEnforced_(prefix)) return null;                                // 移行期間は素通り
+
+  var payload = authReadToken_(token);
+  if (!payload) return makeResponse('unauthorized: token');
+  if (!authValid_(payload, prefix)) return makeResponse('unauthorized: revoked');
+  return null;
+}
+
+// apiKey から本来のキー部分だけを取り出す（既存の照合を壊さないため）
+function authBaseKey_(rawApiKey) {
+  var s = String(rawApiKey || '');
+  var i = s.indexOf('|');
+  return i >= 0 ? s.slice(0, i) : s;
+}
+
+// ── ① コードの送信要求 ───────────────────────────────────────────────
+//   GET ?action=authRequest&email=...&prefix=hub-v8-dev-&apiKey=...
+//   登録済みのアドレスにだけ6桁を送る。誰の名前かはここでは返さない。
+function authRequest_(email, prefix) {
+  try {
+    email = String(email || '').trim().toLowerCase();
+    if (email.indexOf('@') <= 0) return makeResponse(JSON.stringify({ ok: false, err: 'bad_email' }));
+    if (SNAP_ENV_PREFIXES.indexOf(String(prefix || '')) < 0) {
+      return makeResponse(JSON.stringify({ ok: false, err: 'bad_prefix' }));
+    }
+
+    var staff = authFindStaffByEmail_(prefix, email);
+    if (!staff) return makeResponse(JSON.stringify({ ok: false, err: 'not_registered' }));
+
+    var cache = CacheService.getScriptCache();
+    // 送りすぎ防止（メール枠は1日100通）
+    var cntKey = 'authcnt:' + email;
+    var cnt = Number(cache.get(cntKey) || 0);
+    if (cnt >= AUTH_MAX_SEND_PER_HR) {
+      return makeResponse(JSON.stringify({ ok: false, err: 'too_many' }));
+    }
+    cache.put(cntKey, String(cnt + 1), 3600);
+
+    var code = String(Math.floor(100000 + Math.random() * 900000));
+    cache.put('authcode:' + email, code + '|0', AUTH_CODE_TTL_SEC);
+
+    var env = (String(prefix).indexOf('dev') >= 0) ? '【DEV】' : '';
+    MailApp.sendEmail(
+      email,
+      env + '【Hub a Nice Day】ログイン確認コード',
+      staff.name + ' さん\n\n' +
+      'ログイン画面に次の6桁を入力してください。\n\n' +
+      '    ' + code + '\n\n' +
+      '有効時間は10分です。\n' +
+      'この操作に心当たりが無い場合は、このメールを無視してください（何も起きません）。\n\n' +
+      '--\nHub a Nice Day 自動送信（返信不要）'
+    );
+    return makeResponse(JSON.stringify({ ok: true }));
+  } catch (err) {
+    return makeResponse(JSON.stringify({ ok: false, err: 'send_failed' }));
+  }
+}
+
+// ── ② コードの照合と利用証の発行 ─────────────────────────────────────
+//   GET ?action=authVerify&email=...&code=123456&prefix=...&ua=...&apiKey=...
+function authVerify_(email, code, prefix, ua) {
+  try {
+    email = String(email || '').trim().toLowerCase();
+    code = String(code || '').trim();
+    if (SNAP_ENV_PREFIXES.indexOf(String(prefix || '')) < 0) {
+      return makeResponse(JSON.stringify({ ok: false, err: 'bad_prefix' }));
+    }
+    var cache = CacheService.getScriptCache();
+    var rec = cache.get('authcode:' + email);
+    if (!rec) return makeResponse(JSON.stringify({ ok: false, err: 'expired' }));
+
+    var sp = rec.split('|');
+    var want = sp[0], tries = Number(sp[1] || 0);
+    if (tries >= AUTH_MAX_TRY) {
+      cache.remove('authcode:' + email);
+      return makeResponse(JSON.stringify({ ok: false, err: 'too_many_tries' }));
+    }
+    if (code !== want) {
+      cache.put('authcode:' + email, want + '|' + (tries + 1), AUTH_CODE_TTL_SEC);
+      return makeResponse(JSON.stringify({ ok: false, err: 'bad_code' }));
+    }
+    cache.remove('authcode:' + email);
+
+    var staff = authFindStaffByEmail_(prefix, email);
+    if (!staff) return makeResponse(JSON.stringify({ ok: false, err: 'not_registered' }));
+
+    // 端末を台帳に登録して利用証を発行。
+    // 台帳はシートへの書き込みなので、他の保存と同じく25秒ロックで直列化する
+    // （同時に複数人が認証しても台帳が壊れないようにする）。
+    var jti = Utilities.getUuid();
+    var exp = Date.now() + AUTH_TTL_DAYS * 86400000;
+    var lock = LockService.getScriptLock();
+    var locked = false;
+    try { lock.waitLock(25000); locked = true; }
+    catch (le) { return makeResponse(JSON.stringify({ ok: false, err: 'busy' })); }
+    try {
+      var devices = authLoadDevices_(prefix);
+      devices[jti] = {
+        n: staff.name, m: staff.myNumber, s: staff.store,
+        at: Date.now(), exp: exp, ua: String(ua || '').slice(0, 120)
+      };
+      authSaveDevices_(prefix, devices);
+    } finally { if (locked) lock.releaseLock(); }
+
+    return makeResponse(JSON.stringify({
+      ok: true,
+      token: authMakeToken_(staff.name, staff.myNumber, staff.store, jti),
+      name: staff.name, myNumber: staff.myNumber, store: staff.store,
+      uid: staff.uid || '', exp: exp
+    }));
+  } catch (err) {
+    return makeResponse(JSON.stringify({ ok: false, err: 'verify_failed' }));
+  }
+}
+
+// ── スタッフ表からメールアドレスで本人を探す ────────────────────────────
+//   氏名・ナンバーは本人に入力させない（自己申告だと他人を名乗れるため）。
+//   管理者が登録した <prefix>{store}-staff-v2 の loginEmail と突き合わせて確定する。
+function authFindStaffByEmail_(prefix, email) {
+  var stores = ['honten', 'sanda'];
+  for (var i = 0; i < stores.length; i++) {
+    var key = String(prefix) + stores[i] + '-staff-v2';
+    var raw;
+    try { raw = readOneValue(getSheet(), CacheService.getScriptCache(), key, -2); } catch (e) { continue; }
+    if (!raw || raw === 'null') continue;
+    var list;
+    try { list = JSON.parse(raw); } catch (e) { continue; }
+    if (!(list instanceof Array)) continue;
+    for (var j = 0; j < list.length; j++) {
+      var s = list[j];
+      if (!s || !s.loginEmail) continue;
+      if (String(s.loginEmail).trim().toLowerCase() === email) {
+        return { name: s.name, myNumber: s.myNumber, store: s.store || stores[i], uid: s.uid || '' };
+      }
+    }
+  }
+  return null;
+}

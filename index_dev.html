@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1788166228107';
+    window.__APP_BUILD='build-1788434887609';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.13';
+const APP_VERSION = '2.14';
 
 
 
@@ -1476,6 +1476,16 @@ const CustomerListView = memo(({custFiles, setCustFiles, currentUser}) => {
 
 
 const blankInsp  = () => ({name:'',staff:'',carType:'',course:0,loaner:'',loanerId:null,rentalLabel:'',rentalCarId:null,tokuten:'-',time:'',note:'',bookingStatus:'provisional',entryDate:'',deliveryDate:'',deliveryTime:''});
+
+// ── 「この保存で日付が変わったか」の判定（必ずこれを使う）──────────────
+//   モーダルは日付を触らないと _targetDk を【空文字】で返す。生の値のまま
+//   `origDk !== formData._targetDk` と比べると、日付を変えていない編集でも
+//   '2026-8-29' !== '' が成立して【日付変更】と誤判定する。
+//   予約本体の保存はフォールバック付きの値で比べていたので正しく、
+//   代車の削除だけが生の値で比べていたため、編集して保存するたびに
+//   代車予約が消えていた（2026-09-03 ユーザー報告：8/29 車検 No.②③で再現）。
+//   判定を1か所に集約し、二度と食い違わせない。targetDk が空なら「変更なし」。
+const isDateChanged = (origDk, targetDk) => !!(origDk && targetDk && String(origDk) !== String(targetDk));
 
 // ── 予約順(seq)ベースの承認状態 再計算（純粋関数）─────────────────────────
 // 各insp行の seq（予約順。新規予約時に Date.now() で付与）で昇順に並べ、
@@ -8639,7 +8649,7 @@ function AppInner() {
         const _saveParams={
           targetDk:_targetDk,
           origDk:_origDkP,
-          isDateChange:!!(_origDkP&&_origDkP!==_targetDk),
+          isDateChange:isDateChanged(_origDkP,_targetDk),
           dcPlaceIdx:_dcPlaceIdx,
           modalIdx,
           row:{...cleanWithStore},
@@ -8764,7 +8774,9 @@ function AppInner() {
         }
         // 日付変更時：古い代車予約を削除（pendingLoanerDeleteBk または _originalDkから計算）
         const _origDkForDel=originalModalDkRef.current||formData._originalDk;
-        const _isDcForDel=!!(_origDkForDel&&_origDkForDel!==formData._targetDk);
+        // ★実際の保存先(_targetDk＝フォールバック込み)と比べる。生の formData._targetDk は
+        //   日付を触っていないと空文字なので、比べると必ず「変更あり」になってしまう。
+        const _isDcForDel=isDateChanged(_origDkForDel,_targetDk);
         const _delBk=pendingLoanerDeleteBk||(_isDcForDel?`insp-${_origDkForDel}-${modalIdx}`:'');
         // ★bookingKeyの完全一致だけだと、代車を付けた後に行がズレていた場合に空振りし、
         //   旧代車が残ったまま付け直しで2件にダブる。同じ旧日付・同じ客での照合を併用する。
