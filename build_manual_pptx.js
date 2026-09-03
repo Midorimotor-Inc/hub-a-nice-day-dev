@@ -76,7 +76,7 @@ function slideTitle() {
   s.addText('車検予約管理システム　／　はじめて使う方へ', { x: 0.9, y: 4.15, w: 11.5, h: 0.4, fontFace: F, fontSize: 15, color: 'C6D4E8', isTextBox: true, margin: 0 });
   s.addShape(pres.ShapeType.roundRect, { x: 0.9, y: 5.05, w: 3.05, h: 0.46, rectRadius: 0.2, fill: { color: '1E3A66' }, line: { color: '2F5590', width: 1 } });
   s.addText('本店・三田店 共通', { x: 0.9, y: 5.05, w: 3.05, h: 0.46, fontFace: F, fontSize: 12, color: 'C6D4E8', align: 'center', valign: 'middle', isTextBox: true, margin: 0 });
-  s.addText('緑モータース　2026年9月版（v2.13）', { x: 0.9, y: 6.5, w: 11.5, h: 0.35, fontFace: F, fontSize: 11, color: '7E92AE', isTextBox: true, margin: 0 });
+  s.addText('緑モータース　2026年9月版（v2.18）', { x: 0.9, y: 6.5, w: 11.5, h: 0.35, fontFace: F, fontSize: 11, color: '7E92AE', isTextBox: true, margin: 0 });
   s.addNotes('この説明書は実際の画面を撮影して作っています。お客様のお名前は架空のものに置き換えてあります。');
   return s;
 }
@@ -379,7 +379,7 @@ async function buildStaff() {
     { t: '「顧客リスト」をクリック', d: '画面いちばん上の緑のボタンです。' },
     { t: 'お客様を検索して選ぶ', d: '名前・車種・ナンバーなどで探せます。' },
     { t: '予約カードに入力', d: 'お名前や車種は引き継がれます。コースと入庫時間を入れます。' },
-    { t: '代車を付ける', d: '必要なら「選択」から空いている代車を選びます。' },
+    { t: '代車を付ける', d: '必要なら「選択」から空いている代車を選びます。ここで「🔒 限定」も付けられます。' },
     { t: '保存する', d: '保存すると、そのお客様には予約済みの印が付きます。二重に案内せずに済みます。' },
   ], { textW: 4.3 });
 
@@ -392,10 +392,17 @@ async function buildStaff() {
 
   slideCards('代車の「限定」（🔒）', 'その車でないと困る予約に印を付けます。あとで説明する「最適化」で入れ替えられなくなります。', [
     { t: 'どんなときに使うか', d: 'お客様の駐車場に高さ制限があってアルトしか停められない、など\n「この車でないとダメ」という事情があるとき。', tone: 'hi' },
-    { t: '付け方', d: '予約カードの代車欄の横にある「🔓 限定」を押します。\n「🔒 限定中」に変わればOK。もう一度押すと解除されます。', tone: 'plain' },
-    { t: '見え方', d: 'スケジュールの代車欄に 🔒 が付きます。\n代車管理の帯にも同じ印が出ます。', tone: 'plain' },
+    { t: '付け方（2か所どちらでも）', d: '① スケジュールの予約カード … 代車欄の横の「🔓 限定」\n② 顧客リストの予約画面 … 代車を選ぶと同じボタンが出ます\n「🔒 限定中」に変わればOK。もう一度押すと解除されます。', tone: 'plain' },
+    { t: '見え方', d: 'スケジュールの代車欄に 🔒 が付きます。代車管理の帯、スマホの画面にも同じ印が出ます。\n限定していない代車には、何も付きません。', tone: 'plain' },
     { t: '何が変わるか', d: '代車の「最適化」を実行しても、この予約の車は動きません。\n限定を付けていない予約だけが並べ替えの対象になります。', tone: 'ok' },
   ], { cols: 2, foot: '限定は「動かさない」だけの印です。予約そのものは、いつもどおり変更・削除できます。' });
+
+  slideCards('代車の印の見分け方', '2つの記号が出てきます。意味が違うので、ここで覚えてください。', [
+    { t: '🔒 が付いている', d: '限定した代車です。「この車でないとダメ」という印で、最適化しても入れ替わりません。', tone: 'hi' },
+    { t: '何も付いていない', d: 'ふつうの代車です。最適化を実行すると、空き具合に応じて別の車に入れ替わることがあります。', tone: 'plain' },
+    { t: '🔑 が付いている', d: '代車ではなく「レンタカー」です。別の管理表になります。', tone: 'plain' },
+    { t: '迷ったら', d: '鍵マーク（🔑）はレンタカー、南京錠マーク（🔒）は限定。形で見分けてください。', tone: 'ok' },
+  ], { cols: 2, foot: 'スケジュール・代車管理・スマホのどの画面でも、この規則は同じです。' });
 
   slideCards('予約を直す・日付を変える・消す', '入れたあとの操作です。慌てず、この3つを覚えてください。', [
     { t: '内容を直す', d: '予約の行をクリックすると、同じカードが開きます。直して保存し直すだけです。', tone: 'plain' },
@@ -513,7 +520,7 @@ async function buildAdmin() {
     s.addText('管理者に設定された方だけが使える操作をまとめています。', { x: 0.9, y: 4.0, w: 11.5, h: 0.4, fontFace: F, fontSize: 15, color: 'C6D4E8', isTextBox: true, margin: 0 });
     card(s, 0.9, 4.7, 8.4, 0.85, { bg: '2A1A12', line: 'C4703A' });
     s.addText('取り扱い注意：この資料は管理者以外に配らないでください。', { x: 1.2, y: 4.7, w: 7.9, h: 0.85, fontFace: F, fontSize: 13, bold: true, color: 'F2A97C', valign: 'middle', isTextBox: true, margin: 0 });
-    s.addText('緑モータース　2026年9月版（v2.13）　／　一般の操作は「取扱説明書」をご覧ください', { x: 0.9, y: 6.5, w: 11.5, h: 0.35, fontFace: F, fontSize: 11, color: '7E92AE', isTextBox: true, margin: 0 });
+    s.addText('緑モータース　2026年9月版（v2.18）　／　一般の操作は「取扱説明書」をご覧ください', { x: 0.9, y: 6.5, w: 11.5, h: 0.35, fontFace: F, fontSize: 11, color: '7E92AE', isTextBox: true, margin: 0 });
   })();
 
   slideCards('管理者だけができること', '一般のスタッフの画面には出てこない機能です。', [
@@ -567,7 +574,7 @@ async function buildAdmin() {
     s.addText('判断に迷ったら、実行前に相談を', { x: 0.9, y: 2.6, w: 11.5, h: 0.8, fontFace: F, fontSize: 32, bold: true, color: WHITE, isTextBox: true, margin: 0 });
     s.addText('復旧や端末の取り消しは、他のスタッフの作業に影響します。\n急いで実行するより、状況を確認してからのほうが安全です。',
       { x: 0.9, y: 3.5, w: 11.0, h: 1.0, fontFace: F, fontSize: 15, color: 'C6D4E8', isTextBox: true, margin: 0, lineSpacingMultiple: 1.4 });
-    s.addText('Hub a Nice Day　管理者マニュアル　2026年9月版（v2.13）', { x: 0.9, y: 6.5, w: 11.5, h: 0.35, fontFace: F, fontSize: 11, color: '7E92AE', isTextBox: true, margin: 0 });
+    s.addText('Hub a Nice Day　管理者マニュアル　2026年9月版（v2.18）', { x: 0.9, y: 6.5, w: 11.5, h: 0.35, fontFace: F, fontSize: 11, color: '7E92AE', isTextBox: true, margin: 0 });
   })();
 
   await pres.writeFile({ fileName: OUT_ADMIN });
@@ -587,7 +594,7 @@ function addTrouble() {
   ], { cols: 2 });
 
   slideCards('表示がおかしいと感じたら', '「直したはずなのに直っていない」の多くは、古い画面のままです。', [
-    { t: '① バージョンを見る', d: '画面左上、ロゴの右の「v2.13」。ここが最新かどうかが最初の手掛かりです。', tone: 'hi' },
+    { t: '① バージョンを見る', d: '画面左上、ロゴの右の「v2.18」。ここが最新かどうかが最初の手掛かりです。', tone: 'hi' },
     { t: '② 強制リロード', d: 'Ctrl + Shift + R。古い画面が残っていると、直したはずの不具合がそのまま出ます。', tone: 'hi' },
     { t: '③ URLを確かめる', d: 'ブックマークが古いURLを指していないか。正しくは midorimotor-inc.github.io です。', tone: 'plain' },
     { t: '④ それでも変なら報告', d: '次のページの書き方で伝えてください。原因を早く特定できます。', tone: 'plain' },
@@ -598,7 +605,7 @@ function addTrouble() {
     { t: '2　どの画面で', d: '「スケジュール画面」「顧客リスト」「スマホの代車」など。PCかスマホかも。', tone: 'plain' },
     { t: '3　何をしたら', d: '「3行目に沖田さんを保存したら」。押した順番が分かるのが理想です。', tone: 'hi' },
     { t: '4　どうなった', d: '「4行目にも同じ名前が出た」。期待と違った点を、見たままに。', tone: 'hi' },
-    { t: '5　バージョン', d: '画面左上の「v2.13」。古い画面が原因のことが本当に多いので、必ず。', tone: 'ok' },
+    { t: '5　バージョン', d: '画面左上の「v2.18」。古い画面が原因のことが本当に多いので、必ず。', tone: 'ok' },
     { t: '＋　写真かスクリーンショット', d: 'できれば添えてください。その画面をスマホで撮る、またはスクリーンショットを送るのが、いちばん確実です。文章より早いこともあります。', tone: 'ok' },
   ], { cols: 3, foot: '「動かない」「おかしい」だけだと、どこを調べればよいか分からず、確認のやり取りが増えてしまいます。' });
 
@@ -608,7 +615,7 @@ function addTrouble() {
     card(s, 0.55, 1.55, 6.05, 4.6, { bg: SOFT, line: LINE });
     s.addText('■ 良い例', { x: 0.85, y: 1.75, w: 5.4, h: 0.35, fontFace: F, fontSize: 15, bold: true, color: GREEN, isTextBox: true, margin: 0 });
     s.addText(
-      '9月1日 10時ごろ\nPCのスケジュール画面（本店・v2.13）\n\n9/1の車検3行目に「沖田」を保存したら、\n4行目にも同じ「沖田」が出ました。\n数秒で消えましたが、毎回起きます。\n\n2台目の「西田」でも同じでした。',
+      '9月1日 10時ごろ\nPCのスケジュール画面（本店・v2.18）\n\n9/1の車検3行目に「沖田」を保存したら、\n4行目にも同じ「沖田」が出ました。\n数秒で消えましたが、毎回起きます。\n\n2台目の「西田」でも同じでした。',
       { x: 0.85, y: 2.2, w: 5.45, h: 3.7, fontFace: F, fontSize: 12.5, color: INK, isTextBox: true, margin: 0, lineSpacingMultiple: 1.3 });
 
     card(s, 6.9, 1.55, 5.85, 4.6, { bg: RED_L, line: RED });
@@ -626,7 +633,7 @@ function addTrouble() {
     s.addText('困ったら、遠慮なく', { x: 0.9, y: 2.6, w: 11.5, h: 0.8, fontFace: F, fontSize: 34, bold: true, color: WHITE, isTextBox: true, margin: 0 });
     s.addText('操作を間違えても、データはほとんどの場合すぐ元に戻せます。\n分からないまま進めるより、聞いてください。',
       { x: 0.9, y: 3.5, w: 11.0, h: 1.0, fontFace: F, fontSize: 15, color: 'C6D4E8', isTextBox: true, margin: 0, lineSpacingMultiple: 1.4 });
-    s.addText('Hub a Nice Day　取扱説明書　2026年9月版（v2.13）', { x: 0.9, y: 6.5, w: 11.5, h: 0.35, fontFace: F, fontSize: 11, color: '7E92AE', isTextBox: true, margin: 0 });
+    s.addText('Hub a Nice Day　取扱説明書　2026年9月版（v2.18）', { x: 0.9, y: 6.5, w: 11.5, h: 0.35, fontFace: F, fontSize: 11, color: '7E92AE', isTextBox: true, margin: 0 });
   })();
 }
 
