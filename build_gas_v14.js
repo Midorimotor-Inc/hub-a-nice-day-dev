@@ -38,6 +38,14 @@ sub('doGet の入口',
   if (e.parameter.action === 'authVerify') {
     return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua);
   }
+  // v14: 管理者名簿の閲覧と変更。管理者として発行された利用証が無いと通らない。
+  if (e.parameter.action === 'authAdminList') {
+    return authAdminList_(e.parameter.apiKey, authPrefixOf_(e.parameter));
+  }
+  if (e.parameter.action === 'authAdminSet') {
+    return authAdminSet_(e.parameter.apiKey, authPrefixOf_(e.parameter),
+                         e.parameter.op, e.parameter.email, e.parameter.uid);
+  }
   // v14: 招待メール（管理者が押す）。登録済みアドレスにだけ手順を送る。
   if (e.parameter.action === 'authInvite') {
     return authInvite_(e.parameter.email, authPrefixOf_(e.parameter));

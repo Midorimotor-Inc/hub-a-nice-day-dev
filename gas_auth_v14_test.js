@@ -40,7 +40,9 @@ const ctx={Utilities,PropertiesService,CacheService,MailApp,LockService,Logger,c
 vm.createContext(ctx);
 vm.runInContext(src+`
 this.T={authMakeToken_,authReadToken_,authValid_,authGate_,authBaseKey_,authPrefixOf_,
-        authRequest_,authInvite_,authVerify_,authRenew_,authLoadDevices_,authSaveDevices_,authFindStaffByEmail_};`,ctx);
+        authRequest_,authInvite_,authVerify_,authRenew_,authLoadDevices_,authSaveDevices_,authFindStaffByEmail_,
+        authAdmins_,authAdminSave_,authAdminOf_,authAdminGate_,authResolve_,authFindStaffByUid_,
+        authAdminList_,authAdminSet_};`,ctx);
 const T=ctx.T;
 
 const ok=[],ng=[];
@@ -215,6 +217,71 @@ t('別環境の台帳を見ると未登録扱いになる',
   t('取り消された端末は延長できない', body(T.authRenew_(KEY+renewed,PFX)).err==='revoked');
   t('利用証なしでは延長できない', body(T.authRenew_('hub2026co-key',PFX)).err==='expired');
   t('偽造した利用証では延長できない', body(T.authRenew_(KEY+'aaa.bbb',PFX)).err==='expired');
+}
+
+// 15) 管理者の名簿（スクリプトプロパティにだけ置く）
+{
+  const KEY='hub2026co-key|';
+  // 種火：最初の1人だけ手で設定する想定
+  props['HUB_ADMIN_EMAILS']='egawa@midori-m.com=h7';
+  t('名簿を読める', T.authAdmins_().length===1 && T.authAdmins_()[0].uid==='h7', T.authAdmins_());
+  t('管理者かどうか判定できる', !!T.authAdminOf_('EGAWA@Midori-M.com') && !T.authAdminOf_('x@example.com'));
+
+  // スタッフ表に loginEmail が無くても、管理者は本人を確定できる（最初の1人の堂々巡りを断つ）
+  sheetStore[PFX+'honten-staff-v2']=JSON.stringify([
+    {uid:'h1',name:'見取大介',myNumber:1,store:'honten',loginEmail:'daisuke@example.com'},
+    {uid:'h7',name:'江川京志',myNumber:7,store:'honten'},          // loginEmail なし
+  ]);
+  const r0=T.authResolve_(PFX,'egawa@midori-m.com');
+  t('管理者はスタッフ表に未登録でも本人が分かる', r0 && r0.name==='江川京志' && r0.admin===true, r0);
+  t('一般スタッフは管理者ではない', (T.authResolve_(PFX,'daisuke@example.com')||{}).admin===false);
+
+  // 管理者としてコードを受け取り、利用証を得る
+  sentMail=[];
+  let r=body(T.authRequest_('egawa@midori-m.com',PFX));
+  t('管理者にはコードを送る', r.ok===true && sentMail.length===1, r);
+  t('管理者向けの件名になる', /管理者ログインの確認コード/.test(sentMail[0].sub), sentMail[0].sub);
+  const code=(cacheStore['authcode:egawa@midori-m.com']||'').split('|')[0];
+  const v=body(T.authVerify_('egawa@midori-m.com',code,PFX,'test'));
+  t('管理者の利用証が出る', v.ok===true && v.admin===true, v);
+  t('利用証に管理者の印が入る', T.authReadToken_(v.token).a===1, T.authReadToken_(v.token));
+  const admTok=KEY+v.token;
+
+  // 一般スタッフの利用証では管理者の画面を開けない
+  sentMail=[];
+  T.authRequest_('daisuke@example.com',PFX);
+  const c2=(cacheStore['authcode:daisuke@example.com']||'').split('|')[0];
+  const v2=body(T.authVerify_('daisuke@example.com',c2,PFX,'test'));
+  t('一般スタッフの利用証には印が付かない', T.authReadToken_(v2.token).a===0, T.authReadToken_(v2.token));
+  t('一般スタッフは名簿を見られない',
+    body(T.authAdminList_(KEY+v2.token,PFX)).err==='not_admin');
+  t('一般スタッフは名簿を変えられない',
+    body(T.authAdminSet_(KEY+v2.token,PFX,'add','x@midori-m.com','h1')).err==='not_admin');
+  t('利用証なしでは名簿を見られない', body(T.authAdminList_('hub2026co-key',PFX)).err==='not_admin');
+
+  // 管理者は名簿を見られる・増やせる
+  const li=body(T.authAdminList_(admTok,PFX));
+  t('管理者は名簿を見られる', li.ok===true && li.admins.length===1 && li.admins[0].name==='江川京志', li);
+  t('管理者を追加できる', body(T.authAdminSet_(admTok,PFX,'add','daisuke@example.com','h1')).count===2);
+  t('追加が名簿に載る', T.authAdmins_().length===2, T.authAdmins_());
+  t('同じ人を二重に足さない', body(T.authAdminSet_(admTok,PFX,'add','daisuke@example.com','h1')).count===2);
+  t('形式が不正なら足さない', body(T.authAdminSet_(admTok,PFX,'add','daisuke','h1')).err==='bad_email');
+  t('知らない操作は断る', body(T.authAdminSet_(admTok,PFX,'grant','x@midori-m.com','h1')).err==='bad_op');
+
+  // 外せる。ただし最後の1人は外せない（誰も管理者画面を開けなくなるため）
+  t('管理者を外せる', body(T.authAdminSet_(admTok,PFX,'remove','daisuke@example.com')).count===1);
+  t('最後の1人は外せない', body(T.authAdminSet_(admTok,PFX,'remove','egawa@midori-m.com')).err==='last_admin');
+  t('外せなかったので名簿は1人のまま', T.authAdmins_().length===1, T.authAdmins_());
+
+  // 名簿から外れた人は、次の延長で管理者でなくなる
+  props['HUB_ADMIN_EMAILS']='daisuke@example.com=h1';   // 江川さんを名簿から外す
+  const realNow2=Date.now;
+  Date.now=()=>realNow2()+16*86400000;
+  const rr=body(T.authRenew_(admTok,PFX));
+  t('名簿から外れると延長で管理者でなくなる', rr.ok===true && rr.admin===false, rr);
+  t('新しい利用証にも印が付かない', T.authReadToken_(rr.token).a===0, T.authReadToken_(rr.token));
+  Date.now=realNow2;
+  props['HUB_ADMIN_EMAILS']='egawa@midori-m.com=h7';
 }
 
 console.log('\n=== 合格 ('+ok.length+') ===');ok.forEach(s=>console.log('  ✓ '+s));

@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hub 管理者コンソール [DEV]</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@400;500;700&display=swap">
+<style>
+/* 明るい配色に固定（ユーザー指定：ダーク色は使わない）。
+   どの環境で開いても同じ見え方になるよう、色はすべて明示する。 */
+:root{
+  color-scheme: light;
+  --ground:#f6f5f1;          /* 温かみのある紙色。事務所の書類の地 */
+  --panel:#ffffff;
+  --panel-2:#faf9f6;
+  --rule:#e4e2da;
+  --rule-2:#cfccc2;
+  --ink:#1b2129;
+  --ink-2:#586170;
+  --ink-3:#8a9099;
+  --pine:#1d3d38;            /* 緑モータースの「緑」。管理者側の地色 */
+  --pine-2:#2c5850;
+  --pine-soft:#e8efec;
+  --ok:#15803d;   --ok-bg:#e7f4ea;   --ok-line:#a7d5b5;
+  --wait:#b45309; --wait-bg:#fdf2e3; --wait-line:#e9c98f;
+  --idle:#767c86; --idle-bg:#f0efec; --idle-line:#d8d6ce;
+  --stop:#b02020; --stop-bg:#fbeaea; --stop-line:#e6b0b0;
+  --focus:#2c5850;
+  --shadow:0 1px 2px rgba(27,33,41,.05), 0 10px 28px rgba(27,33,41,.07);
+}
+*{box-sizing:border-box}
+html,body{background:var(--ground)}
+body{margin:0;color:var(--ink);
+  font-family:"Noto Sans JP",-apple-system,"Yu Gothic UI","Hiragino Sans",sans-serif;
+  font-size:15px;line-height:1.75;-webkit-font-smoothing:antialiased}
+h1,h2,h3,.zen{font-family:"Zen Kaku Gothic New","Noto Sans JP",sans-serif}
+.mono{font-family:"Roboto Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
+
+/* ── モックの説明帯 ───────────────────────────── */
+.note-bar{background:var(--pine);color:#e9f0ed;padding:9px 20px;font-size:12.5px;
+  display:flex;gap:14px;align-items:center;flex-wrap:wrap;justify-content:center;text-align:center}
+.note-bar b{color:#fff}
+.note-bar .tag{background:rgba(255,255,255,.16);border-radius:20px;padding:1px 10px;font-size:11px;font-weight:700;letter-spacing:.04em}
+
+/* ── ログイン ─────────────────────────────── */
+.gate{min-height:calc(100vh - 42px);display:flex;align-items:flex-start;justify-content:center;padding:56px 20px 80px}
+.gate-card{background:var(--panel);border:1px solid var(--rule);border-radius:14px;box-shadow:var(--shadow);
+  width:min(430px,100%);padding:34px 32px}
+.crest{display:flex;flex-direction:column;align-items:center;gap:5px;margin-bottom:24px}
+.crest .mark{width:46px;height:46px;border-radius:12px;background:var(--pine);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:21px}
+.crest h1{margin:6px 0 0;font-size:19px;font-weight:900;letter-spacing:.01em;text-wrap:balance}
+.crest p{margin:0;font-size:12px;color:var(--ink-3);letter-spacing:.06em}
+label.f{display:block;font-size:11.5px;font-weight:700;color:var(--ink-2);letter-spacing:.05em;margin:0 0 6px}
+input[type=email],input[type=text]{width:100%;padding:11px 13px;border:1.5px solid var(--rule-2);border-radius:9px;
+  font:inherit;font-size:15px;background:#fff;color:var(--ink)}
+input.code{font-family:"Roboto Mono",monospace;font-size:27px;font-weight:700;letter-spacing:.36em;text-align:center;padding:12px 0 12px 12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:11px 18px;border-radius:9px;
+  border:1.5px solid var(--pine);background:var(--pine);color:#fff;font:inherit;font-weight:700;font-size:14px;cursor:pointer;
+  font-family:"Zen Kaku Gothic New",sans-serif}
+.btn:hover{background:var(--pine-2);border-color:var(--pine-2)}
+.btn[disabled]{opacity:.4;cursor:not-allowed}
+.btn.w{width:100%;margin-top:16px}
+.btn.ghost{background:transparent;color:var(--pine);border-color:var(--rule-2)}
+.btn.ghost:hover{background:var(--pine-soft)}
+.btn.sm{padding:6px 12px;font-size:12.5px;border-radius:7px}
+.btn.stop{background:transparent;color:var(--stop);border-color:var(--stop-line)}
+.btn.stop:hover{background:var(--stop-bg)}
+.hint{font-size:12.5px;color:var(--ink-2);line-height:1.8;margin:0 0 16px}
+.err{color:var(--stop);font-weight:700;font-size:12.5px;margin-top:9px}
+.mailcard{margin-top:20px;border:1px dashed var(--wait-line);background:var(--wait-bg);border-radius:11px;padding:13px 15px}
+.mailcard .k{font-size:10.5px;font-weight:700;letter-spacing:.1em;color:var(--wait);margin-bottom:5px}
+.mailcard .subject{font-weight:700;font-size:13px;font-family:"Zen Kaku Gothic New",sans-serif}
+.mailcard .big{font-family:"Roboto Mono",monospace;font-size:28px;font-weight:700;letter-spacing:.2em;margin-top:6px}
+
+/* ── コンソール ───────────────────────────── */
+.top{background:var(--pine);color:#fff;padding:13px 22px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.top .brand{font-family:"Zen Kaku Gothic New",sans-serif;font-weight:900;font-size:16px;letter-spacing:.01em}
+.top .env{font-size:10.5px;font-weight:700;letter-spacing:.1em;background:rgba(255,255,255,.18);padding:2px 9px;border-radius:20px}
+.top .me{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:12.5px;color:#cfdcd8}
+.top .me b{color:#fff}
+.avatar{width:28px;height:28px;border-radius:50%;background:#fff;color:var(--pine);display:flex;align-items:center;
+  justify-content:center;font-weight:800;font-size:12px;font-family:"Roboto Mono",monospace}
+.wrap{max-width:1080px;margin:0 auto;padding:26px 20px 90px}
+
+/* 進み具合 */
+.progress{background:var(--panel);border:1px solid var(--rule);border-radius:13px;box-shadow:var(--shadow);
+  padding:20px 22px;margin-bottom:22px}
+.progress h2{margin:0 0 3px;font-size:15px;font-weight:700}
+.progress .sub{margin:0 0 15px;font-size:12.5px;color:var(--ink-2)}
+.bar{display:flex;height:11px;border-radius:20px;overflow:hidden;background:var(--idle-bg);margin-bottom:13px}
+.bar span{display:block;height:100%}
+.bar .s-ok{background:var(--ok)} .bar .s-wait{background:var(--wait)} .bar .s-idle{background:var(--idle-line)}
+.legend{display:flex;gap:22px;flex-wrap:wrap}
+.legend div{display:flex;align-items:baseline;gap:7px;font-size:12.5px;color:var(--ink-2)}
+.legend .n{font-family:"Roboto Mono",monospace;font-size:21px;font-weight:700;color:var(--ink)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;transform:translateY(-2px)}
+.dot.ok{background:var(--ok)} .dot.wait{background:var(--wait)} .dot.idle{background:var(--idle-line)}
+
+/* タブ */
+.tabs{display:flex;gap:2px;border-bottom:1.5px solid var(--rule);margin-bottom:18px;flex-wrap:wrap}
+.tab{appearance:none;background:none;border:none;padding:11px 17px;font:inherit;font-size:14px;font-weight:700;
+  font-family:"Zen Kaku Gothic New",sans-serif;color:var(--ink-3);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1.5px}
+.tab[aria-selected="true"]{color:var(--pine);border-bottom-color:var(--pine)}
+.tab:hover{color:var(--ink)}
+.tab .cnt{font-family:"Roboto Mono",monospace;font-size:11.5px;color:var(--ink-3);margin-left:6px}
+
+.panelbox{background:var(--panel);border:1px solid var(--rule);border-radius:13px;box-shadow:var(--shadow);overflow:hidden}
+.panelhead{padding:15px 20px;border-bottom:1px solid var(--rule);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.panelhead h3{margin:0;font-size:14.5px;font-weight:700}
+.panelhead p{margin:2px 0 0;font-size:12px;color:var(--ink-2);line-height:1.7}
+.panelhead .right{margin-left:auto;display:flex;gap:8px}
+
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:760px}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--rule);vertical-align:middle}
+th{background:var(--panel-2);font-size:11px;font-weight:700;color:var(--ink-2);letter-spacing:.07em;white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--panel-2)}
+td.num{font-family:"Roboto Mono",monospace;color:var(--ink-3);width:44px}
+td.nm{font-weight:700;white-space:nowrap}
+td.nm small{display:block;font-weight:400;font-size:11px;color:var(--ink-3);letter-spacing:.02em}
+td.act{text-align:right;white-space:nowrap}
+.mailin{width:100%;min-width:190px;padding:7px 10px;border:1.5px solid transparent;border-radius:7px;
+  font-family:"Roboto Mono",monospace;font-size:12.5px;background:transparent;color:var(--ink)}
+.mailin:hover{border-color:var(--rule-2);background:#fff}
+.mailin:focus{border-color:var(--pine);background:#fff;outline:none}
+.mailin::placeholder{color:var(--ink-3);font-style:normal}
+
+.state{display:inline-flex;align-items:center;gap:6px;padding:3px 11px;border-radius:20px;font-size:11.5px;font-weight:700;
+  white-space:nowrap;border:1px solid transparent}
+.state.ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok-line)}
+.state.wait{background:var(--wait-bg);color:var(--wait);border-color:var(--wait-line)}
+.state.idle{background:var(--idle-bg);color:var(--idle);border-color:var(--idle-line)}
+.state .devs{font-family:"Roboto Mono",monospace;font-weight:500;opacity:.85}
+
+.stripe{width:3px;padding:0;border-bottom:1px solid var(--rule)}
+.stripe.ok{background:var(--ok)} .stripe.wait{background:var(--wait)} .stripe.idle{background:var(--idle-line)}
+
+.empty{padding:38px 22px;text-align:center;color:var(--ink-3);font-size:13.5px;line-height:1.9}
+.foot{padding:14px 20px;border-top:1px solid var(--rule);background:var(--panel-2);font-size:12px;color:var(--ink-2);line-height:1.8}
+
+/* トースト */
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--pine);color:#fff;
+  padding:12px 20px;border-radius:11px;box-shadow:0 12px 34px rgba(27,33,41,.28);font-size:13.5px;font-weight:700;
+  font-family:"Zen Kaku Gothic New",sans-serif;z-index:50;max-width:min(560px,92vw)}
+.toast small{display:block;font-weight:400;font-size:11.5px;color:#c9d8d4;margin-top:2px;font-family:"Noto Sans JP",sans-serif}
+
+/* 確認ダイアログ */
+.scrim{position:fixed;inset:0;background:rgba(27,33,41,.45);display:flex;align-items:center;justify-content:center;
+  padding:20px;z-index:60}
+.dialog{background:var(--panel);border-radius:14px;box-shadow:0 26px 70px rgba(27,33,41,.4);width:min(430px,100%);padding:26px 26px 22px}
+.dialog h4{margin:0 0 8px;font-size:16px;font-weight:700;font-family:"Zen Kaku Gothic New",sans-serif}
+.dialog p{margin:0 0 6px;font-size:13px;color:var(--ink-2);line-height:1.85}
+.dialog .addr{font-family:"Roboto Mono",monospace;font-size:14px;font-weight:700;color:var(--ink);
+  background:var(--panel-2);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;margin:10px 0 12px;word-break:break-all}
+.dialog .row{display:flex;gap:9px;margin-top:16px}
+.dialog .row .btn{flex:1}
+
+@media (max-width:640px){
+  .wrap{padding:18px 12px 70px}
+  .top{padding:11px 14px}
+  .progress{padding:16px}
+  .legend{gap:16px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="note-bar">
+  <span class="tag">DEV</span>
+  <span>テスト環境の管理者コンソールです。<b>本番のデータには触れません</b>。</span>
+</div>
+<div id="app"><div class="gate"><div class="gate-card"><p class="hint">読み込んでいます…</p></div></div></div>
+<script>
+
+(function(){
+"use strict";
+// =====================================================================
+//  Hub 管理者コンソール（DEV）
+//  ・スタッフのログイン用メール登録と招待メールの送信
+//  ・本人確認を済ませた端末の一覧と取り消し
+//  ・管理者名簿の追加と削除
+//  この画面を開けるのは、管理者として発行された利用証を持つ人だけ。
+//  判定はGAS側（authAdminGate_）で行う。画面の申告は信用しない。
+// =====================================================================
+var APP_VERSION = '2.20';
+var GAS_URL     = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
+var STOR        = 'hub-v8-dev-';
+var IS_DEV      = STOR.indexOf('dev') >= 0;
+
+// ── 利用証（3ファイルと同じ保管場所を使う。ここで登録すればスケジュール側にも入れる）──
+var HUB_BASE_KEY = 'hub2026co-f466kt5vs3vnDQDPuwWeS6XM';
+var GAS_API_KEY  = HUB_BASE_KEY;
+function hubApplyToken(t){ GAS_API_KEY = t ? (HUB_BASE_KEY + '|' + t) : HUB_BASE_KEY; }
+var HUB_MINE_KEY = STOR + 'auth-mine';
+var HUB_KIND_KEY = STOR + 'auth-kind';
+function hubLoadMine(){
+  try { var v = JSON.parse(localStorage.getItem(HUB_MINE_KEY));
+    return (v instanceof Array) ? v.filter(function(x){ return x && x.token && x.name; }) : []; }
+  catch(e){ return []; }
+}
+function hubSaveMine(l){ try{ localStorage.setItem(HUB_MINE_KEY, JSON.stringify(l)); }catch(e){} }
+function hubLive(l){ return (l||[]).filter(function(x){ return !x.exp || x.exp > Date.now(); }); }
+function hubSetKind(k){ try{ localStorage.setItem(HUB_KIND_KEY, k); }catch(e){} }
+function hubKind(){ try{ return localStorage.getItem(HUB_KIND_KEY) || ''; }catch(e){ return ''; } }
+
+// ── GASとのやりとり ────────────────────────────────
+function gasGet(params){
+  var q = new URLSearchParams(params);
+  q.set('apiKey', GAS_API_KEY);
+  return fetch(GAS_URL + '?' + q.toString(), {cache:'no-store'})
+    .then(function(r){ return r.text(); })
+    .then(function(t){ try { return JSON.parse(t); } catch(e){ return {ok:false, err:'bad_response', raw:String(t).slice(0,120)}; } })
+    .catch(function(){ return {ok:false, err:'offline'}; });
+}
+function gasRead(key){
+  return fetch(GAS_URL + '?key=' + encodeURIComponent(key) + '&apiKey=' + encodeURIComponent(GAS_API_KEY), {cache:'no-store'})
+    .then(function(r){ return r.text(); })
+    .then(function(t){ if(!t || t === 'null' || t.indexOf('error:') === 0) return null;
+      try { return JSON.parse(t); } catch(e){ return null; } })
+    .catch(function(){ return null; });
+}
+// 書き込みは応答を必ず読む。'ok' が返るまでは書けたと見なさない。
+function gasWrite(key, value){
+  return fetch(GAS_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({key:key, value:JSON.stringify(value), apiKey:GAS_API_KEY})})
+    .then(function(r){ return r.text(); })
+    .then(function(t){ return String(t||'').trim() === 'ok'; })
+    .catch(function(){ return false; });
+}
+
+// ── 状態 ────────────────────────────────────────
+var S = {
+  view:'gate', step:'mail', mail:'', typed:'', err:'', busy:false,
+  me:null, tab:'staff', dialog:null, toast:null, loading:false,
+  staffH:[], staffS:[], devices:{}, admins:[]
+};
+var toastTimer = null;
+var DAY = 86400000;
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function ymd(ms){ var d = new Date(ms); return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate(); }
+function toast(msg, sub){
+  S.toast = {msg:msg, sub:sub||''}; render();
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ S.toast = null; render(); }, 5000);
+}
+function allStaff(){
+  return S.staffH.map(function(s){ return Object.assign({}, s, {store:'honten'}); })
+    .concat(S.staffS.map(function(s){ return Object.assign({}, s, {store:'sanda'}); }));
+}
+function devsOf(uid, name){
+  var out = [];
+  for (var j in S.devices) {
+    var d = S.devices[j] || {};
+    if (d.exp && d.exp <= Date.now()) continue;      // 失効済みは数えない
+    if (d.n === name) out.push(Object.assign({id:j}, d));
+  }
+  return out;
+}
+function statusOf(s){
+  if (devsOf(s.uid, s.name).length > 0) return 'ok';
+  if (s.loginEmail) return 'wait';
+  return 'idle';
+}
+
+// ── ログイン画面 ─────────────────────────────────
+function viewGate(){
+  var body;
+  if (S.step === 'mail') {
+    body = '<p class="hint">管理者として登録されたメールアドレスを入れてください。'
+      + '<b>そのアドレス宛にしか確認コードは届きません</b>ので、このURLを知っていても他の方は入れません。</p>'
+      + '<label class="f" for="m">メールアドレス</label>'
+      + '<input type="email" id="m" value="' + esc(S.mail) + '" placeholder="egawa@midori-m.com" autocomplete="off" inputmode="email">'
+      + (S.err ? '<div class="err">' + esc(S.err) + '</div>' : '')
+      + '<button class="btn w" id="send"' + (S.busy?' disabled':'') + '>' + (S.busy?'送信中…':'確認コードを送る') + '</button>';
+  } else {
+    body = '<p class="hint">' + esc(S.mail) + ' 宛に6桁のコードを送りました。（有効10分）<br>'
+      + '届かないときは、迷惑メールフォルダもご確認ください。</p>'
+      + '<label class="f" for="c">確認コード</label>'
+      + '<input type="text" id="c" class="code mono" maxlength="6" inputmode="numeric" placeholder="------" autocomplete="one-time-code" value="' + esc(S.typed) + '">'
+      + (S.err ? '<div class="err">' + esc(S.err) + '</div>' : '')
+      + '<button class="btn w" id="ok"' + (S.busy?' disabled':'') + '>' + (S.busy?'確認中…':'確認する') + '</button>'
+      + '<button class="btn ghost w" id="back" style="margin-top:9px">アドレスを入れ直す</button>';
+  }
+  return '<div class="gate"><div class="gate-card">'
+    + '<div class="crest"><div class="mark">🔑</div>'
+    + '<h1>Hub 管理者コンソール</h1><p class="mono">MIDORI MOTORS' + (IS_DEV ? ' / DEV' : '') + '</p></div>'
+    + body + '</div></div>';
+}
+
+// ── 進み具合 ─────────────────────────────────────
+function counts(){
+  var c = {ok:0, wait:0, idle:0};
+  allStaff().forEach(function(s){ c[statusOf(s)]++; });
+  return c;
+}
+function viewProgress(){
+  var c = counts(), n = allStaff().length;
+  var pct = function(v){ return n ? (v/n*100) : 0; };
+  return '<section class="progress">'
+    + '<h2>本人認証の進み具合</h2>'
+    + '<p class="sub">全員が「登録済み」になったら、名前を選ぶだけのログインを止められます。</p>'
+    + '<div class="bar" role="img" aria-label="登録済み' + c.ok + '人、未登録' + c.wait + '人、メール未設定' + c.idle + '人">'
+    + '<span class="s-ok" style="width:' + pct(c.ok) + '%"></span>'
+    + '<span class="s-wait" style="width:' + pct(c.wait) + '%"></span>'
+    + '<span class="s-idle" style="width:' + pct(c.idle) + '%"></span></div>'
+    + '<div class="legend">'
+    + '<div><span class="n">' + c.ok + '</span><span class="dot ok"></span>登録済み</div>'
+    + '<div><span class="n">' + c.wait + '</span><span class="dot wait"></span>メール設定済み・未登録</div>'
+    + '<div><span class="n">' + c.idle + '</span><span class="dot idle"></span>メール未設定</div>'
+    + '<div style="margin-left:auto"><span class="n">' + n + '</span>人</div>'
+    + '</div></section>';
+}
+function viewTabs(){
+  var liveDev = 0; for (var j in S.devices) liveDev++;
+  var t = [['staff','スタッフと招待',allStaff().length],['devices','登録端末',liveDev],['admins','管理者',S.admins.length]];
+  return '<div class="tabs" role="tablist">' + t.map(function(x){
+    return '<button class="tab" role="tab" data-tab="' + x[0] + '" aria-selected="' + (S.tab===x[0]) + '">'
+      + x[1] + '<span class="cnt">' + x[2] + '</span></button>'; }).join('') + '</div>';
+}
+
+// ── スタッフと招待 ───────────────────────────────
+function viewStaff(){
+  var list = allStaff();
+  var rows = list.map(function(s){
+    var st = statusOf(s), nd = devsOf(s.uid, s.name).length;
+    var label = st==='ok'   ? '<span class="state ok">登録済み <span class="devs">端末' + nd + '</span></span>'
+              : st==='wait' ? '<span class="state wait">メール設定済み・未登録</span>'
+              :               '<span class="state idle">メール未設定</span>';
+    return '<tr>'
+      + '<td class="stripe ' + st + '"></td>'
+      + '<td class="num">' + esc(s.myNumber) + '</td>'
+      + '<td class="nm">' + esc(s.name) + '<small>' + (s.store==='sanda'?'三田店':'本店') + '</small></td>'
+      + '<td><input class="mailin" data-mail="' + esc(s.uid) + '" data-store="' + esc(s.store) + '" value="' + esc(s.loginEmail||'') + '" placeholder="未設定" autocomplete="off" aria-label="' + esc(s.name) + ' のログイン用メール"></td>'
+      + '<td>' + label + '</td>'
+      + '<td class="act">'
+      + '<button class="btn ghost sm" data-invite="' + esc(s.uid) + '"' + (s.loginEmail?'':' disabled') + '>招待を送る</button> '
+      + '<button class="btn stop sm" data-release="' + esc(s.uid) + '">登録解除</button>'
+      + '</td></tr>';
+  }).join('');
+  var pending = list.filter(function(s){ return s.loginEmail && statusOf(s) !== 'ok'; }).length;
+  return '<div class="panelbox">'
+    + '<div class="panelhead"><div><h3>スタッフと招待</h3>'
+    + '<p>メール欄を書き換えると、その場でサーバーに保存します。空欄の方はログインできません。</p></div>'
+    + '<div class="right"><button class="btn sm" id="bulk"' + (pending?'':' disabled') + '>未登録の' + pending + '人にまとめて招待</button></div></div>'
+    + '<div class="tablewrap"><table>'
+    + '<thead><tr><th class="stripe"></th><th>No.</th><th>氏名</th><th>ログイン用メール</th><th>状態</th><th style="text-align:right">操作</th></tr></thead>'
+    + '<tbody>' + (rows || '<tr><td colspan="6" class="empty">スタッフを読み込めませんでした。</td></tr>') + '</tbody></table></div>'
+    + '<div class="foot"><b>「登録解除」を押すと</b>、その方の登録端末をすべて取り消し、ログイン用メールを消します。'
+    + '端末を消し忘れて、辞めた方のスマホから入れたまま——という取りこぼしを防ぐため、1つの操作にまとめています。'
+    + '<br>スタッフ表からお名前は消えません（過去の予約に残るため）。名前も消す場合は、スケジュール画面のスタッフ設定から削除してください。</div>'
+    + '</div>';
+}
+
+// ── 登録端末 ─────────────────────────────────────
+function viewDevices(){
+  var ids = Object.keys(S.devices);
+  if (!ids.length) {
+    return '<div class="panelbox"><div class="panelhead"><div><h3>登録端末</h3>'
+      + '<p>本人確認を済ませた端末の一覧です。</p></div></div>'
+      + '<div class="empty">まだ登録された端末はありません。<br>スタッフのメールを登録して、招待を送ってください。</div></div>';
+  }
+  ids.sort(function(a,b){ return (S.devices[b].at||0) - (S.devices[a].at||0); });
+  var rows = ids.map(function(j){
+    var d = S.devices[j] || {};
+    var exp = Number(d.exp) || 0;
+    var left = Math.round((exp - Date.now()) / DAY);
+    var dead = exp > 0 && exp <= Date.now();
+    return '<tr>'
+      + '<td class="stripe ' + (dead?'idle':'ok') + '"></td>'
+      + '<td class="nm">' + esc(d.n || '（不明）') + '<small>No.' + esc(d.m) + '</small></td>'
+      + '<td style="font-size:12px;color:var(--ink-2);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(d.ua || '—') + '</td>'
+      + '<td class="mono" style="font-size:12px;color:var(--ink-2)">' + (d.at ? ymd(d.at) : '—') + '</td>'
+      + '<td class="mono" style="font-size:12px;color:var(--ink-2)">' + (d.last ? ymd(d.last) : '—') + '</td>'
+      + '<td>' + (dead ? '<span class="state idle">失効済み</span>'
+                       : '<span class="state ok">あと <span class="devs">' + left + '</span> 日</span>') + '</td>'
+      + '<td class="act"><button class="btn stop sm" data-revoke="' + esc(j) + '">取り消し</button></td>'
+      + '</tr>';
+  }).join('');
+  return '<div class="panelbox">'
+    + '<div class="panelhead"><div><h3>登録端末</h3>'
+    + '<p>紛失や退職のときは「取り消し」を押してください。押した瞬間からその端末は使えなくなります。</p></div>'
+    + '<div class="right"><button class="btn ghost sm" id="reload">再読込</button></div></div>'
+    + '<div class="tablewrap"><table>'
+    + '<thead><tr><th class="stripe"></th><th>氏名</th><th>端末</th><th>登録日</th><th>最後に使った日</th><th>失効まで</th><th style="text-align:right">操作</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table></div>'
+    + '<div class="foot">期限は<b>最後に使った日から90日</b>です。使うたびに先へ延びるので、毎日使う端末がここで切れることはありません。'
+    + '3か月まったく開かれなかった端末（買い替えて捨てたPC、機種変前のスマホ）だけが自動で失効します。</div>'
+    + '</div>';
+}
+
+// ── 管理者 ──────────────────────────────────────
+function viewAdmins(){
+  var opts = allStaff().filter(function(s){
+    return s.loginEmail && !S.admins.some(function(a){ return a.mail === String(s.loginEmail).toLowerCase(); });
+  });
+  var rows = S.admins.map(function(a){
+    return '<tr><td class="stripe ok"></td>'
+      + '<td class="nm">' + esc(a.name || '（スタッフ表に無し）') + '</td>'
+      + '<td class="mono" style="font-size:12.5px">' + esc(a.mail) + '</td>'
+      + '<td class="act">' + (S.admins.length > 1
+          ? '<button class="btn stop sm" data-unadmin="' + esc(a.mail) + '">管理者から外す</button>'
+          : '<span style="font-size:11.5px;color:var(--ink-3)">最後の1人は外せません</span>') + '</td></tr>';
+  }).join('');
+  return '<div class="panelbox">'
+    + '<div class="panelhead"><div><h3>管理者</h3>'
+    + '<p>この画面を開けるのは、ここに載っている方だけです。</p></div>'
+    + '<div class="right">'
+    + '<select id="addadm" aria-label="管理者に追加するスタッフ" style="padding:8px 11px;border:1.5px solid var(--rule-2);border-radius:8px;font:inherit;font-size:13px;background:#fff;color:var(--ink)">'
+    + '<option value="">スタッフを選ぶ…</option>'
+    + opts.map(function(s){ return '<option value="' + esc(s.uid) + '">' + esc(s.name) + '（' + esc(s.loginEmail) + '）</option>'; }).join('')
+    + '</select> <button class="btn sm" id="doadd">管理者に追加</button></div></div>'
+    + '<div class="tablewrap"><table>'
+    + '<thead><tr><th class="stripe"></th><th>氏名</th><th>メールアドレス</th><th style="text-align:right">操作</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table></div>'
+    + '<div class="foot">管理者の名簿は<b>GASの中だけ</b>にあります。公開しているHTMLやスプレッドシートには置きません——'
+    + 'そこに置くと、URLとAPIキーを知っている人に書き換えられてしまうためです。'
+    + '<br>ログイン用メールが未設定の方は管理者にできません。先に「スタッフと招待」で登録してください。</div>'
+    + '</div>';
+}
+
+function viewConsole(){
+  var body = S.loading
+    ? '<div class="panelbox"><div class="empty">読み込んでいます…</div></div>'
+    : (S.tab === 'devices' ? viewDevices() : S.tab === 'admins' ? viewAdmins() : viewStaff());
+  return '<header class="top">'
+    + '<span class="brand">Hub 管理者コンソール</span>'
+    + '<span class="env mono">' + (IS_DEV ? 'DEV' : '本番') + ' v' + APP_VERSION + '</span>'
+    + '<span class="me"><span class="avatar">' + esc(String(S.me.name).slice(0,1)) + '</span>'
+    + '<span><b>' + esc(S.me.name) + '</b> でログイン中</span>'
+    + '<a class="btn ghost sm" href="index.html" style="color:#fff;border-color:rgba(255,255,255,.4);text-decoration:none">スケジュールへ</a>'
+    + '</span></header>'
+    + '<div class="wrap">' + viewProgress() + viewTabs() + body + '</div>';
+}
+
+function viewDialog(){
+  var d = S.dialog;
+  if (!d) return '';
+  return '<div class="scrim" data-scrim="1"><div class="dialog" role="dialog" aria-modal="true" aria-label="' + esc(d.title) + '">'
+    + '<h4>' + esc(d.title) + '</h4>' + d.body
+    + '<div class="row"><button class="btn ghost" data-dlg="cancel">やめる</button>'
+    + '<button class="btn' + (d.danger?' stop':'') + '" data-dlg="ok">' + esc(d.okLabel) + '</button></div></div></div>';
+}
+
+function render(){
+  var html = (S.view === 'gate') ? viewGate() : viewConsole();
+  html += viewDialog();
+  if (S.toast) html += '<div class="toast" role="status">' + esc(S.toast.msg)
+    + (S.toast.sub ? '<small>' + esc(S.toast.sub) + '</small>' : '') + '</div>';
+  document.getElementById('app').innerHTML = html;
+  bind();
+}
+
+// ── データの読み込み ─────────────────────────────
+function loadAll(){
+  S.loading = true; render();
+  return Promise.all([
+    gasRead(STOR + 'honten-staff-v2'),
+    gasRead(STOR + 'sanda-staff-v2'),
+    gasRead(STOR + 'auth-devices'),
+    gasGet({action:'authAdminList', prefix:STOR})
+  ]).then(function(r){
+    S.staffH = (r[0] instanceof Array) ? r[0] : [];
+    S.staffS = (r[1] instanceof Array) ? r[1] : [];
+    S.devices = (r[2] && typeof r[2] === 'object' && !(r[2] instanceof Array)) ? r[2] : {};
+    S.admins = (r[3] && r[3].ok && r[3].admins) ? r[3].admins : [];
+    S.loading = false; render();
+  });
+}
+
+function findStaff(uid){
+  var l = allStaff().filter(function(s){ return s.uid === uid; });
+  return l[0] || null;
+}
+// スタッフ表は店舗ごとに分かれている。書き込む側を間違えないよう、必ず読み直してから1件だけ直す。
+function saveStaffField(uid, store, patch){
+  var key = STOR + (store === 'sanda' ? 'sanda' : 'honten') + '-staff-v2';
+  return gasRead(key).then(function(latest){
+    if (!(latest instanceof Array)) return {ok:false, why:'読めなかった'};
+    var hit = false;
+    var next = latest.map(function(s){
+      if (s && s.uid === uid) { hit = true; return Object.assign({}, s, patch); }
+      return s;
+    });
+    if (!hit) return {ok:false, why:'その方が見つからない'};
+    return gasWrite(key, next).then(function(okw){
+      if (okw) { if (store === 'sanda') S.staffS = next; else S.staffH = next; }
+      return {ok:okw, why: okw ? '' : '書き込めなかった'};
+    });
+  });
+}
+
+// ── 操作 ────────────────────────────────────────
+function bind(){
+  var $ = function(id){ return document.getElementById(id); };
+  var each = function(sel, fn){ Array.prototype.forEach.call(document.querySelectorAll(sel), fn); };
+
+  // --- ログイン ---
+  if ($('send')) $('send').onclick = function(){
+    var v = ($('m').value || '').trim();
+    if (v.indexOf('@') < 1) { S.err = 'メールアドレスの形式が正しくありません。'; render(); return; }
+    S.mail = v; S.err = ''; S.busy = true; render();
+    gasGet({action:'authRequest', prefix:STOR, email:v}).then(function(r){
+      S.busy = false;
+      if (!r || !r.ok) {
+        S.err = (r && r.err === 'not_registered')
+          ? 'このアドレスは管理者として登録されていません。'
+          : (r && r.err === 'too_many') ? '送信が続いています。しばらく待ってからお試しください。'
+          : 'コードを送れませんでした。通信の状態をご確認ください。';
+        render(); return;
+      }
+      S.step = 'code'; S.typed = ''; render();
+    });
+  };
+  if ($('m')) $('m').onkeydown = function(e){ if (e.key === 'Enter') $('send').click(); };
+  if ($('c')) {
+    $('c').focus();
+    $('c').oninput = function(e){ e.target.value = e.target.value.replace(/[^0-9]/g,'').slice(0,6); S.typed = e.target.value; };
+    $('c').onkeydown = function(e){ if (e.key === 'Enter') $('ok').click(); };
+  }
+  if ($('ok')) $('ok').onclick = function(){
+    var v = ($('c').value || '').trim();
+    if (v.length !== 6) { S.err = '6桁を入力してください。'; render(); return; }
+    S.err = ''; S.busy = true; S.typed = v; render();
+    gasGet({action:'authVerify', prefix:STOR, email:S.mail, code:v, ua:navigator.userAgent||''}).then(function(r){
+      S.busy = false;
+      if (!r || !r.ok) {
+        S.err = (r && r.err === 'bad_code') ? 'コードが違います。もう一度お試しください。'
+          : (r && r.err === 'expired') ? 'コードの有効時間（10分）が過ぎました。送り直してください。'
+          : (r && r.err === 'too_many_tries') ? '入力の失敗が続いたため止めました。送り直してください。'
+          : '確認できませんでした。通信の状態をご確認ください。';
+        render(); return;
+      }
+      if (!r.admin) { S.err = 'このアドレスは管理者ではありません。'; render(); return; }
+      // 利用証をこの端末に保存する。スケジュール画面にもそのまま入れる。
+      var list = hubLoadMine().filter(function(x){ return x.name !== r.name; });
+      list.push({uid:r.uid||'', name:r.name, myNumber:r.myNumber, store:r.store||'honten', token:r.token, exp:r.exp});
+      hubSaveMine(list);
+      if (!hubKind()) hubSetKind('shared');   // 管理者画面は共有PCで開くことが多い。安全側に倒す。
+      hubApplyToken(r.token);
+      S.me = {name:r.name, uid:r.uid, mail:S.mail};
+      S.view = 'console'; S.tab = 'staff'; render();
+      loadAll().then(function(){
+        toast('管理者としてログインしました', 'この端末は本人確認済みになりました。スケジュール画面にもそのまま入れます。');
+      });
+    });
+  };
+  if ($('back')) $('back').onclick = function(){ S.step = 'mail'; S.err = ''; S.typed = ''; render(); };
+
+  // --- タブ ---
+  each('[data-tab]', function(b){ b.onclick = function(){ S.tab = b.dataset.tab; render(); }; });
+  if ($('reload')) $('reload').onclick = function(){ loadAll(); };
+
+  // --- メールの保存 ---
+  each('[data-mail]', function(i){
+    i.onchange = function(){
+      var uid = i.dataset.mail, store = i.dataset.store;
+      var s = findStaff(uid); if (!s) return;
+      var v = i.value.trim().toLowerCase();
+      if (v && v.indexOf('@') < 1) { toast('保存しませんでした', 'メールアドレスの形式が正しくありません。'); i.value = s.loginEmail||''; return; }
+      i.disabled = true;
+      saveStaffField(uid, store, {loginEmail: v || undefined}).then(function(res){
+        i.disabled = false;
+        if (!res.ok) { toast('保存できませんでした', res.why + '。もう一度お試しください。'); return; }
+        render();
+        toast('保存しました', v ? (s.name + ' さんのログイン用メールを ' + v + ' にしました。続けて「招待を送る」を押してください。')
+                               : (s.name + ' さんのログイン用メールを消しました。'));
+      });
+    };
+  });
+
+  // --- 招待 ---
+  each('[data-invite]', function(b){
+    b.onclick = function(){
+      var s = findStaff(b.dataset.invite); if (!s) return;
+      S.dialog = {
+        title:'このアドレスに招待を送ります', okLabel:'送る',
+        body:'<p>宛先に間違いはありませんか。1文字違うと、本人には「何も届かない」としか分かりません。</p>'
+          + '<div class="addr">' + esc(s.loginEmail) + '</div>'
+          + '<p style="font-size:12px;color:var(--ink-3)">' + esc(s.name) + ' さん宛</p>',
+        onOk: function(){
+          gasGet({action:'authInvite', prefix:STOR, email:s.loginEmail}).then(function(r){
+            if (r && r.ok) toast('招待メールを送りました', s.name + ' さん（' + s.loginEmail + '）宛。届かないときは迷惑メールフォルダを確認してもらってください。');
+            else toast('送れませんでした', (r && r.err === 'not_registered') ? 'このアドレスはスタッフ表に登録されていません。'
+              : (r && r.err === 'too_many') ? '送信が続いています。しばらく待ってからお試しください。' : '通信の状態をご確認ください。');
+          });
+        }
+      };
+      render();
+    };
+  });
+
+  // --- まとめて招待 ---
+  if ($('bulk')) $('bulk').onclick = function(){
+    var list = allStaff().filter(function(s){ return s.loginEmail && statusOf(s) !== 'ok'; });
+    S.dialog = {
+      title: list.length + '人に招待を送ります', okLabel:'まとめて送る',
+      body:'<p>まだ登録が済んでいない方のうち、メールを設定済みの方だけに送ります。</p>'
+        + '<div class="addr" style="font-size:12px;line-height:2">'
+        + list.map(function(s){ return esc(s.name) + '　' + esc(s.loginEmail); }).join('<br>') + '</div>',
+      onOk: function(){
+        var sent = 0, failed = 0;
+        var seq = list.reduce(function(p, s){
+          return p.then(function(){
+            return gasGet({action:'authInvite', prefix:STOR, email:s.loginEmail})
+              .then(function(r){ if (r && r.ok) sent++; else failed++; });
+          });
+        }, Promise.resolve());
+        toast('送信しています…', list.length + '人分を順に送ります。');
+        seq.then(function(){
+          toast(sent + '人に招待メールを送りました',
+            failed ? (failed + '人分は送れませんでした。時間をおいて、個別に送り直してください。')
+                   : '届かない方がいたら、迷惑メールフォルダを確認してもらってください。');
+        });
+      }
+    };
+    render();
+  };
+
+  // --- 登録解除 ---
+  each('[data-release]', function(b){
+    b.onclick = function(){
+      var s = findStaff(b.dataset.release); if (!s) return;
+      var mine = devsOf(s.uid, s.name);
+      S.dialog = {
+        title: s.name + ' さんを登録解除します', okLabel:'登録解除する', danger:true,
+        body:'<p>次の2つをまとめて行います。取り消した端末は、その瞬間から使えなくなります。</p>'
+          + '<div class="addr" style="font-family:inherit;font-size:13px;font-weight:400;line-height:1.9">'
+          + '① 登録端末を取り消す（' + mine.length + '台）'
+          + (mine.length ? '<br><span style="color:var(--ink-2);font-size:12px">　' + mine.map(function(d){ return esc(String(d.ua||'端末').slice(0,40)); }).join('<br>　') + '</span>' : '')
+          + '<br>② ログイン用メールを消す（以後ログインできません）</div>'
+          + '<p style="font-size:12px;color:var(--ink-2)">スタッフ表からお名前は消えません。過去の予約も残ります。</p>',
+        onOk: function(){
+          // 端末の台帳は必ずサーバー最新を土台にする。画面の一覧を書き戻すと、
+          // 開いている間に登録された他の端末を巻き添えで消してしまう。
+          gasRead(STOR + 'auth-devices').then(function(latest){
+            var base = (latest && typeof latest === 'object' && !(latest instanceof Array)) ? latest : null;
+            if (!base) { toast('登録解除できませんでした', 'サーバーから端末の一覧を読めていません。通信を確かめて、もう一度お試しください。'); return; }
+            var next = {};
+            for (var j in base) if (base[j] && base[j].n !== s.name) next[j] = base[j];
+            gasWrite(STOR + 'auth-devices', next).then(function(okw){
+              if (!okw) { toast('登録解除できませんでした', '端末の取り消しに失敗しました。もう一度お試しください。'); return; }
+              S.devices = next;
+              saveStaffField(s.uid, s.store, {loginEmail: undefined}).then(function(res){
+                loadAll().then(function(){
+                  if (res.ok) toast(s.name + ' さんを登録解除しました', '端末' + mine.length + '台を取り消し、ログイン用メールを消しました。');
+                  else toast('端末だけ取り消しました', 'ログイン用メールを消せませんでした（' + res.why + '）。メール欄を空にして保存してください。');
+                });
+              });
+            });
+          });
+        }
+      };
+      render();
+    };
+  });
+
+  // --- 端末の取り消し ---
+  each('[data-revoke]', function(b){
+    b.onclick = function(){
+      var j = b.dataset.revoke, d = S.devices[j] || {};
+      S.dialog = {
+        title:'この端末の登録を取り消します', okLabel:'取り消す', danger:true,
+        body:'<p>押した瞬間から、この端末では使えなくなります。'
+          + '本人が使い続ける場合は、もう一度メールで登録し直してもらってください。</p>'
+          + '<div class="addr" style="font-family:inherit;font-size:13px;font-weight:700">' + esc(d.n || '') + '</div>'
+          + '<p style="font-size:11.5px;color:var(--ink-3);word-break:break-all">' + esc(d.ua || '') + '</p>',
+        onOk: function(){
+          gasRead(STOR + 'auth-devices').then(function(latest){
+            var base = (latest && typeof latest === 'object' && !(latest instanceof Array)) ? latest : null;
+            if (!base) { toast('取り消せませんでした', 'サーバーから最新の一覧を読めていません。'); return; }
+            var next = {}; for (var k in base) if (k !== j) next[k] = base[k];
+            gasWrite(STOR + 'auth-devices', next).then(function(okw){
+              if (!okw) { toast('取り消せませんでした', 'もう一度お試しください。'); return; }
+              S.devices = next; render();
+              toast('端末の登録を取り消しました', (d.n || '') + ' さんのこの端末は、もう使えません。');
+            });
+          });
+        }
+      };
+      render();
+    };
+  });
+
+  // --- 管理者の追加・削除 ---
+  if ($('doadd')) $('doadd').onclick = function(){
+    var uid = $('addadm').value;
+    if (!uid) { toast('スタッフを選んでください', 'ログイン用メールが設定されている方だけが選べます。'); return; }
+    var s = findStaff(uid); if (!s) return;
+    gasGet({action:'authAdminSet', prefix:STOR, op:'add', email:s.loginEmail, uid:s.uid}).then(function(r){
+      if (!r || !r.ok) { toast('追加できませんでした', (r && r.err) ? r.err : '通信の状態をご確認ください。'); return; }
+      loadAll().then(function(){
+        toast(s.name + ' さんを管理者にしました', 'この画面を開けるようになります。Apps Script を触る必要はありません。');
+      });
+    });
+  };
+  each('[data-unadmin]', function(b){
+    b.onclick = function(){
+      var mail = b.dataset.unadmin;
+      var a = S.admins.filter(function(x){ return x.mail === mail; })[0] || {mail:mail, name:''};
+      S.dialog = {
+        title:(a.name || mail) + ' さんを管理者から外します', okLabel:'外す', danger:true,
+        body:'<p>この画面を開けなくなります。スケジュール画面は今までどおり使えます。</p>'
+          + '<div class="addr">' + esc(mail) + '</div>',
+        onOk: function(){
+          gasGet({action:'authAdminSet', prefix:STOR, op:'remove', email:mail}).then(function(r){
+            if (!r || !r.ok) {
+              toast('外せませんでした', (r && r.err === 'last_admin')
+                ? '最後の1人は外せません。先に別の方を管理者に追加してください。' : '通信の状態をご確認ください。');
+              return;
+            }
+            loadAll().then(function(){ toast((a.name || mail) + ' さんを管理者から外しました', ''); });
+          });
+        }
+      };
+      render();
+    };
+  });
+
+  // --- ダイアログ ---
+  each('[data-dlg]', function(b){
+    b.onclick = function(){
+      var d = S.dialog; S.dialog = null;
+      if (b.dataset.dlg === 'ok' && d && d.onOk) d.onOk();
+      render();
+    };
+  });
+  each('[data-scrim]', function(el){
+    el.onclick = function(e){ if (e.target === el) { S.dialog = null; render(); } };
+  });
+}
+
+// ── 起動 ────────────────────────────────────────
+// すでにこの端末で管理者として認証済みなら、ログイン画面を出さずに開く。
+(function start(){
+  var mine = hubLive(hubLoadMine());
+  if (!mine.length) { render(); return; }
+  hubApplyToken(mine[0].token);
+  gasGet({action:'authAdminList', prefix:STOR}).then(function(r){
+    if (r && r.ok) {
+      S.me = {name: mine[0].name, uid: mine[0].uid, mail: ''};
+      S.view = 'console'; S.admins = r.admins || [];
+      render(); loadAll();
+    } else {
+      hubApplyToken('');   // 管理者ではない利用証なので、ログインからやり直す
+      render();
+    }
+  });
+})();
+})();
+
+</script>
+</body>
+</html>

@@ -234,6 +234,14 @@ function doGet(e) {
   if (e.parameter.action === 'authVerify') {
     return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua);
   }
+  // v14: 管理者名簿の閲覧と変更。管理者として発行された利用証が無いと通らない。
+  if (e.parameter.action === 'authAdminList') {
+    return authAdminList_(e.parameter.apiKey, authPrefixOf_(e.parameter));
+  }
+  if (e.parameter.action === 'authAdminSet') {
+    return authAdminSet_(e.parameter.apiKey, authPrefixOf_(e.parameter),
+                         e.parameter.op, e.parameter.email, e.parameter.uid);
+  }
   // v14: 招待メール（管理者が押す）。登録済みアドレスにだけ手順を送る。
   if (e.parameter.action === 'authInvite') {
     return authInvite_(e.parameter.email, authPrefixOf_(e.parameter));
@@ -1082,12 +1090,13 @@ function authEnforced_(prefix) {
 
 // ── 利用証の発行と検証 ──────────────────────────────────────────────
 //   形式: base64url(本文).base64url(HMAC-SHA256署名)
-//   本文: {n:氏名, m:ナンバー, s:店舗, j:端末ID, x:失効時刻}
-function authMakeToken_(name, myNumber, store, jti) {
+//   本文: {n:氏名, m:ナンバー, s:店舗, j:端末ID, x:失効時刻, a:管理者なら1}
+function authMakeToken_(name, myNumber, store, jti, isAdmin) {
   var payload = JSON.stringify({
     n: String(name || ''), m: (myNumber == null ? '' : myNumber),
     s: String(store || ''), j: String(jti || ''),
-    x: Date.now() + AUTH_TTL_DAYS * 86400000
+    x: Date.now() + AUTH_TTL_DAYS * 86400000,
+    a: isAdmin ? 1 : 0
   });
   var p64 = Utilities.base64EncodeWebSafe(Utilities.newBlob(payload).getBytes());
   var sig = Utilities.computeHmacSha256Signature(p64, authSecret_());
@@ -1184,6 +1193,124 @@ function authBaseKey_(rawApiKey) {
   return i >= 0 ? s.slice(0, i) : s;
 }
 
+// ── 管理者の名簿 ─────────────────────────────────────────────────────
+//   スクリプトプロパティ HUB_ADMIN_EMAILS に "メール=uid" をカンマ区切りで置く。
+//     例: egawa@midori-m.com=h7,daisuke@midori-m.com=h1
+//   ここはGASの中だけにある。公開しているHTMLやスプレッドシートには書かない
+//   （そこに書くと、URLとAPIキーを知っている人に書き換えられてしまう）。
+//   最初の1人だけ手で設定し、以後の追加・削除は管理者コンソールから行う。
+var AUTH_ADMIN_PROP = 'HUB_ADMIN_EMAILS';
+
+function authAdmins_() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(AUTH_ADMIN_PROP) || '';
+    var out = [];
+    raw.split(',').forEach(function (part) {
+      part = String(part || '').trim();
+      if (!part) return;
+      var eq = part.indexOf('=');
+      var mail = (eq >= 0 ? part.slice(0, eq) : part).trim().toLowerCase();
+      var uid  = (eq >= 0 ? part.slice(eq + 1) : '').trim();
+      if (mail.indexOf('@') > 0) out.push({ mail: mail, uid: uid });
+    });
+    return out;
+  } catch (e) { return []; }
+}
+
+function authAdminSave_(list) {
+  var v = list.map(function (a) { return a.mail + (a.uid ? '=' + a.uid : ''); }).join(',');
+  PropertiesService.getScriptProperties().setProperty(AUTH_ADMIN_PROP, v);
+}
+
+// そのアドレスは管理者か（見つかれば名簿の項目を返す）
+function authAdminOf_(email) {
+  var m = String(email || '').trim().toLowerCase();
+  var list = authAdmins_();
+  for (var i = 0; i < list.length; i++) if (list[i].mail === m) return list[i];
+  return null;
+}
+
+// 利用証を持っている人が管理者かどうか。画面の申告は信用せず、必ずここで判定する。
+function authAdminGate_(rawApiKey, prefix) {
+  var token = '';
+  var i = String(rawApiKey || '').indexOf('|');
+  if (i >= 0) token = String(rawApiKey).slice(i + 1);
+  var payload = authReadToken_(token);
+  if (!payload) return null;
+  if (!authValid_(payload, prefix)) return null;
+  if (!payload.a) return null;                 // 管理者として発行された利用証ではない
+  return payload;
+}
+
+// ── スタッフ表と管理者名簿の両方から本人を確定する ───────────────────────
+//   管理者は「まだスタッフ表に loginEmail が入っていない」段階でも入れる必要がある
+//   （最初の1人が入れないと、誰もメールを登録できず堂々巡りになるため）。
+function authResolve_(prefix, email) {
+  var staff = authFindStaffByEmail_(prefix, email);
+  var adm = authAdminOf_(email);
+  if (staff) { staff.admin = !!adm; return staff; }
+  if (!adm) return null;
+  // スタッフ表に登録が無い管理者は、名簿の uid から氏名を引く
+  var byUid = adm.uid ? authFindStaffByUid_(prefix, adm.uid) : null;
+  if (byUid) { byUid.admin = true; return byUid; }
+  return { name: '管理者', myNumber: '', store: 'honten', uid: adm.uid || '', admin: true };
+}
+
+function authFindStaffByUid_(prefix, uid) {
+  var stores = ['honten', 'sanda'];
+  for (var i = 0; i < stores.length; i++) {
+    var key = String(prefix) + stores[i] + '-staff-v2';
+    var raw;
+    try { raw = readOneValue(getSheet(), CacheService.getScriptCache(), key, -2); } catch (e) { continue; }
+    if (!raw || raw === 'null') continue;
+    var list;
+    try { list = JSON.parse(raw); } catch (e) { continue; }
+    if (!(list instanceof Array)) continue;
+    for (var j = 0; j < list.length; j++) {
+      if (list[j] && String(list[j].uid) === String(uid)) {
+        return { name: list[j].name, myNumber: list[j].myNumber,
+                 store: list[j].store || stores[i], uid: list[j].uid || '' };
+      }
+    }
+  }
+  return null;
+}
+
+// ── 管理者名簿の閲覧・変更（管理者の利用証が要る）──────────────────────
+//   GET ?action=authAdminList&prefix=...&apiKey=本来のキー|利用証
+function authAdminList_(rawApiKey, prefix) {
+  if (!authAdminGate_(rawApiKey, prefix)) {
+    return makeResponse(JSON.stringify({ ok: false, err: 'not_admin' }));
+  }
+  var list = authAdmins_().map(function (a) {
+    var st = a.uid ? authFindStaffByUid_(prefix, a.uid) : null;
+    return { mail: a.mail, uid: a.uid, name: st ? st.name : '' };
+  });
+  return makeResponse(JSON.stringify({ ok: true, admins: list }));
+}
+
+//   GET ?action=authAdminSet&op=add|remove&email=...&uid=...&prefix=...&apiKey=...
+function authAdminSet_(rawApiKey, prefix, op, email, uid) {
+  var me = authAdminGate_(rawApiKey, prefix);
+  if (!me) return makeResponse(JSON.stringify({ ok: false, err: 'not_admin' }));
+  var mail = String(email || '').trim().toLowerCase();
+  if (mail.indexOf('@') <= 0) return makeResponse(JSON.stringify({ ok: false, err: 'bad_email' }));
+  var list = authAdmins_();
+  if (op === 'add') {
+    if (!list.some(function (a) { return a.mail === mail; })) {
+      list.push({ mail: mail, uid: String(uid || '').trim() });
+    }
+  } else if (op === 'remove') {
+    // 最後の1人は外せない。外すと誰も管理者コンソールを開けなくなる。
+    if (list.length <= 1) return makeResponse(JSON.stringify({ ok: false, err: 'last_admin' }));
+    list = list.filter(function (a) { return a.mail !== mail; });
+  } else {
+    return makeResponse(JSON.stringify({ ok: false, err: 'bad_op' }));
+  }
+  authAdminSave_(list);
+  return makeResponse(JSON.stringify({ ok: true, count: list.length }));
+}
+
 // ── ① コードの送信要求 ───────────────────────────────────────────────
 //   GET ?action=authRequest&email=...&prefix=hub-v8-dev-&apiKey=...
 //   登録済みのアドレスにだけ6桁を送る。誰の名前かはここでは返さない。
@@ -1195,7 +1322,8 @@ function authRequest_(email, prefix) {
       return makeResponse(JSON.stringify({ ok: false, err: 'bad_prefix' }));
     }
 
-    var staff = authFindStaffByEmail_(prefix, email);
+    // スタッフ表の loginEmail か、管理者名簿にあるアドレスなら送る
+    var staff = authResolve_(prefix, email);
     if (!staff) return makeResponse(JSON.stringify({ ok: false, err: 'not_registered' }));
 
     var cache = CacheService.getScriptCache();
@@ -1213,7 +1341,7 @@ function authRequest_(email, prefix) {
     var env = (String(prefix).indexOf('dev') >= 0) ? '【DEV】' : '';
     MailApp.sendEmail(
       email,
-      env + '【Hub a Nice Day】ログイン確認コード',
+      env + '【Hub a Nice Day】' + (staff.admin ? '管理者ログインの確認コード' : 'ログイン確認コード'),
       staff.name + ' さん\n\n' +
       'ログイン画面に次の6桁を入力してください。\n\n' +
       '    ' + code + '\n\n' +
@@ -1303,7 +1431,7 @@ function authVerify_(email, code, prefix, ua) {
     }
     cache.remove('authcode:' + email);
 
-    var staff = authFindStaffByEmail_(prefix, email);
+    var staff = authResolve_(prefix, email);
     if (!staff) return makeResponse(JSON.stringify({ ok: false, err: 'not_registered' }));
 
     // 端末を台帳に登録して利用証を発行。
@@ -1318,7 +1446,7 @@ function authVerify_(email, code, prefix, ua) {
     try {
       var devices = authLoadDevices_(prefix);
       devices[jti] = {
-        n: staff.name, m: staff.myNumber, s: staff.store,
+        n: staff.name, m: staff.myNumber, s: staff.store, e: email,
         at: Date.now(), exp: exp, ua: String(ua || '').slice(0, 120)
       };
       authSaveDevices_(prefix, devices);
@@ -1326,9 +1454,9 @@ function authVerify_(email, code, prefix, ua) {
 
     return makeResponse(JSON.stringify({
       ok: true,
-      token: authMakeToken_(staff.name, staff.myNumber, staff.store, jti),
+      token: authMakeToken_(staff.name, staff.myNumber, staff.store, jti, staff.admin),
       name: staff.name, myNumber: staff.myNumber, store: staff.store,
-      uid: staff.uid || '', exp: exp
+      uid: staff.uid || '', exp: exp, admin: !!staff.admin
     }));
   } catch (err) {
     return makeResponse(JSON.stringify({ ok: false, err: 'verify_failed' }));
@@ -1378,9 +1506,15 @@ function authRenew_(rawApiKey, prefix) {
       authSaveDevices_(prefix, devices);
     } finally { if (locked) lock.releaseLock(); }
 
+    // 管理者かどうかは毎回名簿を見て決め直す。名簿から外れた人は、次の延長で管理者でなくなる。
+    var stillAdmin = false;
+    try {
+      var mail = (d && d.e) ? d.e : '';
+      stillAdmin = mail ? !!authAdminOf_(mail) : !!payload.a;
+    } catch (e) { stillAdmin = !!payload.a; }
     return makeResponse(JSON.stringify({
-      ok: true, renewed: true, exp: exp,
-      token: authMakeToken_(payload.n, payload.m, payload.s, payload.j)
+      ok: true, renewed: true, exp: exp, admin: stillAdmin,
+      token: authMakeToken_(payload.n, payload.m, payload.s, payload.j, stillAdmin)
     }));
   } catch (err) {
     return makeResponse(JSON.stringify({ ok: false, err: 'renew_failed' }));

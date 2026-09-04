@@ -2933,7 +2933,7 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
                       onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                     <div style={{fontSize:11,color:'#6b7280',marginTop:5,lineHeight:1.7}}>
                       このアドレスの持ち主だけがログインできます。空欄の人はログインできません。<br/>
-                      <b>アドレスを入れて「更新」を押してから</b>、下の招待を送ってください。
+                      <b>アドレスを入れて「✓ 変更を保存」を押してから</b>、下の招待を送ってください。
                     </div>
                     <button
                       disabled={inviteBusy||!(selectedStaff&&selectedStaff.loginEmail)}

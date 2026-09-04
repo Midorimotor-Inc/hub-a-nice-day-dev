@@ -231,6 +231,7 @@ const dump = async (page, root) => page.evaluate(r => {
     // 岡上さん（メール未登録）を選ぶ
     await clickText(page, '岡上秀一', MODAL);
     t('ログイン用メール欄がある', await seeText(page, 'ログイン用メール'), await dump(page, MODAL));
+    t('案内文が実際のボタン名と一致する', await seeText(page, '「✓ 変更を保存」を押してから'), await dump(page, MODAL));
     const before = await page.evaluate(() => {
       const b = [...document.querySelectorAll('.modal-box button')].find(e => e.innerText.includes('招待メールを送る'));
       return b ? b.disabled : null;
