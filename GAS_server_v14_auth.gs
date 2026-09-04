@@ -234,6 +234,14 @@ function doGet(e) {
   if (e.parameter.action === 'authVerify') {
     return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua);
   }
+  // v14: 招待メール（管理者が押す）。登録済みアドレスにだけ手順を送る。
+  if (e.parameter.action === 'authInvite') {
+    return authInvite_(e.parameter.email, authPrefixOf_(e.parameter));
+  }
+  // v14: 利用証の延長（スライド式の期限）。切れた利用証は延長できない。
+  if (e.parameter.action === 'authRenew') {
+    return authRenew_(e.parameter.apiKey, authPrefixOf_(e.parameter));
+  }
   // v14: 利用証の門番。HUB_AUTH_ENFORCE='1' を入れるまでは素通りする（段階移行）
   var _gate = authGate_(e.parameter.apiKey, e.parameter.action, authPrefixOf_(e.parameter));
   if (_gate) return _gate;
@@ -1024,9 +1032,14 @@ function testSnapshotDev() {
 //    HUB_AUTH_ENFORCE … '1' で利用証必須。切替の最後に手で設定する
 // ============================================================================
 
-var AUTH_TTL_DAYS        = 90;    // 利用証の有効期間
+var AUTH_TTL_DAYS        = 90;    // 利用証の有効期間（「最後に使った日から」90日）
+var AUTH_RENEW_AFTER_DAYS = 15;   // 前回の延長から何日たったら延長し直すか
 var AUTH_CODE_TTL_SEC    = 600;   // 6桁コードの有効時間（10分）
 var AUTH_MAX_SEND_PER_HR = 5;     // 同じアドレスへの送信上限（メール枠の保護）
+var AUTH_APP_URL = {              // 招待メールに載せる各環境の入口
+  'hub-v8-':     'https://midorimotor-inc.github.io/hub-a-nice-day/',
+  'hub-v8-dev-': 'https://midorimotor-inc.github.io/hub-a-nice-day-dev/'
+};
 var AUTH_MAX_TRY         = 5;     // コード入力の試行上限
 
 // 認証そのものに使うアクションは、当然ながら利用証を要求しない
@@ -1214,6 +1227,57 @@ function authRequest_(email, prefix) {
   }
 }
 
+// ── ①' 招待メール（管理者が押す）────────────────────────────────────
+//   GET ?action=authInvite&email=...&prefix=...&apiKey=...
+//
+//   ログイン用メールを登録しただけでは、本人には何も起きない。手順を書いたメールを
+//   送って初めて本人が動き出せる。これが無いと管理者が全員に口頭で伝える羽目になる。
+//   コードはここでは送らない（コードは本人が端末で申し込んだ時に authRequest_ が送る）。
+function authInvite_(email, prefix) {
+  try {
+    email = String(email || '').trim().toLowerCase();
+    if (email.indexOf('@') <= 0) return makeResponse(JSON.stringify({ ok: false, err: 'bad_email' }));
+    if (SNAP_ENV_PREFIXES.indexOf(String(prefix || '')) < 0) {
+      return makeResponse(JSON.stringify({ ok: false, err: 'bad_prefix' }));
+    }
+    // スタッフ表に登録済みのアドレスにしか送らない。
+    // 管理者が部外者のアドレスを入れても、招待は飛ばない。
+    var staff = authFindStaffByEmail_(prefix, email);
+    if (!staff) return makeResponse(JSON.stringify({ ok: false, err: 'not_registered' }));
+
+    var cache = CacheService.getScriptCache();
+    var cntKey = 'authinv:' + email;
+    var cnt = Number(cache.get(cntKey) || 0);
+    if (cnt >= AUTH_MAX_SEND_PER_HR) return makeResponse(JSON.stringify({ ok: false, err: 'too_many' }));
+    cache.put(cntKey, String(cnt + 1), 3600);
+
+    var env = (String(prefix).indexOf('dev') >= 0) ? '【DEV】' : '';
+    var url = AUTH_APP_URL[String(prefix)] || AUTH_APP_URL['hub-v8-'];
+    MailApp.sendEmail(
+      email,
+      env + '【Hub a Nice Day】ログインの登録をお願いします',
+      staff.name + ' さん\n\n' +
+      'Hub a Nice Day のログイン用アドレスとして、\n' +
+      'このアドレス（' + email + '）が登録されました。\n\n' +
+      '▼ 使いはじめる手順\n' +
+      '1. 使いたい端末で Hub を開く\n' +
+      '   ' + url + '\n' +
+      '2.「＋ スタッフを追加」を押す\n' +
+      '3. このアドレスを入れると、6桁のコードが届きます\n' +
+      '4. コードを入れれば完了です\n\n' +
+      '※ 自分のスマホと店の共有PC、両方で登録できます。\n' +
+      '   端末ごとに1回ずつお願いします。\n' +
+      '※ 使っているうちは登録が切れることはありません。\n' +
+      '   3か月まったく開かなかった端末だけ、登録し直しになります。\n\n' +
+      '心当たりが無い場合は、このメールを破棄してください。\n\n' +
+      '--\nHub a Nice Day 自動送信（返信不要）'
+    );
+    return makeResponse(JSON.stringify({ ok: true, name: staff.name }));
+  } catch (err) {
+    return makeResponse(JSON.stringify({ ok: false, err: 'send_failed' }));
+  }
+}
+
 // ── ② コードの照合と利用証の発行 ─────────────────────────────────────
 //   GET ?action=authVerify&email=...&code=123456&prefix=...&ua=...&apiKey=...
 function authVerify_(email, code, prefix, ua) {
@@ -1268,6 +1332,58 @@ function authVerify_(email, code, prefix, ua) {
     }));
   } catch (err) {
     return makeResponse(JSON.stringify({ ok: false, err: 'verify_failed' }));
+  }
+}
+
+// ── ③ 利用証の延長（スライド式の有効期限）──────────────────────────────
+//   GET ?action=authRenew&prefix=hub-v8-dev-&apiKey=本来のキー|利用証
+//
+//   期限を「発行から90日」ではなく「最後に使った日から90日」にするための入口。
+//   フロントがアプリ起動時に呼ぶ。狙いは次の2つ:
+//     ・毎日使う人を期限切れに一度も遭わせない（忙しい時に締め出されるのを防ぐ）
+//     ・3か月まったく開かれなかった端末（買い替えたPC・機種変前のスマホ・
+//       退職者の端末）だけを自然に失効させる ＝ 忘れられた端末の掃除
+//   紛失・退職への即時の対処は、これではなく管理者の「取り消し」が担う。
+//
+//   毎回シートに書くとGASが重くなるので、前回の延長から AUTH_RENEW_AFTER_DAYS
+//   日たっていなければ何も書かずに帰る（renewed:false）。
+function authRenew_(rawApiKey, prefix) {
+  try {
+    var token = '';
+    var i = String(rawApiKey || '').indexOf('|');
+    if (i >= 0) token = String(rawApiKey).slice(i + 1);
+
+    // 署名・期限を検査。切れていたら延長できない（本人確認からやり直し）。
+    var payload = authReadToken_(token);
+    if (!payload) return makeResponse(JSON.stringify({ ok: false, err: 'expired' }));
+    if (!authValid_(payload, prefix)) return makeResponse(JSON.stringify({ ok: false, err: 'revoked' }));
+
+    // まだ十分に残っているなら、シートに触らずに帰る
+    var keep = (AUTH_TTL_DAYS - AUTH_RENEW_AFTER_DAYS) * 86400000;
+    if (payload.x - Date.now() > keep) {
+      return makeResponse(JSON.stringify({ ok: true, renewed: false, exp: payload.x }));
+    }
+
+    var exp = Date.now() + AUTH_TTL_DAYS * 86400000;
+    var lock = LockService.getScriptLock();
+    var locked = false;
+    try { lock.waitLock(25000); locked = true; }
+    catch (le) { return makeResponse(JSON.stringify({ ok: false, err: 'busy' })); }
+    try {
+      var devices = authLoadDevices_(prefix);
+      var d = devices[payload.j];
+      if (!d) return makeResponse(JSON.stringify({ ok: false, err: 'revoked' }));
+      d.exp  = exp;
+      d.last = Date.now();   // 管理者が「最後に使った日」を見られるようにする
+      authSaveDevices_(prefix, devices);
+    } finally { if (locked) lock.releaseLock(); }
+
+    return makeResponse(JSON.stringify({
+      ok: true, renewed: true, exp: exp,
+      token: authMakeToken_(payload.n, payload.m, payload.s, payload.j)
+    }));
+  } catch (err) {
+    return makeResponse(JSON.stringify({ ok: false, err: 'renew_failed' }));
   }
 }
 

@@ -38,6 +38,14 @@ sub('doGet の入口',
   if (e.parameter.action === 'authVerify') {
     return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua);
   }
+  // v14: 招待メール（管理者が押す）。登録済みアドレスにだけ手順を送る。
+  if (e.parameter.action === 'authInvite') {
+    return authInvite_(e.parameter.email, authPrefixOf_(e.parameter));
+  }
+  // v14: 利用証の延長（スライド式の期限）。切れた利用証は延長できない。
+  if (e.parameter.action === 'authRenew') {
+    return authRenew_(e.parameter.apiKey, authPrefixOf_(e.parameter));
+  }
   // v14: 利用証の門番。HUB_AUTH_ENFORCE='1' を入れるまでは素通りする（段階移行）
   var _gate = authGate_(e.parameter.apiKey, e.parameter.action, authPrefixOf_(e.parameter));
   if (_gate) return _gate;`);

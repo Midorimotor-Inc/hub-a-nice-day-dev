@@ -105,10 +105,57 @@ const STOR='hub-v8-dev-';
 // 端末に保存した利用証を起動時に載せる（STORの宣言後に読む必要があるためここ）
 const HUB_TOKEN_KEY=STOR+'auth-token';
 try{const _t=localStorage.getItem(HUB_TOKEN_KEY);if(_t)hubApplyToken(_t);}catch(e){}
+// ★利用者認証の土台（v2.20 / 2026-09-04・Kyoshi承認のBLOCK-B変更）
+//   この端末で本人確認を済ませた人の「利用証」だけを持ち歩く。
+//   利用証は人ごと・端末ごとに1枚。使うたびに期限が90日先へ延びる（スライド式）ので、
+//   毎日使う人が締め出されることはない。3か月まったく開かれなかった端末だけが失効する。
+//   3ファイル（index_dev / customers / mobile）に同一のものを置くこと。
+const HUB_MINE_KEY = STOR + 'auth-mine';   // この端末の登録者 [{uid,name,myNumber,store,token,exp}]
+const HUB_KIND_KEY = STOR + 'auth-kind';   // 'own'（自分専用）/ 'shared'（共有）
+const hubLoadMine = () => {
+  try { const v = JSON.parse(localStorage.getItem(HUB_MINE_KEY));
+    return Array.isArray(v) ? v.filter(x => x && x.token && x.name) : []; } catch (e) { return []; }
+};
+const hubSaveMine = list => { try { localStorage.setItem(HUB_MINE_KEY, JSON.stringify(list)); } catch (e) {} };
+// 期限切れは「居ない人」として扱う（画面に出さない）
+const hubLive = list => (list || []).filter(x => !x.exp || x.exp > Date.now());
+const hubKind = () => { try { return localStorage.getItem(HUB_KIND_KEY) || ''; } catch (e) { return ''; } };
+const hubSetKind = k => { try { localStorage.setItem(HUB_KIND_KEY, k); } catch (e) {} };
+// その人の利用証を通信に載せる。居なければ認証前（本来のキーだけ）に戻す。
+const hubUse = name => {
+  const m = hubLive(hubLoadMine()).find(x => x.name === name);
+  hubApplyToken(m ? m.token : '');
+  return m || null;
+};
+// 起動時：登録済みなら誰かの利用証を載せる（ログイン画面のデータ読み込みに要る）
+try { const _m = hubLive(hubLoadMine()); if (_m.length) hubApplyToken(_m[0].token); } catch (e) {}
+
+// 認証系のGAS呼び出し。応答を必ず読む（no-corsだと失敗が無言になるため使わない）。
+const hubAuthCall = async (action, params) => {
+  try {
+    const q = new URLSearchParams(Object.assign({ action, prefix: STOR, apiKey: GAS_API_KEY }, params || {}));
+    const r = await fetch(GAS_URL + '?' + q.toString(), { cache: 'no-store' });
+    const t = await r.text();
+    try { return JSON.parse(t); } catch (e) { return { ok: false, err: 'bad_response', raw: String(t).slice(0, 80) }; }
+  } catch (e) { return { ok: false, err: 'offline' }; }
+};
+// ログイン直後に呼ぶ。使った日から90日先へ期限を延ばす（延長が要らなければ何もしない）。
+const hubRenew = async name => {
+  const cur = hubLive(hubLoadMine()).find(x => x.name === name);
+  if (!cur) return;
+  hubApplyToken(cur.token);
+  const r = await hubAuthCall('authRenew');
+  if (!r || !r.ok) return;                       // 失敗しても通常利用は続けられる
+  const list = hubLoadMine().map(x => (x.name === name
+    ? Object.assign({}, x, r.token ? { token: r.token, exp: r.exp } : { exp: r.exp || x.exp }) : x));
+  hubSaveMine(list);
+  if (r.token) hubApplyToken(r.token);
+};
+
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.19'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.20'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -1650,7 +1697,11 @@ const toDk=d=>{if(!d)return'';const p=String(d).split('-');return p.length===3?`
 const App=()=>{
   // index.htmlのlocalStorageからログインユーザーを取得
   const currentUser=useMemo(()=>{
-    try{const u=sessionStorage.getItem('hub_currentUser');return u?JSON.parse(u):null;}catch{return null;}
+    try{const u=sessionStorage.getItem('hub_currentUser');
+      const p=u?JSON.parse(u):null;
+      // スケジュール側でログインした人の利用証を、この画面の通信にも載せる
+      if(p&&p.name)hubUse(p.name);
+      return p;}catch{return null;}
   },[]);
   const [files,setFiles]=useState([]);
   const filesRef = useRef([]); // setFilesと同期して常に最新値を保持

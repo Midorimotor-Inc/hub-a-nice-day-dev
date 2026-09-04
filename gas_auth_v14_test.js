@@ -40,7 +40,7 @@ const ctx={Utilities,PropertiesService,CacheService,MailApp,LockService,Logger,c
 vm.createContext(ctx);
 vm.runInContext(src+`
 this.T={authMakeToken_,authReadToken_,authValid_,authGate_,authBaseKey_,authPrefixOf_,
-        authRequest_,authVerify_,authLoadDevices_,authSaveDevices_,authFindStaffByEmail_};`,ctx);
+        authRequest_,authInvite_,authVerify_,authRenew_,authLoadDevices_,authSaveDevices_,authFindStaffByEmail_};`,ctx);
 const T=ctx.T;
 
 const ok=[],ng=[];
@@ -141,6 +141,81 @@ t('手掛かりが無い時は本番扱い（安全側）', T.authPrefixOf_({})=
 // 13) 取り消しは環境ごとに独立（DEVで取り消しても本番の同じ端末は生きている、の裏返し確認）
 t('別環境の台帳を見ると未登録扱いになる',
   body(T.authGate_('hub2026co-key|'+token,'','hub-v8-'))==='unauthorized: revoked');
+
+// 13.5) 招待メール（管理者が押す）
+{
+  sentMail=[];
+  let r=body(T.authInvite_('stranger@example.com',PFX));
+  t('未登録アドレスには招待を送らない', r.ok===false&&r.err==='not_registered'&&sentMail.length===0, r);
+  r=body(T.authInvite_('  Daisuke@Example.com ',PFX));
+  t('登録済みには招待を送る（前後の空白と大文字を吸収）', r.ok===true&&r.name==='見取大介'&&sentMail.length===1, r);
+  const m=sentMail[0];
+  t('招待の件名が「登録のお願い」', /ログインの登録をお願いします/.test(m.sub), m.sub);
+  t('招待にコードを載せない（コードは端末で申し込んだ時）', !/[^0-9]d{6}[^0-9]/.test(m.body));
+  t('招待に本人の名前が入る', m.body.indexOf('見取大介')===0, m.body.slice(0,20));
+  t('招待にDEVの入口URLが入る', m.body.indexOf('hub-a-nice-day-dev/')>0);
+  t('DEVの件名に【DEV】が付く', m.sub.indexOf('【DEV】')===0, m.sub);
+  sentMail=[];
+  t('本番のURLは本番の入口', body(T.authInvite_('daisuke@example.com','hub-v8-')).err==='not_registered');
+  t('形式が不正なら送らない', body(T.authInvite_('daisuke',PFX)).err==='bad_email');
+  t('環境の指定が不正なら送らない', body(T.authInvite_('daisuke@example.com','hub-v9-')).err==='bad_prefix');
+  // 送りすぎ防止（招待とコードで別枠。招待だけ連打しても認証コードは送れる）
+  sentMail=[]; let sent=0;
+  for(let i=0;i<8;i++){ if(body(T.authInvite_('daisuke@example.com',PFX)).ok) sent++; }
+  t('招待の連打は上限で止まる', sent<=5&&sentMail.length<=5, {送れた:sent});
+}
+
+// 14) スライド式の有効期限（最後に使った日から90日）
+//     毎日使う人が期限切れに遭わないこと、放置された端末は失効することを確かめる。
+{
+  const DAY=86400000, KEY='hub2026co-key|';
+  // 本人確認を通して、まっさらな利用証を1枚作る
+  sentMail=[];
+  T.authRequest_('daisuke@example.com',PFX);
+  const code=(cacheStore['authcode:daisuke@example.com']||'').split('|')[0];
+  const v=body(T.authVerify_('daisuke@example.com',code,PFX,'test'));
+  t('延長の前提：利用証を発行できた', v.ok===true&&!!v.token, v);
+  const fresh=v.token;
+  const jti=T.authReadToken_(fresh).j;
+
+  // 発行直後は延長しない（毎回シートに書くとGASが重くなるため）
+  let r=body(T.authRenew_(KEY+fresh,PFX));
+  t('発行直後は延長しない（書き込みを起こさない）', r.ok===true&&r.renewed===false&&!r.token, r);
+
+  // 16日たった端末：延長され、新しい利用証が返る
+  const realNow=Date.now;
+  Date.now=()=>realNow()+16*DAY;
+  r=body(T.authRenew_(KEY+fresh,PFX));
+  t('16日たつと延長される', r.ok===true&&r.renewed===true&&!!r.token, r);
+  t('延長で期限が90日先に伸びる',
+    Math.round((r.exp-Date.now())/DAY)===90, Math.round((r.exp-Date.now())/DAY));
+  t('台帳の期限も伸びる', T.authLoadDevices_(PFX)[jti].exp===r.exp);
+  t('最後に使った日が記録される', !!T.authLoadDevices_(PFX)[jti].last);
+  const renewed=r.token;
+
+  // ★毎日使い続ける人は、いつまでも期限切れにならない
+  let tok=renewed, cur=16;
+  for(let i=0;i<40;i++){ cur+=16; Date.now=()=>realNow()+cur*DAY;
+    const rr=body(T.authRenew_(KEY+tok,PFX)); if(rr.token) tok=rr.token; }
+  Date.now=()=>realNow()+cur*DAY;
+  t('16日おきに'+cur+'日（約2年）使い続けても締め出されない',
+    T.authGate_(KEY+tok,'',PFX)===null, {日数:cur});
+
+  // ★3か月まったく開かなかった端末は、自然に失効する
+  Date.now=()=>realNow()+(cur+91)*DAY;
+  t('91日放置すると利用証が切れる', T.authReadToken_(tok)===null);
+  t('切れた利用証は延長できない（本人確認からやり直し）',
+    body(T.authRenew_(KEY+tok,PFX)).err==='expired');
+  t('切れた利用証では通信できない',
+    body(T.authGate_(KEY+tok,'',PFX))==='unauthorized: token');
+  Date.now=realNow;
+
+  // ★管理者が取り消した端末は、延長で復活できない
+  const d2=T.authLoadDevices_(PFX); delete d2[jti]; T.authSaveDevices_(PFX,d2);
+  t('取り消された端末は延長できない', body(T.authRenew_(KEY+renewed,PFX)).err==='revoked');
+  t('利用証なしでは延長できない', body(T.authRenew_('hub2026co-key',PFX)).err==='expired');
+  t('偽造した利用証では延長できない', body(T.authRenew_(KEY+'aaa.bbb',PFX)).err==='expired');
+}
 
 console.log('\n=== 合格 ('+ok.length+') ===');ok.forEach(s=>console.log('  ✓ '+s));
 if(ng.length){console.log('\n=== 不合格 ('+ng.length+') ===');ng.forEach(s=>console.log('  ✗ '+s));process.exit(1);}

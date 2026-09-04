@@ -78,7 +78,11 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.19';
+const MOBILE_VERSION='2.20';
+// 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
+//   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
+//   true  … この端末で本人確認を済ませた人しか入れない。
+const AUTH_REQUIRED = false;
 const GAS_URL='https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 // ★利用者認証（v14以降・Kyoshi承認のBLOCK-B変更・2026-09-03）
 //   apiKey は「本来のキー|利用証」の形で送る。GAS側は '|' の前だけを本来のキーとして
@@ -90,6 +94,53 @@ const STOR='hub-v8-dev-';
 // 端末に保存した利用証を起動時に載せる（STORの宣言後に読む必要があるためここ）
 const HUB_TOKEN_KEY=STOR+'auth-token';
 try{const _t=localStorage.getItem(HUB_TOKEN_KEY);if(_t)hubApplyToken(_t);}catch(e){}
+// ★利用者認証の土台（v2.20 / 2026-09-04・Kyoshi承認のBLOCK-B変更）
+//   この端末で本人確認を済ませた人の「利用証」だけを持ち歩く。
+//   利用証は人ごと・端末ごとに1枚。使うたびに期限が90日先へ延びる（スライド式）ので、
+//   毎日使う人が締め出されることはない。3か月まったく開かれなかった端末だけが失効する。
+//   3ファイル（index_dev / customers / mobile）に同一のものを置くこと。
+const HUB_MINE_KEY = STOR + 'auth-mine';   // この端末の登録者 [{uid,name,myNumber,store,token,exp}]
+const HUB_KIND_KEY = STOR + 'auth-kind';   // 'own'（自分専用）/ 'shared'（共有）
+const hubLoadMine = () => {
+  try { const v = JSON.parse(localStorage.getItem(HUB_MINE_KEY));
+    return Array.isArray(v) ? v.filter(x => x && x.token && x.name) : []; } catch (e) { return []; }
+};
+const hubSaveMine = list => { try { localStorage.setItem(HUB_MINE_KEY, JSON.stringify(list)); } catch (e) {} };
+// 期限切れは「居ない人」として扱う（画面に出さない）
+const hubLive = list => (list || []).filter(x => !x.exp || x.exp > Date.now());
+const hubKind = () => { try { return localStorage.getItem(HUB_KIND_KEY) || ''; } catch (e) { return ''; } };
+const hubSetKind = k => { try { localStorage.setItem(HUB_KIND_KEY, k); } catch (e) {} };
+// その人の利用証を通信に載せる。居なければ認証前（本来のキーだけ）に戻す。
+const hubUse = name => {
+  const m = hubLive(hubLoadMine()).find(x => x.name === name);
+  hubApplyToken(m ? m.token : '');
+  return m || null;
+};
+// 起動時：登録済みなら誰かの利用証を載せる（ログイン画面のデータ読み込みに要る）
+try { const _m = hubLive(hubLoadMine()); if (_m.length) hubApplyToken(_m[0].token); } catch (e) {}
+
+// 認証系のGAS呼び出し。応答を必ず読む（no-corsだと失敗が無言になるため使わない）。
+const hubAuthCall = async (action, params) => {
+  try {
+    const q = new URLSearchParams(Object.assign({ action, prefix: STOR, apiKey: GAS_API_KEY }, params || {}));
+    const r = await fetch(GAS_URL + '?' + q.toString(), { cache: 'no-store' });
+    const t = await r.text();
+    try { return JSON.parse(t); } catch (e) { return { ok: false, err: 'bad_response', raw: String(t).slice(0, 80) }; }
+  } catch (e) { return { ok: false, err: 'offline' }; }
+};
+// ログイン直後に呼ぶ。使った日から90日先へ期限を延ばす（延長が要らなければ何もしない）。
+const hubRenew = async name => {
+  const cur = hubLive(hubLoadMine()).find(x => x.name === name);
+  if (!cur) return;
+  hubApplyToken(cur.token);
+  const r = await hubAuthCall('authRenew');
+  if (!r || !r.ok) return;                       // 失敗しても通常利用は続けられる
+  const list = hubLoadMine().map(x => (x.name === name
+    ? Object.assign({}, x, r.token ? { token: r.token, exp: r.exp } : { exp: r.exp || x.exp }) : x));
+  hubSaveMine(list);
+  if (r.token) hubApplyToken(r.token);
+};
+
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 
 // ── データ復旧（GAS v10スナップショット）。PC版と同じ4名のみ ──
@@ -364,7 +415,129 @@ const rangesOverlap=(r,fromN,toN)=>{
   return !(toN<s||fromN>e);
 };
 
-const LoginScreen=({onLogin})=>{
+// ── この端末にスタッフを追加（メール → 6桁 → 端末の種類）──────────
+const AuthAddScreen=({onDone,onCancel})=>{
+  const [step,setStep]=useState('email');
+  const [email,setEmail]=useState('');
+  const [code,setCode]=useState('');
+  const [kind,setKind]=useState(hubKind());
+  const [pend,setPend]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [err,setErr]=useState('');
+  const [who,setWho]=useState(null);
+  const firstOnDevice=hubLive(hubLoadMine()).length===0;
+
+  const sendCode=async()=>{
+    setErr('');setBusy(true);
+    const r=await hubAuthCall('authRequest',{email:email.trim()});
+    setBusy(false);
+    if(!r||!r.ok){
+      setErr(r&&r.err==='not_registered'?'このアドレスは登録されていません。管理者にご確認ください。'
+        :r&&r.err==='too_many'?'送信が続いています。しばらく待ってからお試しください。'
+        :r&&r.err==='bad_email'?'メールアドレスの形式が正しくありません。'
+        :'コードを送れませんでした。通信の状態をご確認ください。');
+      return;
+    }
+    setStep('code');
+  };
+  const finish=(r,k)=>{
+    hubSetKind(k);
+    const list=hubLoadMine().filter(x=>x.name!==r.name);
+    list.push({uid:r.uid||'',name:r.name,myNumber:r.myNumber,store:r.store||'honten',token:r.token,exp:r.exp});
+    hubSaveMine(list);
+    if(hubLive(hubLoadMine()).length>1&&hubKind()==='own')hubSetKind('shared');
+    setWho(r);setStep('done');
+  };
+  const verify=async()=>{
+    setErr('');setBusy(true);
+    const r=await hubAuthCall('authVerify',{email:email.trim(),code:code.trim(),ua:navigator.userAgent||''});
+    setBusy(false);
+    if(!r||!r.ok){
+      setErr(r&&r.err==='bad_code'?'コードが違います。もう一度お試しください。'
+        :r&&r.err==='expired'?'コードの有効時間（10分）が過ぎました。送り直してください。'
+        :r&&r.err==='too_many'?'入力の失敗が続いたため止めました。送り直してください。'
+        :'確認できませんでした。通信の状態をご確認ください。');
+      return;
+    }
+    if(firstOnDevice&&!kind){setPend(r);setStep('kind');return;}
+    finish(r,kind||hubKind()||'shared');
+  };
+
+  const IN={width:'100%',padding:'13px 14px',border:'2px solid #e5e7eb',borderRadius:11,fontSize:16,
+    outline:'none',boxSizing:'border-box',background:'white'};
+  const BTN=on=>({width:'100%',padding:'15px 0',marginTop:14,border:'none',borderRadius:12,fontWeight:800,fontSize:16,
+    background:on?'linear-gradient(135deg,#4f46e5,#7c3aed)':'rgba(255,255,255,0.25)',color:on?'white':'rgba(255,255,255,0.6)'});
+  const SUB={width:'100%',padding:'12px 0',marginTop:10,borderRadius:11,border:'2px solid rgba(255,255,255,0.4)',
+    background:'transparent',color:'white',fontWeight:700,fontSize:14};
+  const CARD={width:'100%',textAlign:'left',padding:'14px 15px',borderRadius:12,border:'none',background:'white',marginBottom:10};
+  const LBL={color:'rgba(255,255,255,0.9)',fontSize:13,lineHeight:1.8,marginBottom:10};
+
+  return(
+    <div style={{height:'100%',display:'flex',flexDirection:'column',justifyContent:'center',padding:22,
+      background:'linear-gradient(160deg,#1e1b4b,#3730a3 60%,#6d28d9)',overflowY:'auto'}}>
+      <div style={{textAlign:'center',marginBottom:18}}>
+        <div style={{fontSize:40,marginBottom:6}}>🔑</div>
+        <div style={{color:'white',fontSize:19,fontWeight:900}}>この端末にスタッフを追加</div>
+        <div style={{color:'rgba(255,255,255,0.7)',fontSize:12,marginTop:3}}>登録は端末ごとに1回だけです</div>
+      </div>
+      {step==='email'&&(
+        <div>
+          <div style={LBL}>管理者が登録した<b>ご自分のメールアドレス</b>を入れてください。名前や番号の入力は要りません。</div>
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} style={IN}
+            placeholder="example@gmail.com" autoComplete="off" inputMode="email"/>
+          {err&&<div style={{color:'#fecaca',fontWeight:700,fontSize:13,marginTop:8}}>{err}</div>}
+          <button style={BTN(!busy&&!!email.trim())} disabled={busy||!email.trim()}
+            onClick={()=>{if(email.trim().indexOf('@')<1){setErr('メールアドレスの形式が正しくありません。');return;}sendCode();}}>
+            {busy?'送信中…':'確認コードを送る'}
+          </button>
+          {onCancel&&<button style={SUB} onClick={onCancel}>やめる</button>}
+        </div>
+      )}
+      {step==='code'&&(
+        <div>
+          <div style={LBL}>{email.trim()} 宛に6桁のコードを送りました（有効10分）</div>
+          <input type="text" value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,'').slice(0,6))}
+            style={{...IN,fontSize:30,letterSpacing:'0.35em',textAlign:'center',fontWeight:800}}
+            placeholder="------" inputMode="numeric" autoComplete="one-time-code" autoFocus/>
+          {err&&<div style={{color:'#fecaca',fontWeight:700,fontSize:13,marginTop:8}}>{err}</div>}
+          <button style={BTN(!busy&&code.length===6)} disabled={busy||code.length!==6} onClick={verify}>
+            {busy?'確認中…':'確認する'}
+          </button>
+          <button style={SUB} onClick={()=>{setStep('email');setCode('');setErr('');}}>← アドレスを入れ直す</button>
+        </div>
+      )}
+      {step==='kind'&&(
+        <div>
+          <div style={{color:'white',fontWeight:800,fontSize:17,marginBottom:4}}>{pend&&pend.name} さん、確認できました</div>
+          <div style={LBL}>最後にひとつだけ。<b>この端末はどちらですか？</b></div>
+          <button style={CARD} onClick={()=>{setKind('own');finish(pend,'own');}}>
+            <div style={{fontWeight:800,fontSize:15,color:'#111827'}}>自分専用（自分のスマホ）</div>
+            <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>開くだけで使えます。番号の入力も要りません。</div>
+          </button>
+          <button style={CARD} onClick={()=>{setKind('shared');finish(pend,'shared');}}>
+            <div style={{fontWeight:800,fontSize:15,color:'#111827'}}>みんなで使う（共有）</div>
+            <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>店のタブレットなど。使う前に名前を選びます。</div>
+          </button>
+        </div>
+      )}
+      {step==='done'&&(
+        <div>
+          <div style={{background:'white',borderRadius:14,padding:'20px 16px',textAlign:'center'}}>
+            <div style={{fontSize:32,marginBottom:4}}>✅</div>
+            <div style={{fontWeight:900,fontSize:19,color:'#065f46'}}>{who&&who.name} さん</div>
+            <div style={{fontSize:12.5,color:'#047857',marginTop:4}}>
+              この端末に登録しました（{hubKind()==='own'?'自分専用':'共有'}）
+            </div>
+          </div>
+          <div style={LBL}>次からは、開くだけで使えます。使っているうちは登録が切れることはありません。</div>
+          <button style={BTN(true)} onClick={()=>onDone&&onDone(who)}>はじめる →</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const LoginScreen=({onLogin,onAddAuth})=>{
   const [code,setCode]=useState('');
   const [err,setErr]=useState('');
   const [success,setSuccess]=useState(null);
@@ -374,7 +547,12 @@ const LoginScreen=({onLogin})=>{
     (async()=>{
       try{
         const [h,s]=await Promise.all([sGet(STOR+'honten-staff-v2'),sGet(STOR+'sanda-staff-v2')]);
-        const all=[...(h||[]).map(st=>({...st,store:'honten'})),...(s||[]).map(st=>({...st,store:'sanda'}))].filter(st=>st.name&&st.myNumber!=null);
+        let all=[...(h||[]).map(st=>({...st,store:'honten'})),...(s||[]).map(st=>({...st,store:'sanda'}))].filter(st=>st.name&&st.myNumber!=null);
+        // 本人認証が必須の間は、この端末で本人確認を済ませた人だけを出す
+        if(AUTH_REQUIRED){
+          const mine=new Set(hubLive(hubLoadMine()).map(m=>m.name));
+          all=all.filter(st=>mine.has(st.name));
+        }
         if(all.length>0)setStaffList(all);
       }catch(e){}
       setStaffLoading(false);
@@ -384,6 +562,10 @@ const LoginScreen=({onLogin})=>{
     const n=parseInt(code,10);
     const s=staffList.find(s=>s.myNumber===n);
     if(!s){setErr('コードが正しくありません');setCode('');return;}
+    // 本人認証が必須の間は、この端末で本人確認を済ませた人しか入れない
+    if(AUTH_REQUIRED&&!hubLive(hubLoadMine()).some(m=>m.name===s.name)){
+      setErr('この端末では登録されていません。下から登録してください。');setCode('');return;
+    }
     setErr('');
     setSuccess(s);
     // ★演出は1.6秒。8秒は現場では長すぎる（開いてから使えるまでの体感を一番損ねていた）
@@ -442,6 +624,18 @@ const LoginScreen=({onLogin})=>{
         {err&&<div style={{color:'#f87171',fontSize:11,marginTop:8,textAlign:'center',letterSpacing:1}}>{err}</div>}
         <button onClick={doLogin}
           style={{width:'100%',marginTop:24,padding:'14px 0',background:'linear-gradient(135deg,#4338ca,#6d28d9)',color:'white',border:'none',borderRadius:12,fontSize:14,fontWeight:800,letterSpacing:2,boxShadow:'0 4px 20px rgba(99,102,241,.4)'}}> SIGN IN </button>
+        {onAddAuth&&(
+          <div style={{marginTop:18,paddingTop:16,borderTop:'1px solid rgba(255,255,255,.15)'}}>
+            <div style={{color:'rgba(255,255,255,.6)',fontSize:11,lineHeight:1.8,marginBottom:9,textAlign:'center'}}>
+              この端末がはじめての方は、こちらから登録してください（1回だけ）。
+            </div>
+            <button onClick={onAddAuth}
+              style={{width:'100%',padding:'12px 0',background:'transparent',color:'white',
+                border:'2px dashed rgba(255,255,255,.45)',borderRadius:11,fontSize:13,fontWeight:800}}>
+              ＋ スタッフを追加（メールで本人確認）
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1687,6 +1881,20 @@ const App=()=>{
   const [dayOffS,setDayOffS]=useState({});
   const [staffH,setStaffH]=useState([]);
   const [staffS,setStaffS]=useState([]);
+  // ── 本人認証：この端末に登録された人 ──
+  const [authMine,setAuthMine]=useState(()=>hubLive(hubLoadMine()));
+  const [showAuthAdd,setShowAuthAdd]=useState(false);
+  // 自分専用の端末（＝自分のスマホ）は、番号すら打たずに開いた瞬間その人として使える。
+  // 共有のタブレットでは必ず名前を選ばせる（前の人の名義で予約が入るのを防ぐため）。
+  useEffect(()=>{
+    if(user||!AUTH_REQUIRED)return;
+    if(hubKind()!=='own'||authMine.length!==1)return;
+    const m=authMine[0];
+    const rec=[...(staffH||[]),...(staffS||[])].find(x=>(m.uid&&x.uid===m.uid)||x.name===m.name);
+    const u=rec?{...rec,store:rec.store||m.store}:{uid:m.uid,name:m.name,myNumber:m.myNumber,store:m.store,badge:'mechanic'};
+    hubUse(m.name); hubRenew(m.name);
+    setUser(u); setFadeIn(true);
+  },[user,authMine,staffH,staffS]);
   const [editMode,setEditMode]=useState(null); // {type,dk,idx?,slot?,isNew,initial,lockedBy}
   const [saveBanners,setSaveBanners]=useState([]); // 保存状況バナー [{pid,phase:'saving'|'done'|'fail',label,detail,ts}]
   const [mailModal,setMailModal]=useState(false);
@@ -2355,7 +2563,13 @@ const App=()=>{
     })();
   },[editMode,user,vsId,inspData,schedDataH,schedDataS,loanerResH,loanerResS,rentalResData,inspLimits]);
 
-  if(!user)return <LoginScreen onLogin={u=>{setUser(u);setFadeIn(true);}}/>;
+  if(!user&&(showAuthAdd||(AUTH_REQUIRED&&authMine.length===0)))
+    return <AuthAddScreen
+      onCancel={(authMine.length>0||!AUTH_REQUIRED)?()=>setShowAuthAdd(false):null}
+      onDone={()=>{setShowAuthAdd(false);setAuthMine(hubLive(hubLoadMine()));}}/>;
+  if(!user)return <LoginScreen
+    onLogin={u=>{hubUse(u.name);hubRenew(u.name);setUser(u);setFadeIn(true);}}
+    onAddAuth={()=>setShowAuthAdd(true)}/>;
   const TABS=[{id:'cal',label:'カレンダー',icon:'📅'},{id:'sched',label:'スケジュール',icon:'⏰'},{id:'loaner',label:'代車',icon:'🚙'}];
   return(
     <div style={{height:'100%',display:'flex',flexDirection:'column',position:'relative'}}>
