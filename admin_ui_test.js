@@ -22,6 +22,7 @@ function reset() {
     { uid:'h1', name:'見取大介', myNumber:1, badge:'manager',  store:'honten', loginEmail:'daisuke@midori-m.com' },
     { uid:'h2', name:'岡上秀一', myNumber:2, badge:'mechanic', store:'honten' },
     { uid:'h7', name:'江川京志', myNumber:7, badge:'mechanic', store:'honten' },   // メール未設定（種火の管理者）
+    { uid:'h8', name:'ダク', myNumber:8, badge:'mechanic', store:'honten' },       // 助っ人。PCを持たず触らない
   ];
   staffS = [ { uid:'s10', name:'藤原昭人', myNumber:10, badge:'manager', store:'sanda' } ];
   devices = {
@@ -256,7 +257,31 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
       staffH.find(s => s.uid === 'h2'));
     t('スタッフ表から名前は消えない', !!staffH.find(s => s.uid === 'h2'));
 
-    // ⑧ 開き直しても入れる（利用証が端末に残っている）
+    // ⑧ ログイン不要 —— アルバイト・助っ人を進み具合の母数から外す
+    const progBefore = await page.evaluate(() => document.querySelector('.progress').innerText.replace(/\s+/g,' '));
+    t('母数に全員が入っている', /5\s*人が対象/.test(progBefore), progBefore);
+    await page.evaluate(() => { const b = document.querySelector('[data-nologin="h8"]'); if (b) b.click(); });
+    t('ログイン不要の確認が出る', await see(page, 'さんを「ログイン不要」にします'));
+    t('何が起きるか明示する', await see(page, '休日設定・頭数・予約の担当欄には今までどおり出ます'));
+    await click(page, 'ログイン不要にする', '.dialog');
+    await page.waitForTimeout(1300);
+    t('スタッフ表に印が付く', (staffH.find(s => s.uid === 'h8') || {}).noLogin === true,
+      staffH.find(s => s.uid === 'h8'));
+    t('スタッフ表から消えない（休日設定で要る）', !!staffH.find(s => s.uid === 'h8'));
+    const after = await page.evaluate(() => document.querySelector('.progress').innerText.replace(/\s+/g,' '));
+    t('母数から外れる', /4\s*人が対象/.test(after) && /1\s*ログイン不要/.test(after), after);
+    t('一覧に「ログイン不要」と出る', await page.evaluate(() =>
+      document.querySelector('.panelbox tbody').innerText.includes('ログイン不要')));
+    t('招待の対象から外れる', await page.evaluate(() =>
+      !document.querySelector('[data-invite="h8"]')));
+
+    // 戻せること
+    await page.evaluate(() => { const b = document.querySelector('[data-needlogin="h8"]'); if (b) b.click(); });
+    await page.waitForTimeout(1300);
+    t('ログインを使う扱いに戻せる', !(staffH.find(s => s.uid === 'h8') || {}).noLogin,
+      staffH.find(s => s.uid === 'h8'));
+
+    // ⑨ 開き直しても入れる（利用証が端末に残っている）
     await page.reload({ waitUntil: 'domcontentloaded' });
     t('開き直すとログインを求められない', await see(page, '本人認証の進み具合', 8000), await dump(page));
 

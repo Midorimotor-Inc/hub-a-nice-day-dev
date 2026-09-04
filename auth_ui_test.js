@@ -23,6 +23,8 @@ let staffH = [
   { uid: 'h1', name: '見取大介', myNumber: 1, badge: 'manager', store: 'honten', loginEmail: 'daisuke@example.com' },
   { uid: 'h2', name: '岡上秀一', myNumber: 2, badge: 'mechanic', store: 'honten' },
   { uid: 'h7', name: '江川京志', myNumber: 7, badge: 'mechanic', store: 'honten', loginEmail: 'kyoshi@example.com' },
+  // PCを持たず、一度もログインしない人（整備補助）。ログイン用メールは持たない。
+  { uid: 'h8', name: 'ダク', myNumber: 8, badge: 'mechanic', store: 'honten' },
 ];
 let devices = {};          // 端末台帳
 let sentInvites = [];      // 送った招待
@@ -197,6 +199,24 @@ const dump = async (page, root) => page.evaluate(r => {
     await seeText(page, 'この端末に登録しました');
     await clickText(page, 'はじめる');
     await seeText(page, '担当者を選択してください');
+    // ★PCを持たない人は「ログインできない」だけで、スタッフ表からは消えない。
+    //   休日設定・頭数・予約の担当欄で必要になるため。
+    t('必須でもログイン画面には未登録者を出さない', !(await seeText(page, 'ダク', 1200)));
+    await clickText(page, '設定');
+    await seeText(page, 'スタッフ設定');
+    t('スタッフ設定には未登録者も並ぶ（休日設定で要る）',
+      await page.evaluate(() => {
+        const m = document.querySelector('.modal-box');
+        return !!m && m.innerText.includes('ダク') && m.innerText.includes('岡上秀一');
+      }), await dump(page, MODAL));
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll('.modal-box button')].pop();
+      const x = [...document.querySelectorAll('.modal-box button')].find(e => e.innerText.trim() === '');
+      if (x) x.click();
+    });
+    await page.waitForTimeout(400);
+
     t('2人が並ぶ', (await seeText(page, '見取大介')) && (await seeText(page, '江川京志')), await dump(page));
     t('必須モードでもJSエラーなし', errs.length === 0, errs.slice(0, 2));
   });

@@ -135,10 +135,12 @@ td.act{text-align:right;white-space:nowrap}
 .state.ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok-line)}
 .state.wait{background:var(--wait-bg);color:var(--wait);border-color:var(--wait-line)}
 .state.idle{background:var(--idle-bg);color:var(--idle);border-color:var(--idle-line)}
+.state.none{background:transparent;color:var(--ink-3);border-color:var(--rule-2);border-style:dashed}
 .state .devs{font-family:"Roboto Mono",monospace;font-weight:500;opacity:.85}
 
 .stripe{width:3px;padding:0;border-bottom:1px solid var(--rule)}
 .stripe.ok{background:var(--ok)} .stripe.wait{background:var(--wait)} .stripe.idle{background:var(--idle-line)}
+.stripe.none{background:transparent;border-right:2px dashed var(--rule-2)}
 
 .empty{padding:38px 22px;text-align:center;color:var(--ink-3);font-size:13.5px;line-height:1.9}
 .foot{padding:14px 20px;border-top:1px solid var(--rule);background:var(--panel-2);font-size:12px;color:var(--ink-2);line-height:1.8}
@@ -264,6 +266,7 @@ function devsOf(uid, name){
   return out;
 }
 function statusOf(s){
+  if (s.noLogin) return 'none';                    // ログイン不要（わざと空けてある）
   if (devsOf(s.uid, s.name).length > 0) return 'ok';
   if (s.loginEmail) return 'wait';
   return 'idle';
@@ -296,16 +299,20 @@ function viewGate(){
 
 // ── 進み具合 ─────────────────────────────────────
 function counts(){
-  var c = {ok:0, wait:0, idle:0};
+  var c = {ok:0, wait:0, idle:0, none:0};
   allStaff().forEach(function(s){ c[statusOf(s)]++; });
   return c;
 }
 function viewProgress(){
-  var c = counts(), n = allStaff().length;
+  var c = counts();
+  var n = allStaff().length - c.none;              // ログイン不要の人は数えない
   var pct = function(v){ return n ? (v/n*100) : 0; };
+  var done = n > 0 && c.ok === n;
   return '<section class="progress">'
     + '<h2>本人認証の進み具合</h2>'
-    + '<p class="sub">全員が「登録済み」になったら、名前を選ぶだけのログインを止められます。</p>'
+    + '<p class="sub">' + (done
+        ? '<b style="color:var(--ok)">システムを使う方は全員そろいました。</b>名前を選ぶだけのログインを止められます。'
+        : 'システムを使う方が全員「登録済み」になったら、名前を選ぶだけのログインを止められます。') + '</p>'
     + '<div class="bar" role="img" aria-label="登録済み' + c.ok + '人、未登録' + c.wait + '人、メール未設定' + c.idle + '人">'
     + '<span class="s-ok" style="width:' + pct(c.ok) + '%"></span>'
     + '<span class="s-wait" style="width:' + pct(c.wait) + '%"></span>'
@@ -314,7 +321,8 @@ function viewProgress(){
     + '<div><span class="n">' + c.ok + '</span><span class="dot ok"></span>登録済み</div>'
     + '<div><span class="n">' + c.wait + '</span><span class="dot wait"></span>メール設定済み・未登録</div>'
     + '<div><span class="n">' + c.idle + '</span><span class="dot idle"></span>メール未設定</div>'
-    + '<div style="margin-left:auto"><span class="n">' + n + '</span>人</div>'
+    + (c.none ? '<div><span class="n" style="color:var(--ink-3)">' + c.none + '</span>ログイン不要</div>' : '')
+    + '<div style="margin-left:auto"><span class="n">' + n + '</span>人が対象</div>'
     + '</div></section>';
 }
 function viewTabs(){
@@ -332,16 +340,22 @@ function viewStaff(){
     var st = statusOf(s), nd = devsOf(s.uid, s.name).length;
     var label = st==='ok'   ? '<span class="state ok">登録済み <span class="devs">端末' + nd + '</span></span>'
               : st==='wait' ? '<span class="state wait">メール設定済み・未登録</span>'
+              : st==='none' ? '<span class="state none">ログイン不要</span>'
               :               '<span class="state idle">メール未設定</span>';
     return '<tr>'
       + '<td class="stripe ' + st + '"></td>'
       + '<td class="num">' + esc(s.myNumber) + '</td>'
       + '<td class="nm">' + esc(s.name) + '<small>' + (s.store==='sanda'?'三田店':'本店') + '</small></td>'
-      + '<td><input class="mailin" data-mail="' + esc(s.uid) + '" data-store="' + esc(s.store) + '" value="' + esc(s.loginEmail||'') + '" placeholder="未設定" autocomplete="off" aria-label="' + esc(s.name) + ' のログイン用メール"></td>'
+      + '<td>' + (st==='none'
+          ? '<span style="font-size:12px;color:var(--ink-3)">—</span>'
+          : '<input class="mailin" data-mail="' + esc(s.uid) + '" data-store="' + esc(s.store) + '" value="' + esc(s.loginEmail||'') + '" placeholder="未設定" autocomplete="off" aria-label="' + esc(s.name) + ' のログイン用メール">') + '</td>'
       + '<td>' + label + '</td>'
       + '<td class="act">'
-      + '<button class="btn ghost sm" data-invite="' + esc(s.uid) + '"' + (s.loginEmail?'':' disabled') + '>招待を送る</button> '
-      + '<button class="btn stop sm" data-release="' + esc(s.uid) + '">登録解除</button>'
+      + (st==='none'
+          ? '<button class="btn ghost sm" data-needlogin="' + esc(s.uid) + '">ログインを使う</button>'
+          : '<button class="btn ghost sm" data-invite="' + esc(s.uid) + '"' + (s.loginEmail?'':' disabled') + '>招待を送る</button> '
+            + (nd ? '' : '<button class="btn ghost sm" data-nologin="' + esc(s.uid) + '">ログイン不要</button> ')
+            + '<button class="btn stop sm" data-release="' + esc(s.uid) + '">登録解除</button>')
       + '</td></tr>';
   }).join('');
   var pending = list.filter(function(s){ return s.loginEmail && statusOf(s) !== 'ok'; }).length;
@@ -352,7 +366,10 @@ function viewStaff(){
     + '<div class="tablewrap"><table>'
     + '<thead><tr><th class="stripe"></th><th>No.</th><th>氏名</th><th>ログイン用メール</th><th>状態</th><th style="text-align:right">操作</th></tr></thead>'
     + '<tbody>' + (rows || '<tr><td colspan="6" class="empty">スタッフを読み込めませんでした。</td></tr>') + '</tbody></table></div>'
-    + '<div class="foot"><b>「登録解除」を押すと</b>、その方の登録端末をすべて取り消し、ログイン用メールを消します。'
+    + '<div class="foot"><b>「ログイン不要」</b>は、アルバイトや助っ人など、システムを触らない方に付けます。'
+    + '付けた方は上の進み具合の母数から外れるので、<b>「あと何人で切り替えられるか」が正しく見えます</b>。'
+    + '休日設定・頭数・予約の担当欄には今までどおり出ます（スタッフ表からは消えません）。'
+    + '<br><b>「登録解除」を押すと</b>、その方の登録端末をすべて取り消し、ログイン用メールを消します。'
     + '端末を消し忘れて、辞めた方のスマホから入れたまま——という取りこぼしを防ぐため、1つの操作にまとめています。'
     + '<br>スタッフ表からお名前は消えません（過去の予約に残るため）。名前も消す場合は、スケジュール画面のスタッフ設定から削除してください。</div>'
     + '</div>';
@@ -571,6 +588,38 @@ function bind(){
         render();
         toast('保存しました', v ? (s.name + ' さんのログイン用メールを ' + v + ' にしました。続けて「招待を送る」を押してください。')
                                : (s.name + ' さんのログイン用メールを消しました。'));
+      });
+    };
+  });
+
+  // --- ログイン不要の切り替え ---
+  each('[data-nologin]', function(b){
+    b.onclick = function(){
+      var s = findStaff(b.dataset.nologin); if (!s) return;
+      S.dialog = {
+        title: s.name + ' さんを「ログイン不要」にします', okLabel:'ログイン不要にする',
+        body:'<p>システムを触らない方に付ける印です。ログイン用メールは消します。</p>'
+          + '<div class="addr" style="font-family:inherit;font-size:13px;font-weight:400;line-height:1.9">'
+          + '・進み具合の母数から外れます<br>'
+          + '・招待の対象になりません<br>'
+          + '・<b>休日設定・頭数・予約の担当欄には今までどおり出ます</b></div>'
+          + '<p style="font-size:12px;color:var(--ink-3)">あとから「ログインを使う」で戻せます。</p>',
+        onOk: function(){
+          saveStaffField(s.uid, s.store, {noLogin:true, loginEmail:undefined}).then(function(res){
+            if (!res.ok) { toast('変えられませんでした', res.why + '。もう一度お試しください。'); return; }
+            render(); toast(s.name + ' さんを「ログイン不要」にしました', '進み具合の母数から外しました。');
+          });
+        }
+      };
+      render();
+    };
+  });
+  each('[data-needlogin]', function(b){
+    b.onclick = function(){
+      var s = findStaff(b.dataset.needlogin); if (!s) return;
+      saveStaffField(s.uid, s.store, {noLogin:undefined}).then(function(res){
+        if (!res.ok) { toast('変えられませんでした', res.why + '。もう一度お試しください。'); return; }
+        render(); toast(s.name + ' さんはログインを使う扱いになりました', 'ログイン用メールを登録して、招待を送ってください。');
       });
     };
   });
