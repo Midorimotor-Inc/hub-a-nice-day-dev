@@ -159,6 +159,8 @@ td.act{text-align:right;white-space:nowrap}
 .dialog p{margin:0 0 6px;font-size:13px;color:var(--ink-2);line-height:1.85}
 .dialog .addr{font-family:"Roboto Mono",monospace;font-size:14px;font-weight:700;color:var(--ink);
   background:var(--panel-2);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;margin:10px 0 12px;word-break:break-all}
+.dialog select,.dialog input[type=email]{width:100%;padding:11px 12px;border:1.5px solid var(--rule-2);
+  border-radius:9px;font:inherit;font-size:15px;background:#fff;color:var(--ink);box-sizing:border-box}
 .dialog .row{display:flex;gap:9px;margin-top:16px}
 .dialog .row .btn{flex:1}
 
@@ -265,11 +267,21 @@ function devsOf(uid, name){
   }
   return out;
 }
+// 一覧に載る＝役割を決めた人。決めていない人は数だけ出す。
+//   sysUse は「操作すると決めた」印。メールがまだでも一覧に残すために要る
+//   （これが無いと、メール未入力で追加した人が跡形もなく消える）。
+function isListed(s){
+  return s.sysUse === true || s.noLogin === true || !!s.loginEmail || devsOf(s.uid, s.name).length > 0;
+}
+function listed(){ return allStaff().filter(isListed); }
+// 「システムを操作する」人だけが、切り替えの母数になる
+function isOperator(s){ return isListed(s) && s.noLogin !== true; }
+function operators(){ return allStaff().filter(isOperator); }
 function statusOf(s){
-  if (s.noLogin) return 'none';                    // ログイン不要（わざと空けてある）
+  if (s.noLogin === true) return 'none';           // 操作しない（意図して空けてある）
   if (devsOf(s.uid, s.name).length > 0) return 'ok';
-  if (s.loginEmail) return 'wait';
-  return 'idle';
+  if (s.loginEmail) return 'wait';                 // 招待は送れる。まだ端末を登録していない
+  return 'idle';                                   // 操作する人だが、メールがまだ
 }
 
 // ── ログイン画面 ─────────────────────────────────
@@ -300,29 +312,31 @@ function viewGate(){
 // ── 進み具合 ─────────────────────────────────────
 function counts(){
   var c = {ok:0, wait:0, idle:0, none:0};
-  allStaff().forEach(function(s){ c[statusOf(s)]++; });
+  listed().forEach(function(s){ c[statusOf(s)]++; });
   return c;
 }
 function viewProgress(){
   var c = counts();
-  var n = allStaff().length - c.none;              // ログイン不要の人は数えない
+  var n = operators().length;                      // 操作する人だけが母数
   var pct = function(v){ return n ? (v/n*100) : 0; };
   var done = n > 0 && c.ok === n;
   return '<section class="progress">'
     + '<h2>本人認証の進み具合</h2>'
-    + '<p class="sub">' + (done
-        ? '<b style="color:var(--ok)">システムを使う方は全員そろいました。</b>名前を選ぶだけのログインを止められます。'
-        : 'システムを使う方が全員「登録済み」になったら、名前を選ぶだけのログインを止められます。') + '</p>'
+    + '<p class="sub">' + (n === 0
+        ? '「＋ スタッフを追加」から、一人ずつ役割を決めてください。'
+        : done
+        ? '<b style="color:var(--ok)">追加した方は全員そろいました。</b>名前を選ぶだけのログインを止められます。'
+        : 'ここに載っている方が全員「登録済み」になったら、名前を選ぶだけのログインを止められます。') + '</p>'
     + '<div class="bar" role="img" aria-label="登録済み' + c.ok + '人、未登録' + c.wait + '人、メール未設定' + c.idle + '人">'
     + '<span class="s-ok" style="width:' + pct(c.ok) + '%"></span>'
     + '<span class="s-wait" style="width:' + pct(c.wait) + '%"></span>'
     + '<span class="s-idle" style="width:' + pct(c.idle) + '%"></span></div>'
     + '<div class="legend">'
     + '<div><span class="n">' + c.ok + '</span><span class="dot ok"></span>登録済み</div>'
-    + '<div><span class="n">' + c.wait + '</span><span class="dot wait"></span>メール設定済み・未登録</div>'
-    + '<div><span class="n">' + c.idle + '</span><span class="dot idle"></span>メール未設定</div>'
-    + (c.none ? '<div><span class="n" style="color:var(--ink-3)">' + c.none + '</span>ログイン不要</div>' : '')
-    + '<div style="margin-left:auto"><span class="n">' + n + '</span>人が対象</div>'
+    + '<div><span class="n">' + c.wait + '</span><span class="dot wait"></span>招待したが未登録</div>'
+    + (c.idle ? '<div><span class="n">' + c.idle + '</span><span class="dot idle"></span>メール未入力</div>' : '')
+    + (c.none ? '<div><span class="n" style="color:var(--ink-3)">' + c.none + '</span>操作しない</div>' : '')
+    + '<div style="margin-left:auto"><span class="n">' + n + '</span>人が操作する</div>'
     + '</div></section>';
 }
 function viewTabs(){
@@ -335,47 +349,53 @@ function viewTabs(){
 
 // ── スタッフと招待 ───────────────────────────────
 function viewStaff(){
-  var list = allStaff();
+  var list = listed();
   var rows = list.map(function(s){
     var st = statusOf(s), nd = devsOf(s.uid, s.name).length;
     var label = st==='ok'   ? '<span class="state ok">登録済み <span class="devs">端末' + nd + '</span></span>'
-              : st==='wait' ? '<span class="state wait">メール設定済み・未登録</span>'
-              : st==='none' ? '<span class="state none">ログイン不要</span>'
-              :               '<span class="state idle">メール未設定</span>';
+              : st==='wait' ? '<span class="state wait">招待したが未登録</span>'
+              : st==='none' ? '<span class="state none">操作しない</span>'
+              :               '<span class="state idle">メール未入力</span>';
     return '<tr>'
       + '<td class="stripe ' + st + '"></td>'
       + '<td class="num">' + esc(s.myNumber) + '</td>'
       + '<td class="nm">' + esc(s.name) + '<small>' + (s.store==='sanda'?'三田店':'本店') + '</small></td>'
       + '<td>' + (st==='none'
           ? '<span style="font-size:12px;color:var(--ink-3)">—</span>'
-          : '<input class="mailin" data-mail="' + esc(s.uid) + '" data-store="' + esc(s.store) + '" value="' + esc(s.loginEmail||'') + '" placeholder="未設定" autocomplete="off" aria-label="' + esc(s.name) + ' のログイン用メール">') + '</td>'
+          : '<input class="mailin" data-mail="' + esc(s.uid) + '" data-store="' + esc(s.store) + '" value="' + esc(s.loginEmail||'') + '" placeholder="あとで入力" autocomplete="off" aria-label="' + esc(s.name) + ' のログイン用メール">') + '</td>'
       + '<td>' + label + '</td>'
       + '<td class="act">'
       + (st==='none'
-          ? '<button class="btn ghost sm" data-needlogin="' + esc(s.uid) + '">ログインを使う</button>'
+          ? '<button class="btn ghost sm" data-role="use:' + esc(s.uid) + '">操作する に変える</button>'
           : '<button class="btn ghost sm" data-invite="' + esc(s.uid) + '"' + (s.loginEmail?'':' disabled') + '>招待を送る</button> '
-            + (nd ? '' : '<button class="btn ghost sm" data-nologin="' + esc(s.uid) + '">ログイン不要</button> ')
+            + (nd ? '' : '<button class="btn ghost sm" data-role="none:' + esc(s.uid) + '">操作しない に変える</button> ')
             + '<button class="btn stop sm" data-release="' + esc(s.uid) + '">登録解除</button>')
       + '</td></tr>';
   }).join('');
   var pending = list.filter(function(s){ return s.loginEmail && statusOf(s) !== 'ok'; }).length;
+  var rest = allStaff().length - list.length;
   return '<div class="panelbox">'
     + '<div class="panelhead"><div><h3>スタッフと招待</h3>'
-    + '<p>メール欄を書き換えると、その場でサーバーに保存します。空欄の方はログインできません。</p></div>'
+    + '<p>一人ずつ「システムを操作するか」を決めます。'
+    + (rest ? '　<b style="color:var(--wait)">まだ決めていないスタッフ ' + rest + '名</b>'
+            : '　<span style="color:var(--ok)">全員ぶん決まっています</span>') + '</p></div>'
     + '<div class="right">'
     + '<button class="btn ghost sm" id="reloadstaff">再読込</button> '
-    + '<button class="btn sm" id="bulk"' + (pending?'':' disabled') + '>未登録の' + pending + '人にまとめて招待</button></div></div>'
+    + (pending ? '<button class="btn ghost sm" id="bulk">未登録の' + pending + '人にまとめて招待</button> ' : '')
+    + '<button class="btn sm" id="adduser">＋ スタッフを追加</button></div></div>'
     + '<div style="padding:12px 20px;background:var(--panel-2);border-bottom:1px solid var(--rule);font-size:12.5px;color:var(--ink-2);line-height:1.8">'
-    + '<b>新しいスタッフを入れるときは</b>、先に<a href="index.html" style="color:var(--pine);font-weight:700">スケジュール画面</a>の'
+    + '<b>新しいスタッフが入ったときは</b>、先に<a href="index.html" style="color:var(--pine);font-weight:700">スケジュール画面</a>の'
     + '「⚙️ スタッフ設定 → ➕ 新規登録」で登録してください（氏名・番号・バッジ・対応可能業務を決めるところです）。'
-    + 'そのあとここで<b>「再読込」</b>を押すと一覧に出てくるので、メールを入れて招待を送ります。'
+    + 'そのあとここで<b>「再読込」→「＋ スタッフを追加」</b>で役割を決めます。'
     + '</div>'
     + '<div class="tablewrap"><table>'
     + '<thead><tr><th class="stripe"></th><th>No.</th><th>氏名</th><th>ログイン用メール</th><th>状態</th><th style="text-align:right">操作</th></tr></thead>'
-    + '<tbody>' + (rows || '<tr><td colspan="6" class="empty">スタッフを読み込めませんでした。</td></tr>') + '</tbody></table></div>'
-    + '<div class="foot"><b>「ログイン不要」</b>は、アルバイトや助っ人など、システムを触らない方に付けます。'
-    + '付けた方は上の進み具合の母数から外れるので、<b>「あと何人で切り替えられるか」が正しく見えます</b>。'
-    + '休日設定・頭数・予約の担当欄には今までどおり出ます（スタッフ表からは消えません）。'
+    + '<tbody>' + (rows || '<tr><td colspan="6" class="empty">まだ誰も追加していません。<br>'
+        + '右上の「＋ スタッフを追加」から、一人ずつ役割を決めてください。<br>'
+        + '<span style="font-size:12px">メールはあとからでも入れられます。</span></td></tr>') + '</tbody></table></div>'
+    + '<div class="foot"><b>「操作しない」にした方も、スタッフ表からは消えません。</b>'
+    + '休日設定・頭数・予約の担当欄には今までどおり出ます。ログインできないだけです。'
+    + '<br><b>メールはあとからで構いません。</b>先に役割だけ決めておき、アドレスが分かった時点で入力して招待を送れます。'
     + '<br><b>「登録解除」を押すと</b>、その方の登録端末をすべて取り消し、ログイン用メールを消します。'
     + '端末を消し忘れて、辞めた方のスマホから入れたまま——という取りこぼしを防ぐため、1つの操作にまとめています。'
     + '<br>スタッフ表からお名前は消えません（過去の予約に残るため）。名前も消す場合は、スケジュール画面のスタッフ設定から削除してください。</div>'
@@ -602,38 +622,98 @@ function bind(){
     };
   });
 
-  // --- ログイン不要の切り替え ---
-  each('[data-nologin]', function(b){
-    b.onclick = function(){
-      var s = findStaff(b.dataset.nologin); if (!s) return;
-      S.dialog = {
-        title: s.name + ' さんを「ログイン不要」にします', okLabel:'ログイン不要にする',
-        body:'<p>システムを触らない方に付ける印です。ログイン用メールは消します。</p>'
-          + '<div class="addr" style="font-family:inherit;font-size:13px;font-weight:400;line-height:1.9">'
-          + '・進み具合の母数から外れます<br>'
-          + '・招待の対象になりません<br>'
-          + '・<b>休日設定・頭数・予約の担当欄には今までどおり出ます</b></div>'
-          + '<p style="font-size:12px;color:var(--ink-3)">あとから「ログインを使う」で戻せます。</p>',
-        onOk: function(){
-          saveStaffField(s.uid, s.store, {noLogin:true, loginEmail:undefined}).then(function(res){
-            if (!res.ok) { toast('変えられませんでした', res.why + '。もう一度お試しください。'); return; }
-            render(); toast(s.name + ' さんを「ログイン不要」にしました', '進み具合の母数から外しました。');
-          });
-        }
-      };
-      render();
+  // --- スタッフを追加（役割を決める）---
+  //     メールは任意。先に役割だけ決めておき、アドレスが分かってから入れて招待できる。
+  if ($('adduser')) $('adduser').onclick = function(){
+    var rest = allStaff().filter(function(s){ return !isListed(s); });
+    if (!rest.length) {
+      toast('全員ぶん決まっています', '新しい方は、先にスケジュール画面のスタッフ設定で登録してください。');
+      return;
+    }
+    S.dialog = {
+      title:'スタッフを追加', okLabel:'追加する',
+      body:'<label class="f" for="newuid">スタッフ</label>'
+        + '<select id="newuid">'
+        + rest.map(function(s){ return '<option value="' + esc(s.uid) + '">' + esc(s.name)
+            + '（No.' + esc(s.myNumber) + '／' + (s.store==='sanda'?'三田店':'本店') + '）</option>'; }).join('')
+        + '</select>'
+        + '<label class="f" style="margin-top:14px">この方はシステムを操作しますか</label>'
+        + '<label style="display:block;border:1.5px solid var(--rule-2);border-radius:9px;padding:11px 13px;margin-bottom:8px;cursor:pointer">'
+        + '<input type="radio" name="newrole" value="use" checked style="width:auto;margin-right:8px">'
+        + '<b>操作する</b><br><span style="font-size:12px;color:var(--ink-2);margin-left:24px">'
+        + '予約の入力や確認をします。ログインが要ります。</span></label>'
+        + '<label style="display:block;border:1.5px solid var(--rule-2);border-radius:9px;padding:11px 13px;cursor:pointer">'
+        + '<input type="radio" name="newrole" value="none" style="width:auto;margin-right:8px">'
+        + '<b>操作しない</b><br><span style="font-size:12px;color:var(--ink-2);margin-left:24px">'
+        + 'アルバイト・助っ人など。ログインしません。<br>休日設定・頭数・予約の担当欄には今までどおり出ます。</span></label>'
+        + '<div id="mailwrap"><label class="f" for="newmail" style="margin-top:14px">ログイン用メール（あとからでも可）</label>'
+        + '<input type="email" id="newmail" placeholder="例：okaue@midori-m.com" autocomplete="off" inputmode="email">'
+        + '<p style="font-size:12px;color:var(--ink-3);margin-top:6px">'
+        + '本人が受け取れるアドレスにしてください。空欄のままでも追加できます。</p></div>',
+      onOk: function(){ /* 値は押す直前に読む */ }
     };
-  });
-  each('[data-needlogin]', function(b){
-    b.onclick = function(){
-      var s = findStaff(b.dataset.needlogin); if (!s) return;
-      saveStaffField(s.uid, s.store, {noLogin:undefined}).then(function(res){
-        if (!res.ok) { toast('変えられませんでした', res.why + '。もう一度お試しください。'); return; }
-        render(); toast(s.name + ' さんはログインを使う扱いになりました', 'ログイン用メールを登録して、招待を送ってください。');
+    render();
+    // 「操作しない」を選んだらメール欄を隠す
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="newrole"]'), function(r){
+      r.onchange = function(){
+        var w = document.getElementById('mailwrap');
+        if (w) w.hidden = (document.querySelector('input[name="newrole"]:checked') || {}).value === 'none';
+      };
+    });
+    var okBtn = document.querySelector('[data-dlg="ok"]');
+    if (okBtn) okBtn.onclick = function(){
+      var uid = (document.getElementById('newuid')||{}).value;
+      var role = ((document.querySelector('input[name="newrole"]:checked')||{}).value) || 'use';
+      var mail = ((document.getElementById('newmail')||{}).value||'').trim().toLowerCase();
+      var s2 = findStaff(uid); if (!s2) return;
+      if (role === 'use' && mail) {
+        if (mail.indexOf('@') < 1) { toast('追加しませんでした', 'メールアドレスの形式が正しくありません。'); return; }
+        var dup = allStaff().filter(function(x){ return (x.loginEmail||'').toLowerCase() === mail; })[0];
+        if (dup) { toast('追加しませんでした', 'そのアドレスは ' + dup.name + ' さんで使われています。'); return; }
+      }
+      var patch = (role === 'none')
+        ? { noLogin: true, sysUse: undefined, loginEmail: undefined }
+        : { noLogin: undefined, sysUse: true, loginEmail: mail || undefined };
+      S.dialog = null; render();
+      saveStaffField(uid, s2.store, patch).then(function(res){
+        if (!res.ok) { toast('追加できませんでした', res.why + '。もう一度お試しください。'); return; }
+        render();
+        toast(s2.name + ' さんを追加しました', role === 'none'
+          ? '「操作しない」にしました。休日設定や頭数には今までどおり出ます。'
+          : (mail ? '続けて一覧の「招待を送る」を押してください。'
+                  : 'メールが分かったら、一覧のメール欄に入れて招待を送ってください。'));
       });
     };
-  });
+  };
 
+  // --- 役割を変える（操作する ⇄ 操作しない）---
+  each('[data-role]', function(b){
+    b.onclick = function(){
+      var parts = String(b.dataset.role).split(':');
+      var to = parts[0], s2 = findStaff(parts[1]);
+      if (!s2) return;
+      if (to === 'none') {
+        S.dialog = {
+          title: s2.name + ' さんを「操作しない」にします', okLabel:'操作しない にする',
+          body:'<p>ログイン用メールを消し、招待の対象から外します。'
+            + '<b>休日設定・頭数・予約の担当欄には今までどおり出ます。</b></p>'
+            + '<p style="font-size:12px;color:var(--ink-3)">あとから「操作する に変える」で戻せます。</p>',
+          onOk: function(){
+            saveStaffField(s2.uid, s2.store, {noLogin:true, sysUse:undefined, loginEmail:undefined}).then(function(res){
+              if (!res.ok) { toast('変えられませんでした', res.why + '。'); return; }
+              render(); toast(s2.name + ' さんを「操作しない」にしました', '');
+            });
+          }
+        };
+        render();
+      } else {
+        saveStaffField(s2.uid, s2.store, {noLogin:undefined, sysUse:true}).then(function(res){
+          if (!res.ok) { toast('変えられませんでした', res.why + '。'); return; }
+          render(); toast(s2.name + ' さんを「操作する」にしました', 'メールを入れて招待を送ってください。');
+        });
+      }
+    };
+  });
   // --- 招待 ---
   each('[data-invite]', function(b){
     b.onclick = function(){
@@ -706,7 +786,8 @@ function bind(){
             gasWrite(STOR + 'auth-devices', next).then(function(okw){
               if (!okw) { toast('登録解除できませんでした', '端末の取り消しに失敗しました。もう一度お試しください。'); return; }
               S.devices = next;
-              saveStaffField(s.uid, s.store, {loginEmail: undefined}).then(function(res){
+              // 印は残す。一覧から消えてしまうと、招待を送り直せなくなる。
+              saveStaffField(s.uid, s.store, {loginEmail: undefined, sysUse: true}).then(function(res){
                 loadAll().then(function(){
                   if (res.ok) toast(s.name + ' さんを登録解除しました', '端末' + mine.length + '台を取り消し、ログイン用メールを消しました。');
                   else toast('端末だけ取り消しました', 'ログイン用メールを消せませんでした（' + res.why + '）。メール欄を空にして保存してください。');

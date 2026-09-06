@@ -182,22 +182,56 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('スタッフ表にメールが無くても名前が出る', await see(page, '江川京志'));
 
     // ③ 進み具合と一覧
-    t('4人が並ぶ', await see(page, '藤原昭人') && await see(page, '岡上秀一'));
+    t('役割を決めた人だけが並ぶ', await page.evaluate(() => {
+      const b = document.querySelector('.panelbox tbody').innerText;
+      return b.includes('見取大介') && !b.includes('藤原昭人');
+    }), await dump(page));
     t('登録済みが1人と出る', await page.evaluate(() =>
       document.querySelectorAll('.state.ok').length >= 1));
 
-    // ④ メールを登録して招待を送る
-    await page.evaluate(() => {
-      const i = document.querySelector('[data-mail="h2"]');
-      const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      set.call(i, 'okaue@midori-m.com');
-      i.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await page.waitForTimeout(900);
+    // ④ ＋ で役割を決めて追加し、招待を送る
+    t('まだ決めていない人数が出る', await see(page, 'まだ決めていないスタッフ'));
+    await click(page, '＋ スタッフを追加');
+    t('追加の画面が出る', await see(page, 'この方はシステムを操作しますか'));
+    t('操作する／しないを選べる', await page.evaluate(() =>
+      document.querySelectorAll('input[name="newrole"]').length === 2));
+    await page.selectOption('#newuid', 'h2');
+    await page.fill('#newmail', 'okaue@midori-m.com');
+    await click(page, '追加する', '.dialog');
+    await page.waitForTimeout(1200);
     t('ログイン用メールが保存される',
       (staffH.find(s => s.uid === 'h2') || {}).loginEmail === 'okaue@midori-m.com',
       staffH.find(s => s.uid === 'h2'));
-    t('保存を知らせる', await see(page, '保存しました'));
+    t('追加を知らせる', await see(page, 'さんを追加しました'));
+
+    // メールを空のまま追加できる（あとから入れて招待する運用）
+    await click(page, '＋ スタッフを追加');
+    await see(page, 'この方はシステムを操作しますか');
+    await page.selectOption('#newuid', 's10');
+    await click(page, '追加する', '.dialog');
+    await page.waitForTimeout(1200);
+    t('メール未入力でも追加できる', await page.evaluate(() =>
+      document.querySelector('.panelbox tbody').innerText.includes('メール未入力')));
+    t('あとからメールを入れられる', await page.evaluate(() => !!document.querySelector('[data-mail="s10"]')));
+
+    // 操作しない（アルバイト・助っ人）
+    await click(page, '＋ スタッフを追加');
+    await see(page, 'この方はシステムを操作しますか');
+    await page.selectOption('#newuid', 'h8');
+    await page.check('input[name="newrole"][value="none"]');
+    t('操作しないを選ぶとメール欄が隠れる', await page.evaluate(() =>
+      !!document.getElementById('mailwrap') && document.getElementById('mailwrap').hidden));
+    await click(page, '追加する', '.dialog');
+    await page.waitForTimeout(1200);
+    t('操作しないとして保存される', (staffH.find(s => s.uid === 'h8') || {}).noLogin === true,
+      staffH.find(s => s.uid === 'h8'));
+    t('一覧に「操作しない」と出る', await page.evaluate(() =>
+      document.querySelector('.panelbox tbody').innerText.includes('操作しない')));
+    t('スタッフ表から消えない（休日設定で要る）', !!staffH.find(s => s.uid === 'h8'));
+    t('招待の対象にならない', await page.evaluate(() => !document.querySelector('[data-invite="h8"]')));
+    t('操作しない人は母数から外れる（管理者自身も操作者に入る）', await page.evaluate(() =>
+      /4\s*人が操作する/.test(document.querySelector('.progress').innerText.replace(/\s+/g,' '))),
+      await page.evaluate(() => document.querySelector('.progress').innerText.replace(/\s+/g,' ')));
 
     await page.evaluate(() => {
       const b = [...document.querySelectorAll('[data-invite="h2"]')][0]; if (b) b.click();
@@ -257,51 +291,29 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('ログイン用メールが消える', !(staffH.find(s => s.uid === 'h2') || {}).loginEmail,
       staffH.find(s => s.uid === 'h2'));
     t('スタッフ表から名前は消えない', !!staffH.find(s => s.uid === 'h2'));
-
-    // ⑧ ログイン不要 —— アルバイト・助っ人を進み具合の母数から外す
-    const progBefore = await page.evaluate(() => document.querySelector('.progress').innerText.replace(/\s+/g,' '));
-    t('母数に全員が入っている', /5\s*人が対象/.test(progBefore), progBefore);
-    await page.evaluate(() => { const b = document.querySelector('[data-nologin="h8"]'); if (b) b.click(); });
-    t('ログイン不要の確認が出る', await see(page, 'さんを「ログイン不要」にします'));
-    t('何が起きるか明示する', await see(page, '休日設定・頭数・予約の担当欄には今までどおり出ます'));
-    await click(page, 'ログイン不要にする', '.dialog');
-    await page.waitForTimeout(1300);
-    t('スタッフ表に印が付く', (staffH.find(s => s.uid === 'h8') || {}).noLogin === true,
-      staffH.find(s => s.uid === 'h8'));
-    t('スタッフ表から消えない（休日設定で要る）', !!staffH.find(s => s.uid === 'h8'));
-    const after = await page.evaluate(() => document.querySelector('.progress').innerText.replace(/\s+/g,' '));
-    t('母数から外れる', /4\s*人が対象/.test(after) && /1\s*ログイン不要/.test(after), after);
-    t('一覧に「ログイン不要」と出る', await page.evaluate(() =>
-      document.querySelector('.panelbox tbody').innerText.includes('ログイン不要')));
-    t('招待の対象から外れる', await page.evaluate(() =>
-      !document.querySelector('[data-invite="h8"]')));
-
-    // 戻せること
-    await page.evaluate(() => { const b = document.querySelector('[data-needlogin="h8"]'); if (b) b.click(); });
-    await page.waitForTimeout(1300);
-    t('ログインを使う扱いに戻せる', !(staffH.find(s => s.uid === 'h8') || {}).noLogin,
-      staffH.find(s => s.uid === 'h8'));
+    t('一覧からは消えない（招待を送り直せる）', await page.evaluate(() =>
+      document.querySelector('.panelbox tbody').innerText.includes('岡上秀一')), await dump(page));
 
     // ⑨ 新しく入ったスタッフ —— スタッフ設定で足した人を、再読込で拾えること
     t('新入社員はまだ一覧に居ない', !(await see(page, '新人テスト', 1200)));
     staffH.push({ uid:'h20', name:'新人テスト', myNumber:20, badge:'mechanic', store:'honten' });
     t('足す場所の案内が出ている', await see(page, 'スタッフ設定 → ➕ 新規登録'));
     await click(page, '再読込');
-    await page.waitForTimeout(1200);
-    t('再読込で新入社員が一覧に出る', await see(page, '新人テスト'), await dump(page));
-    await page.evaluate(() => {
-      const i = document.querySelector('[data-mail="h20"]');
-      const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      set.call(i, 'shinjin@midori-m.com');
-      i.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1400);
+    await click(page, '＋ スタッフを追加');
+    await see(page, 'この方はシステムを操作しますか');
+    t('新入社員が選べるようになる', await page.evaluate(() =>
+      [...document.querySelectorAll('#newuid option')].some(o => o.textContent.includes('新人テスト'))));
+    await page.selectOption('#newuid', 'h20');
+    await page.fill('#newmail', 'shinjin@midori-m.com');
+    await click(page, '追加する', '.dialog');
+    await page.waitForTimeout(1300);
     t('新入社員にメールを登録できる',
       (staffH.find(s => s.uid === 'h20') || {}).loginEmail === 'shinjin@midori-m.com',
       staffH.find(s => s.uid === 'h20'));
     await page.evaluate(() => { const b = document.querySelector('[data-invite="h20"]'); if (b) b.click(); });
     await click(page, '送る', '.dialog');
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(900);
     t('新入社員に招待を送れる', sentInvites.includes('shinjin@midori-m.com'), sentInvites);
 
     // ⑩ 開き直しても入れる（利用証が端末に残っている）
