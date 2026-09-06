@@ -50,6 +50,11 @@ sub('doGet の入口',
   if (e.parameter.action === 'authInvite') {
     return authInvite_(e.parameter.email, authPrefixOf_(e.parameter));
   }
+  // v14: 端末の種類と名前を記録する（管理者の端末一覧を読めるようにするため）。
+  if (e.parameter.action === 'authLabel') {
+    return authLabel_(e.parameter.apiKey, authPrefixOf_(e.parameter),
+                      e.parameter.kind, e.parameter.label);
+  }
   // v14: 利用証の延長（スライド式の期限）。切れた利用証は延長できない。
   if (e.parameter.action === 'authRenew') {
     return authRenew_(e.parameter.apiKey, authPrefixOf_(e.parameter));

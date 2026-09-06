@@ -26,7 +26,7 @@ function reset() {
   ];
   staffS = [ { uid:'s10', name:'藤原昭人', myNumber:10, badge:'manager', store:'sanda' } ];
   devices = {
-    dA: { n:'見取大介', m:1, s:'honten', e:'daisuke@midori-m.com',
+    dA: { n:'見取大介', m:1, s:'honten', e:'daisuke@midori-m.com', k:'shared', l:'共有PC1',
           at:Date.now()-40*86400000, last:Date.now()-86400000, exp:Date.now()+89*86400000, ua:'Windows Chrome' },
   };
   adminProp = 'egawa@midori-m.com=h7';
@@ -247,6 +247,11 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     await click(page, '登録端末');
     t('端末一覧が出る', await see(page, '最後に使った日'));
     t('端末の持ち主が出る', await see(page, '見取大介'));
+    t('端末の名前が出る', await see(page, '共有PC1'));
+    t('種類が出る', await page.evaluate(() =>
+      document.querySelector('.panelbox tbody').innerText.includes('共有')));
+    t('店のPCが自分専用のときの直し方を書いてある',
+      await see(page, '店のPCが「自分専用」になっていたら'));
     t('失効までの日数が出る', await see(page, 'あと'));
     const before = Object.keys(devices).length;
     const target = await page.evaluate(() => {

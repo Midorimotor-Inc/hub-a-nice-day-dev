@@ -1979,6 +1979,10 @@ const hubSaveMine = list => { try { localStorage.setItem(HUB_MINE_KEY, JSON.stri
 const hubLive = list => (list || []).filter(x => !x.exp || x.exp > Date.now());
 const hubKind = () => { try { return localStorage.getItem(HUB_KIND_KEY) || ''; } catch (e) { return ''; } };
 const hubSetKind = k => { try { localStorage.setItem(HUB_KIND_KEY, k); } catch (e) {} };
+// 端末の名前（共有PC1 など）。管理者の端末一覧で「どのPCか」を読めるようにする。
+const HUB_LABEL_KEY = STOR + 'auth-label';
+const hubLabel = () => { try { return localStorage.getItem(HUB_LABEL_KEY) || ''; } catch (e) { return ''; } };
+const hubSetLabel = v => { try { localStorage.setItem(HUB_LABEL_KEY, String(v || '').slice(0, 40)); } catch (e) {} };
 // その人の利用証を通信に載せる。居なければ認証前（本来のキーだけ）に戻す。
 const hubUse = name => {
   const m = hubLive(hubLoadMine()).find(x => x.name === name);
@@ -3064,6 +3068,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
   const [err,setErr]=useState('');
   const [who,setWho]=useState(null);
   const [pend,setPend]=useState(null);   // 本人確認は済んだが、端末の種類がまだの人
+  const [label,setLabel]=useState(hubLabel());   // この端末の名前（共有のときだけ聞く）
   const firstOnDevice = hubLive(hubLoadMine()).length===0;
 
   const sendCode=async(mail)=>{
@@ -3086,17 +3091,23 @@ const AuthAddScreen=({onDone,onCancel})=>{
     if(email.trim().indexOf('@')<1){setErr('メールアドレスの形式が正しくありません。');return;}
     sendCode();
   };
-  // 利用証を端末に保存して完了。端末の種類はここで確定する。
-  const finish=(r,k)=>{
+  // 利用証を端末に保存して完了。端末の種類と名前はここで確定する。
+  const finish=(r,k,lb)=>{
     hubSetKind(k);
+    if(lb) hubSetLabel(lb);
     const list=hubLoadMine().filter(x=>x.name!==r.name);
     list.push({uid:r.uid||'',name:r.name,myNumber:r.myNumber,store:r.store||'honten',token:r.token,exp:r.exp});
     hubSaveMine(list);
     // 2人目が入った端末は「共有」に直す（自分専用のままだと他人の名義で予約が入る）
     if(hubLive(hubLoadMine()).length>1 && hubKind()==='own') hubSetKind('shared');
+    // 管理者の端末一覧で読めるように、種類と名前をサーバーへ記録する
+    hubApplyToken(r.token);
+    hubAuthCall('authLabel',{kind:hubKind()||k,label:hubLabel()||lb||''});
     setWho(r);setStep('done');
   };
-  const pickKind=k=>{ setKind(k); finish(pend,k); };
+  // 共有の端末は、最初に登録する人が1回だけ名前を付ける
+  const needLabel=k=>k==='shared'&&!hubLabel();
+  const pickKind=k=>{ setKind(k); if(needLabel(k)){setStep('label');return;} finish(pend,k,''); };
   const verify=async()=>{
     setErr('');setBusy(true);
     const r=await hubAuthCall('authVerify',{email:email.trim(),code:code.trim(),ua:navigator.userAgent||''});
@@ -3110,7 +3121,11 @@ const AuthAddScreen=({onDone,onCancel})=>{
     }
     // 端末の種類は、この端末で最初に登録する人だけが1回選ぶ
     if(firstOnDevice && !kind){ setPend(r); setStep('kind'); return; }
-    finish(r, kind||hubKind()||'shared');
+    // 2人目が入ると端末は「共有」になる。名前がまだなら、ここで付けてもらう。
+    const already=hubLive(hubLoadMine()).length>0;
+    const finalKind=(already&&(kind||hubKind())==='own')?'shared':(kind||hubKind()||'shared');
+    if(needLabel(finalKind)){ setPend(r); setKind(finalKind); setStep('label'); return; }
+    finish(r, finalKind, '');
   };
 
   const BOX={background:'white',borderRadius:18,padding:'28px 30px',maxWidth:430,width:'100%',boxShadow:'0 30px 80px rgba(0,0,0,0.4)'};
@@ -3170,6 +3185,24 @@ const AuthAddScreen=({onDone,onCancel})=>{
               他の人も使う端末で「自分専用」を選ぶと、その人の名義で予約が入ってしまいます。
             </div>
             <button style={SUB} onClick={()=>{setPend(null);setStep('email');setCode('');}}>← やり直す</button>
+          </div>
+        )}
+
+        {step==='label'&&(
+          <div>
+            <div style={{fontWeight:800,fontSize:15,color:'#111827',marginBottom:3}}>この端末の名前を付けてください</div>
+            <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>
+              みんなで使う端末なので、あとで管理者が見分けられるように名前が要ります。<br/>
+              例：<b>共有PC1</b>、本店 受付PC、三田店タブレット
+            </div>
+            <input type="text" value={label} onChange={e=>setLabel(e.target.value.slice(0,40))} style={IN}
+              placeholder="共有PC1" autoComplete="off" autoFocus
+              onKeyDown={e=>{if(e.key==='Enter'&&label.trim())finish(pend,kind||'shared',label.trim());}}/>
+            <button style={BTN(!!label.trim())} disabled={!label.trim()}
+              onClick={()=>finish(pend,kind||'shared',label.trim())}>登録する</button>
+            <p style={{fontSize:11.5,color:'#9ca3af',marginTop:11,lineHeight:1.7}}>
+              名前は端末に1つだけです。2人目からは聞かれません。
+            </p>
           </div>
         )}
 

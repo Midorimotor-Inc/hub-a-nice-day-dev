@@ -121,6 +121,10 @@ const hubSaveMine = list => { try { localStorage.setItem(HUB_MINE_KEY, JSON.stri
 const hubLive = list => (list || []).filter(x => !x.exp || x.exp > Date.now());
 const hubKind = () => { try { return localStorage.getItem(HUB_KIND_KEY) || ''; } catch (e) { return ''; } };
 const hubSetKind = k => { try { localStorage.setItem(HUB_KIND_KEY, k); } catch (e) {} };
+// 端末の名前（共有PC1 など）。管理者の端末一覧で「どのPCか」を読めるようにする。
+const HUB_LABEL_KEY = STOR + 'auth-label';
+const hubLabel = () => { try { return localStorage.getItem(HUB_LABEL_KEY) || ''; } catch (e) { return ''; } };
+const hubSetLabel = v => { try { localStorage.setItem(HUB_LABEL_KEY, String(v || '').slice(0, 40)); } catch (e) {} };
 // その人の利用証を通信に載せる。居なければ認証前（本来のキーだけ）に戻す。
 const hubUse = name => {
   const m = hubLive(hubLoadMine()).find(x => x.name === name);

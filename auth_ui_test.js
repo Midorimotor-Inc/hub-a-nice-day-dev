@@ -27,6 +27,7 @@ let staffH = [
   { uid: 'h8', name: 'ダク', myNumber: 8, badge: 'mechanic', store: 'honten' },
 ];
 let devices = {};          // 端末台帳
+let labels = [];           // authLabel で届いた種類と名前
 let sentInvites = [];      // 送った招待
 const CODE = '424242';
 
@@ -75,6 +76,10 @@ const gasRoute = async (route) => {
         name: s.name, myNumber: s.myNumber, store: s.store, uid: s.uid });
     }
     case 'authRenew':  return body({ ok: true, renewed: false, exp: Date.now() + 90 * 86400000 });
+    case 'authLabel': {
+      labels.push({ kind: q.get('kind'), label: q.get('label') });
+      return body({ ok: true, kind: q.get('kind'), label: q.get('label') });
+    }
     case 'authInvite': {
       const m = String(q.get('email') || '').trim().toLowerCase();
       const s = staffH.find(x => (x.loginEmail || '').toLowerCase() === m);
@@ -120,7 +125,7 @@ const dump = async (page, root) => page.evaluate(r => {
     console.error('X mobile.html に AUTH_REQUIRED がありません'); process.exit(1);
   }
   const run = async (required, fn, file) => {
-    devices = {}; sentInvites = [];
+    devices = {}; sentInvites = []; labels = [];
     const name = file || 'index_dev.html';
     const base = (name === 'mobile.html') ? mobSrc : src;
     const html = required ? base.replace('const AUTH_REQUIRED = false;', 'const AUTH_REQUIRED = true;') : base;
@@ -173,7 +178,18 @@ const dump = async (page, root) => page.evaluate(r => {
     t('本人だと分かってから種類をたずねる', await seeText(page, 'この端末はどちらですか'));
     t('確認できた人の名前を出す', await seeText(page, '見取大介'));
     await clickText(page, 'みんなで使う');
+    t('共有なら端末の名前を聞かれる', await seeText(page, 'この端末の名前を付けてください'));
+    t('名前が空だと進めない', await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find(e => e.innerText.includes('登録する'));
+      return !!b && b.disabled;
+    }));
+    await page.fill('input[type=text]', '共有PC1');
+    await clickText(page, '登録する');
     t('登録が完了する', await seeText(page, 'この端末に登録しました'));
+    t('端末名がサーバーに送られる',
+      labels.some(x => x.label === '共有PC1' && x.kind === 'shared'), labels);
+    t('端末名が端末に残る', (await page.evaluate(() =>
+      localStorage.getItem('hub-v8-dev-auth-label'))) === '共有PC1');
     t('共有として登録された', await seeText(page, '共有'));
 
     await clickText(page, 'はじめる');
@@ -196,7 +212,9 @@ const dump = async (page, root) => page.evaluate(r => {
     t('2人目には端末の種類を聞かない', await seeText(page, '6桁のコードを入れてください'));
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
-    await seeText(page, 'この端末に登録しました');
+    t('2人目には端末の名前も聞かない', await seeText(page, 'この端末に登録しました'));
+    t('2人目も同じ端末名で記録される',
+      labels.filter(x => x.label === '共有PC1').length === 2, labels);
     await clickText(page, 'はじめる');
     await seeText(page, '担当者を選択してください');
     // ★PCを持たない人は「ログインできない」だけで、スタッフ表からは消えない。
@@ -231,7 +249,7 @@ const dump = async (page, root) => page.evaluate(r => {
     await clickText(page, '確認する');
     await seeText(page, 'この端末はどちらですか');
     await clickText(page, '自分専用');
-    await seeText(page, 'この端末に登録しました');
+    t('自分専用では端末の名前を聞かない', await seeText(page, 'この端末に登録しました'));
     await clickText(page, 'はじめる');
     const kind = await page.evaluate(() => localStorage.getItem('hub-v8-dev-auth-kind'));
     t('自分専用として保存される', kind === 'own', kind);
@@ -272,6 +290,9 @@ const dump = async (page, root) => page.evaluate(r => {
     await seeText(page, '6桁のコードを入れてください');
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
+    t('共有に変わるので、ここで端末の名前を聞く', await seeText(page, 'この端末の名前を付けてください'));
+    await page.fill('input[type=text]', '本店 受付PC');
+    await clickText(page, '登録する');
     await seeText(page, 'この端末に登録しました');
     await clickText(page, 'はじめる');
     const k2 = await page.evaluate(() => localStorage.getItem('hub-v8-dev-auth-kind'));
@@ -347,6 +368,9 @@ const dump = async (page, root) => page.evaluate(r => {
     await clickText(page, '確認する');
     t('スマホ：本人だと分かってから種類をたずねる', await seeText(page, 'この端末はどちらですか'));
     await clickText(page, 'みんなで使う');
+    t('スマホ：共有なら端末の名前を聞かれる', await seeText(page, 'この端末の名前'));
+    await page.fill('input[type=text]', '本店タブレット');
+    await clickText(page, '登録する');
     await seeText(page, 'この端末に登録しました');
     await clickText(page, 'はじめる');
     t('スマホ：共有ならログイン画面に戻る', await seeText(page, 'LOGIN CODE'));

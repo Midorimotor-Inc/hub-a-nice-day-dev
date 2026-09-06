@@ -448,6 +448,48 @@ function authVerify_(email, code, prefix, ua) {
   }
 }
 
+// ── 端末の種類と名前を記録する ────────────────────────────────────────
+//   GET ?action=authLabel&kind=own|shared&label=共有PC1&prefix=...&apiKey=キー|利用証
+//   管理者の端末一覧を読めるようにするためのもの。名前が無いと
+//   ブラウザの長い文字列しか出ず、どのPCか分からない。
+//   自分の利用証が指す端末しか変えられない（他人の端末には触れない）。
+function authLabel_(rawApiKey, prefix, kind, label) {
+  try {
+    var token = '';
+    var i = String(rawApiKey || '').indexOf('|');
+    if (i >= 0) token = String(rawApiKey).slice(i + 1);
+    var payload = authReadToken_(token);
+    if (!payload) return makeResponse(JSON.stringify({ ok: false, err: 'expired' }));
+    if (!authValid_(payload, prefix)) return makeResponse(JSON.stringify({ ok: false, err: 'revoked' }));
+
+    var k = (String(kind || '') === 'own') ? 'own' : 'shared';
+    var l = String(label || '').trim().slice(0, 40);
+
+    var lock = LockService.getScriptLock();
+    var locked = false;
+    try { lock.waitLock(25000); locked = true; }
+    catch (le) { return makeResponse(JSON.stringify({ ok: false, err: 'busy' })); }
+    try {
+      var devices = authLoadDevices_(prefix);
+      var d = devices[payload.j];
+      if (!d) return makeResponse(JSON.stringify({ ok: false, err: 'revoked' }));
+      d.k = k;
+      if (l) d.l = l;
+      // 同じ端末に登録済みの他の人の分も、種類と名前を揃える。
+      // 端末の性質は人ではなく端末に付くので、行ごとに食い違うと点検できない。
+      for (var j in devices) {
+        var o = devices[j];
+        if (!o || j === payload.j) continue;
+        if (l && o.l === l) { o.k = k; }
+      }
+      authSaveDevices_(prefix, devices);
+    } finally { if (locked) lock.releaseLock(); }
+    return makeResponse(JSON.stringify({ ok: true, kind: k, label: l }));
+  } catch (err) {
+    return makeResponse(JSON.stringify({ ok: false, err: 'label_failed' }));
+  }
+}
+
 // ── ③ 利用証の延長（スライド式の有効期限）──────────────────────────────
 //   GET ?action=authRenew&prefix=hub-v8-dev-&apiKey=本来のキー|利用証
 //
