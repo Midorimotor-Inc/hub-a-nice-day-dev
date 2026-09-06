@@ -1884,17 +1884,19 @@ const App=()=>{
   // ── 本人認証：この端末に登録された人 ──
   const [authMine,setAuthMine]=useState(()=>hubLive(hubLoadMine()));
   const [showAuthAdd,setShowAuthAdd]=useState(false);
+  // 自分でログアウトした直後は自動ログインを止める（止めないと即座に入り直す）
+  const [authAutoOff,setAuthAutoOff]=useState(false);
   // 自分専用の端末（＝自分のスマホ）は、番号すら打たずに開いた瞬間その人として使える。
   // 共有のタブレットでは必ず名前を選ばせる（前の人の名義で予約が入るのを防ぐため）。
   useEffect(()=>{
-    if(user||!AUTH_REQUIRED)return;
+    if(user||!AUTH_REQUIRED||authAutoOff)return;
     if(hubKind()!=='own'||authMine.length!==1)return;
     const m=authMine[0];
     const rec=[...(staffH||[]),...(staffS||[])].find(x=>(m.uid&&x.uid===m.uid)||x.name===m.name);
     const u=rec?{...rec,store:rec.store||m.store}:{uid:m.uid,name:m.name,myNumber:m.myNumber,store:m.store,badge:'mechanic'};
     hubUse(m.name); hubRenew(m.name);
     setUser(u); setFadeIn(true);
-  },[user,authMine,staffH,staffS]);
+  },[user,authMine,authAutoOff,staffH,staffS]);
   const [editMode,setEditMode]=useState(null); // {type,dk,idx?,slot?,isNew,initial,lockedBy}
   const [saveBanners,setSaveBanners]=useState([]); // 保存状況バナー [{pid,phase:'saving'|'done'|'fail',label,detail,ts}]
   const [mailModal,setMailModal]=useState(false);
@@ -2587,7 +2589,7 @@ const App=()=>{
               style={{padding:'3px 8px',background:'rgba(255,255,255,.1)',border:'none',borderRadius:6,color:'rgba(255,255,255,.7)',fontSize:10,cursor:'pointer'}}> ✉ </button>
             {canRestore(user)&&<button onClick={()=>setRestoreModal(true)} title="データ復旧"
               style={{padding:'3px 8px',background:'rgba(255,255,255,.1)',border:'none',borderRadius:6,color:'rgba(255,255,255,.7)',fontSize:10,cursor:'pointer'}}> 🕒 </button>}
-            <button onClick={()=>setUser(null)}
+            <button onClick={()=>{setAuthAutoOff(true);setUser(null);}}
               style={{padding:'3px 8px',background:'rgba(255,255,255,.1)',border:'none',borderRadius:6,color:'rgba(255,255,255,.7)',fontSize:10,cursor:'pointer'}}> ↩ </button>
           </div>
         </div>

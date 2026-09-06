@@ -242,6 +242,45 @@ const dump = async (page, root) => page.evaluate(r => {
     t('自分専用でJSエラーなし', errs.length === 0, errs.slice(0, 2));
   });
 
+  // ── ③' 自分専用の端末に2人目が入ると、自動で「共有」に変わる ──────────
+  //    店のPCで最初の人が誤って「自分専用」を選んでも、次の人の登録で直る。
+  //    直らないと、次に座った人が前の人の名義で予約を入れてしまう。
+  await run(true, async (page, errs) => {
+    await seeText(page, 'この端末にスタッフを追加');
+    await page.fill('input[type=email]', 'daisuke@example.com');
+    await clickText(page, '確認コードを送る');
+    await seeText(page, '6桁のコードを入れてください');
+    await page.fill('input[inputmode=numeric]', CODE);
+    await clickText(page, '確認する');
+    await seeText(page, 'この端末はどちらですか');
+    await clickText(page, '自分専用');            // ← わざと間違える
+    await seeText(page, 'この端末に登録しました');
+    await clickText(page, 'はじめる');
+    const k1 = await page.evaluate(() => localStorage.getItem('hub-v8-dev-auth-kind'));
+    t('1人目は自分専用のまま', k1 === 'own', k1);
+    t('自分専用なのでログイン画面が出ない', !(await seeText(page, '担当者を選択してください', 2500)));
+
+    // 2人目を足す。自分専用の端末は自動ログインするので、まずログアウトして
+    // ログイン画面を出す（ここが出ないと、誤って自分専用にした端末を直せない）。
+    await page.evaluate(() => { const b=document.querySelector('[title="ログアウト"]'); if(b) b.click(); });
+    t('ログアウトするとログイン画面に戻れる', await seeText(page, '担当者を選択してください'));
+    t('自分専用に戻る案内が出る', await seeText(page, 'そのまま使う'));
+    await clickText(page, 'スタッフを追加');
+    await seeText(page, 'この端末にスタッフを追加');
+    await page.fill('input[type=email]', 'kyoshi@example.com');
+    await clickText(page, '確認コードを送る');
+    await seeText(page, '6桁のコードを入れてください');
+    await page.fill('input[inputmode=numeric]', CODE);
+    await clickText(page, '確認する');
+    await seeText(page, 'この端末に登録しました');
+    await clickText(page, 'はじめる');
+    const k2 = await page.evaluate(() => localStorage.getItem('hub-v8-dev-auth-kind'));
+    t('2人目が入ると自動で共有に変わる', k2 === 'shared', k2);
+    t('共有になったので名前を選ぶ画面が出る', await seeText(page, '担当者を選択してください'));
+    t('2人とも並ぶ', (await seeText(page, '見取大介')) && (await seeText(page, '江川京志')));
+    t('自己修復でJSエラーなし', errs.length === 0, errs.slice(0, 2));
+  });
+
   // ── ④ 管理者側：メール登録・招待・端末の取り消し ──────────────────
   await run(false, async (page, errs) => {
     await seeText(page, '担当者を選択してください');

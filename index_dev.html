@@ -3210,7 +3210,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
   );
 };
 
-const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop,onAddAuth})=>{
+const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop,onAddAuth,onAutoLogin})=>{
   const [sel,setSel]=useState(null);
   // タイムアウト後（initialDesktopあり）はすぐスタッフ選択画面を表示
   const [deskSel,setDeskSel]=useState(()=>{
@@ -3363,6 +3363,19 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
           style={{width:'100%',padding:'14px 0',background:sel?`linear-gradient(135deg,${sel.store.color},${sel.store.accent})`:'#e5e7eb',color:sel?'white':'#9ca3af',border:'none',borderRadius:12,fontWeight:800,fontSize:16,cursor:sel?'pointer':'default',transition:'all 0.2s',marginBottom:10}}>
           {sel?`【${sel.store.name}】${sel.staff.name} でログイン →`:'担当者を選択してください'}
         </button>
+        {onAutoLogin&&(
+          <div style={{marginBottom:10,padding:'10px 13px',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:10}}>
+            <div style={{fontSize:12,color:'#1e40af',lineHeight:1.7,marginBottom:7}}>
+              この端末は<b>自分専用</b>です。ふだんは開くだけで使えます。<br/>
+              別の方も使う端末なら、下から追加してください（2人目を足すと自動で「共有」に変わります）。
+            </div>
+            <button onClick={onAutoLogin}
+              style={{width:'100%',padding:'9px 0',background:'white',border:'2px solid #93c5fd',borderRadius:9,
+                fontWeight:800,fontSize:13,color:'#1d4ed8',cursor:'pointer'}}>
+              ← そのまま使う（自分専用に戻る）
+            </button>
+          </div>
+        )}
         {onAddAuth&&(
           <div style={{marginBottom:10,padding:'10px 13px',background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:10}}>
             <div style={{fontSize:12,color:'#9a3412',lineHeight:1.7,marginBottom:7}}>
@@ -7555,6 +7568,9 @@ function AppInner() {
   // ── 本人認証：この端末に登録された人 ──
   const [authMine,setAuthMine]=useState(()=>hubLive(hubLoadMine()));
   const [showAuthAdd,setShowAuthAdd]=useState(false);
+  // 自分でログアウトした直後は、自動ログインを止めてログイン画面を出す。
+  // 止めないと押した瞬間に入り直してしまい、交代も「＋スタッフを追加」もできない。
+  const [authAutoOff,setAuthAutoOff]=useState(false);
   const refreshAuthMine=useCallback(()=>{setAuthMine(hubLive(hubLoadMine()));},[]);
 
   // ── 共有PC：10分無操作でスタッフ選択画面に戻る ──
@@ -9750,7 +9766,7 @@ function AppInner() {
   //   共有PCでは必ず名前を選ばせる（前の人の名義で予約が入るのを防ぐため）。
   //   ★このフックはログイン判定より前に置くこと（下の注意書きと同じ理由）。
   useEffect(()=>{
-    if(currentUser||!AUTH_REQUIRED)return;
+    if(currentUser||!AUTH_REQUIRED||authAutoOff)return;
     if(hubKind()!=='own'||authMine.length!==1)return;
     const m=authMine[0];
     const rec=[...(dynStaffH||[]),...(dynStaffS||[])].find(x=>(m.uid&&x.uid===m.uid)||x.name===m.name);
@@ -9759,7 +9775,7 @@ function AppInner() {
     hubUse(m.name); hubRenew(m.name);
     setCurrentUserPersist({...rec,id:rec.myNumber,store});
     setViewStore(store.id); setView('schedule');
-  },[currentUser,authMine,dynStaffH,dynStaffS,setCurrentUserPersist]);
+  },[currentUser,authMine,authAutoOff,dynStaffH,dynStaffS,setCurrentUserPersist]);
 
   // タイムスケジュールを現在時刻に自動追従スクロール（今日を表示中のみ・現在の1枠前を先頭に）。
   // ★フックは必ずログイン判定(if(!currentUser)return)より前に置くこと（後ろに置くと
@@ -9836,6 +9852,7 @@ function AppInner() {
       <LoginScreen
         onLogin={u=>{hubUse(u.name);hubRenew(u.name);setCurrentUserPersist(u);setViewStore(u.store?.id||'honten');setView('schedule');setTimeout(()=>window.scrollTo({top:0,behavior:'instant'}),50);}}
         onAddAuth={()=>setShowAuthAdd(true)}
+        onAutoLogin={authAutoOff&&hubKind()==='own'&&authMine.length===1?()=>setAuthAutoOff(false):null}
         staffListH={_loginH} staffListS={_loginS}
         desktopListH={desktopListH} desktopListS={desktopListS}
         onRegister={()=>setShowStaffRegister(true)}
@@ -9938,7 +9955,7 @@ function AppInner() {
                     </button>
                   )}
                   {/* 📋クリップボードコピーは廃止（戻せず一部データのみで紛らわしいため）。バックアップは自動保存＋🕒復旧に一本化。 */}
-                  <button onClick={()=>{releaseLock(curLockKey);setCurrentUserPersist(null);setCurLockKey(null);setModalOpen(false);}} title="ログアウト" style={{background:'none',border:'none',cursor:'pointer',color:'#6b7280',display:'flex',alignItems:'center'}}><LogOut size={14}/></button>
+                  <button onClick={()=>{releaseLock(curLockKey);setAuthAutoOff(true);setCurrentUserPersist(null);setCurLockKey(null);setModalOpen(false);}} title="ログアウト" style={{background:'none',border:'none',cursor:'pointer',color:'#6b7280',display:'flex',alignItems:'center'}}><LogOut size={14}/></button>
                 </div>
               </div>
             </div>
