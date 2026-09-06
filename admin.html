@@ -362,7 +362,14 @@ function viewStaff(){
   return '<div class="panelbox">'
     + '<div class="panelhead"><div><h3>スタッフと招待</h3>'
     + '<p>メール欄を書き換えると、その場でサーバーに保存します。空欄の方はログインできません。</p></div>'
-    + '<div class="right"><button class="btn sm" id="bulk"' + (pending?'':' disabled') + '>未登録の' + pending + '人にまとめて招待</button></div></div>'
+    + '<div class="right">'
+    + '<button class="btn ghost sm" id="reloadstaff">再読込</button> '
+    + '<button class="btn sm" id="bulk"' + (pending?'':' disabled') + '>未登録の' + pending + '人にまとめて招待</button></div></div>'
+    + '<div style="padding:12px 20px;background:var(--panel-2);border-bottom:1px solid var(--rule);font-size:12.5px;color:var(--ink-2);line-height:1.8">'
+    + '<b>新しいスタッフを入れるときは</b>、先に<a href="index.html" style="color:var(--pine);font-weight:700">スケジュール画面</a>の'
+    + '「⚙️ スタッフ設定 → ➕ 新規登録」で登録してください（氏名・番号・バッジ・対応可能業務を決めるところです）。'
+    + 'そのあとここで<b>「再読込」</b>を押すと一覧に出てくるので、メールを入れて招待を送ります。'
+    + '</div>'
     + '<div class="tablewrap"><table>'
     + '<thead><tr><th class="stripe"></th><th>No.</th><th>氏名</th><th>ログイン用メール</th><th>状態</th><th style="text-align:right">操作</th></tr></thead>'
     + '<tbody>' + (rows || '<tr><td colspan="6" class="empty">スタッフを読み込めませんでした。</td></tr>') + '</tbody></table></div>'
@@ -573,6 +580,9 @@ function bind(){
   // --- タブ ---
   each('[data-tab]', function(b){ b.onclick = function(){ S.tab = b.dataset.tab; render(); }; });
   if ($('reload')) $('reload').onclick = function(){ loadAll(); };
+  if ($('reloadstaff')) $('reloadstaff').onclick = function(){
+    loadAll().then(function(){ toast('読み直しました', '新しいスタッフが出てこない場合は、スタッフ設定での登録が保存されているか確かめてください。'); });
+  };
 
   // --- メールの保存 ---
   each('[data-mail]', function(i){

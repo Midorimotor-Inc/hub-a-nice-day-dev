@@ -247,6 +247,7 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     devices.dZ = { n:'岡上秀一', m:2, s:'honten', e:'okaue@midori-m.com',
                    at:Date.now(), last:Date.now(), exp:Date.now()+90*86400000, ua:'Android' };
     await click(page, '再読込').catch(()=>{});
+    await page.waitForTimeout(1400);   // 読み直しで表が描き直されるのを待つ
     await page.evaluate(() => { const b = document.querySelector('[data-release="h2"]'); if (b) b.click(); });
     t('登録解除の確認が出る', await see(page, 'さんを登録解除します'));
     t('何をするか明示する', await see(page, 'ログイン用メールを消す'));
@@ -281,7 +282,29 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('ログインを使う扱いに戻せる', !(staffH.find(s => s.uid === 'h8') || {}).noLogin,
       staffH.find(s => s.uid === 'h8'));
 
-    // ⑨ 開き直しても入れる（利用証が端末に残っている）
+    // ⑨ 新しく入ったスタッフ —— スタッフ設定で足した人を、再読込で拾えること
+    t('新入社員はまだ一覧に居ない', !(await see(page, '新人テスト', 1200)));
+    staffH.push({ uid:'h20', name:'新人テスト', myNumber:20, badge:'mechanic', store:'honten' });
+    t('足す場所の案内が出ている', await see(page, 'スタッフ設定 → ➕ 新規登録'));
+    await click(page, '再読込');
+    await page.waitForTimeout(1200);
+    t('再読込で新入社員が一覧に出る', await see(page, '新人テスト'), await dump(page));
+    await page.evaluate(() => {
+      const i = document.querySelector('[data-mail="h20"]');
+      const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      set.call(i, 'shinjin@midori-m.com');
+      i.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await page.waitForTimeout(1000);
+    t('新入社員にメールを登録できる',
+      (staffH.find(s => s.uid === 'h20') || {}).loginEmail === 'shinjin@midori-m.com',
+      staffH.find(s => s.uid === 'h20'));
+    await page.evaluate(() => { const b = document.querySelector('[data-invite="h20"]'); if (b) b.click(); });
+    await click(page, '送る', '.dialog');
+    await page.waitForTimeout(800);
+    t('新入社員に招待を送れる', sentInvites.includes('shinjin@midori-m.com'), sentInvites);
+
+    // ⑩ 開き直しても入れる（利用証が端末に残っている）
     await page.reload({ waitUntil: 'domcontentloaded' });
     t('開き直すとログインを求められない', await see(page, '本人認証の進み具合', 8000), await dump(page));
 
