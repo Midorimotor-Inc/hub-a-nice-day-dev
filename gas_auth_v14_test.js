@@ -273,6 +273,30 @@ t('別環境の台帳を見ると未登録扱いになる',
   t('最後の1人は外せない', body(T.authAdminSet_(admTok,PFX,'remove','egawa@midori-m.com')).err==='last_admin');
   t('外せなかったので名簿は1人のまま', T.authAdmins_().length===1, T.authAdmins_());
 
+  // ★名簿の変更は「その場で」効くこと。
+  //   利用証に焼き込んだ印だけを見ていると、利用証が作り直される15日後まで
+  //   外した人がコンソールを開けたままになる（外し忘れよりたちが悪い）。
+  t('外した人はその場で開けなくなる', (function(){
+    props['HUB_ADMIN_EMAILS']='daisuke@example.com=h1';   // 江川さんを外す
+    const r = T.authAdminGate_(admTok, PFX);              // 利用証は同じまま
+    props['HUB_ADMIN_EMAILS']='egawa@midori-m.com=h7';
+    return r === null;
+  })());
+  t('外したあと名簿も見られなくなる', (function(){
+    props['HUB_ADMIN_EMAILS']='daisuke@example.com=h1';
+    const r = body(T.authAdminList_(admTok, PFX));
+    props['HUB_ADMIN_EMAILS']='egawa@midori-m.com=h7';
+    return r.err === 'not_admin';
+  })());
+  t('名簿に足した人はその場で開ける（入り直し不要）', (function(){
+    // 一般スタッフとして発行された利用証（印は0）でも、名簿に載れば通る
+    props['HUB_ADMIN_EMAILS']='egawa@midori-m.com=h7,daisuke@example.com=h1';
+    const r = T.authAdminGate_(KEY+v2.token, PFX);
+    props['HUB_ADMIN_EMAILS']='egawa@midori-m.com=h7';
+    return r !== null;
+  })());
+  t('名簿に無い人は通らない', T.authAdminGate_(KEY+v2.token, PFX) === null);
+
   // 名簿から外れた人は、次の延長で管理者でなくなる
   props['HUB_ADMIN_EMAILS']='daisuke@example.com=h1';   // 江川さんを名簿から外す
   const realNow2=Date.now;

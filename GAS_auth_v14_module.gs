@@ -210,6 +210,9 @@ function authAdminOf_(email) {
 }
 
 // 利用証を持っている人が管理者かどうか。画面の申告は信用せず、必ずここで判定する。
+//   ★判定は「いまの名簿」で行う。利用証に焼き込んだ印(a)だけを見ると、
+//     利用証が作り直される15日後まで、外した人が開けたままになる。
+//     台帳の e（認証に使ったアドレス）はGASだけが書く値なので、これと突き合わせる。
 function authAdminGate_(rawApiKey, prefix) {
   var token = '';
   var i = String(rawApiKey || '').indexOf('|');
@@ -217,7 +220,10 @@ function authAdminGate_(rawApiKey, prefix) {
   var payload = authReadToken_(token);
   if (!payload) return null;
   if (!authValid_(payload, prefix)) return null;
-  if (!payload.a) return null;                 // 管理者として発行された利用証ではない
+  var devices = authLoadDevices_(prefix);
+  var d = devices[payload.j];
+  if (!d || !d.e) return null;                 // 認証に使ったアドレスが分からない端末
+  if (!authAdminOf_(d.e)) return null;         // いま名簿に載っていない
   return payload;
 }
 
@@ -485,12 +491,12 @@ function authRenew_(rawApiKey, prefix) {
       authSaveDevices_(prefix, devices);
     } finally { if (locked) lock.releaseLock(); }
 
-    // 管理者かどうかは毎回名簿を見て決め直す。名簿から外れた人は、次の延長で管理者でなくなる。
+    // 管理者かどうかは毎回名簿を見て決め直す（印は画面表示の手掛かりに使うだけ）。
     var stillAdmin = false;
     try {
       var mail = (d && d.e) ? d.e : '';
-      stillAdmin = mail ? !!authAdminOf_(mail) : !!payload.a;
-    } catch (e) { stillAdmin = !!payload.a; }
+      stillAdmin = mail ? !!authAdminOf_(mail) : false;
+    } catch (e) { stillAdmin = false; }
     return makeResponse(JSON.stringify({
       ok: true, renewed: true, exp: exp, admin: stillAdmin,
       token: authMakeToken_(payload.n, payload.m, payload.s, payload.j, stillAdmin)
