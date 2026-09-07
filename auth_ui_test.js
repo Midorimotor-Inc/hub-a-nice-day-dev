@@ -28,6 +28,8 @@ let staffH = [
 ];
 let devices = {};          // 端末台帳
 let labels = [];           // authLabel で届いた種類と名前
+// 管理者が先に決めておいた共有端末の名前
+let devnames = [{ name:'共有PC1', store:'honten' }, { name:'三田店タブレット', store:'sanda' }];
 let sentInvites = [];      // 送った招待
 const CODE = '424242';
 
@@ -90,6 +92,7 @@ const gasRoute = async (route) => {
   const key = q.get('key') || '';
   if (key === STOR + 'honten-staff-v2') return body(staffH);
   if (key === STOR + 'auth-devices') return body(devices);
+  if (key === STOR + 'auth-devnames') return body(devnames);
   return route.fulfill({ status: 200, contentType: 'text/plain',
     headers: { 'Access-Control-Allow-Origin': '*' }, body: 'null' });
 };
@@ -178,13 +181,11 @@ const dump = async (page, root) => page.evaluate(r => {
     t('本人だと分かってから種類をたずねる', await seeText(page, 'この端末はどちらですか'));
     t('確認できた人の名前を出す', await seeText(page, '見取大介'));
     await clickText(page, 'みんなで使う');
-    t('共有なら端末の名前を聞かれる', await seeText(page, 'この端末の名前を付けてください'));
-    t('名前が空だと進めない', await page.evaluate(() => {
-      const b = [...document.querySelectorAll('button')].find(e => e.innerText.includes('登録する'));
-      return !!b && b.disabled;
-    }));
-    await page.fill('input[type=text]', '共有PC1');
-    await clickText(page, '登録する');
+    t('共有なら端末を聞かれる', await seeText(page, 'この端末はどれですか'));
+    t('管理者が決めた名前が候補に出る',
+      (await seeText(page, '共有PC1')) && (await seeText(page, '三田店タブレット')));
+    t('一覧にない時の入り口もある', await seeText(page, '一覧にない（自分で入力する）'));
+    await clickText(page, '共有PC1');
     t('登録が完了する', await seeText(page, 'この端末に登録しました'));
     t('端末名がサーバーに送られる',
       labels.some(x => x.label === '共有PC1' && x.kind === 'shared'), labels);
@@ -290,9 +291,13 @@ const dump = async (page, root) => page.evaluate(r => {
     await seeText(page, '6桁のコードを入れてください');
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
-    t('共有に変わるので、ここで端末の名前を聞く', await seeText(page, 'この端末の名前を付けてください'));
+    t('共有に変わるので、ここで端末を聞く', await seeText(page, 'この端末はどれですか'));
+    await clickText(page, '一覧にない');
+    t('自分で入力する欄に切り替わる', await seeText(page, '登録する'));
     await page.fill('input[type=text]', '本店 受付PC');
     await clickText(page, '登録する');
+    t('自分で入力した名前も記録される',
+      labels.some(x => x.label === '本店 受付PC'), labels);
     await seeText(page, 'この端末に登録しました');
     await clickText(page, 'はじめる');
     const k2 = await page.evaluate(() => localStorage.getItem('hub-v8-dev-auth-kind'));
@@ -368,9 +373,9 @@ const dump = async (page, root) => page.evaluate(r => {
     await clickText(page, '確認する');
     t('スマホ：本人だと分かってから種類をたずねる', await seeText(page, 'この端末はどちらですか'));
     await clickText(page, 'みんなで使う');
-    t('スマホ：共有なら端末の名前を聞かれる', await seeText(page, 'この端末の名前'));
-    await page.fill('input[type=text]', '本店タブレット');
-    await clickText(page, '登録する');
+    t('スマホ：共有なら端末を聞かれる', await seeText(page, 'この端末の名前'));
+    t('スマホ：管理者が決めた候補が出る', await seeText(page, '共有PC1'));
+    await clickText(page, '共有PC1');
     await seeText(page, 'この端末に登録しました');
     await clickText(page, 'はじめる');
     t('スマホ：共有ならログイン画面に戻る', await seeText(page, 'LOGIN CODE'));

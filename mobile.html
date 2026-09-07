@@ -427,6 +427,8 @@ const AuthAddScreen=({onDone,onCancel})=>{
   const [kind,setKind]=useState(hubKind());
   const [pend,setPend]=useState(null);
   const [label,setLabel]=useState(hubLabel());
+  const [devNames,setDevNames]=useState(null);
+  const [typing,setTyping]=useState(false);
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState('');
   const [who,setWho]=useState(null);
@@ -458,13 +460,21 @@ const AuthAddScreen=({onDone,onCancel})=>{
     setWho(r);setStep('done');
   };
   const needLabel=k=>k==='shared'&&!hubLabel();
+  useEffect(()=>{
+    if(step!=='label'||devNames!==null)return;
+    (async()=>{
+      const v=await sGet(STOR+'auth-devnames');
+      const list=Array.isArray(v)?v.filter(x=>x&&x.name):[];
+      setDevNames(list); setTyping(list.length===0);
+    })();
+  },[step,devNames]);
   const verify=async()=>{
     setErr('');setBusy(true);
     const r=await hubAuthCall('authVerify',{email:email.trim(),code:code.trim(),ua:navigator.userAgent||''});
     setBusy(false);
     if(!r||!r.ok){
       setErr(r&&r.err==='bad_code'?'コードが違います。もう一度お試しください。'
-        :r&&r.err==='expired'?'コードの有効時間（10分）が過ぎました。送り直してください。'
+        :r&&r.err==='expired'?'コードの有効時間（24時間）が過ぎました。送り直してください。'
         :r&&r.err==='too_many'?'入力の失敗が続いたため止めました。送り直してください。'
         :'確認できませんでした。通信の状態をご確認ください。');
       return;
@@ -508,7 +518,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
       )}
       {step==='code'&&(
         <div>
-          <div style={LBL}>{email.trim()} 宛に6桁のコードを送りました（有効10分）</div>
+          <div style={LBL}>{email.trim()} 宛に6桁のコードを送りました（24時間以内に入力してください）</div>
           <input type="text" value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,'').slice(0,6))}
             style={{...IN,fontSize:30,letterSpacing:'0.35em',textAlign:'center',fontWeight:800}}
             placeholder="------" inputMode="numeric" autoComplete="one-time-code" autoFocus/>
@@ -537,10 +547,22 @@ const AuthAddScreen=({onDone,onCancel})=>{
         <div>
           <div style={{color:'white',fontWeight:800,fontSize:17,marginBottom:4}}>この端末の名前</div>
           <div style={LBL}>みんなで使う端末なので、あとで管理者が見分けられるように名前が要ります。<br/>例：<b>共有PC1</b>、本店 受付タブレット</div>
-          <input type="text" value={label} onChange={e=>setLabel(e.target.value.slice(0,40))} style={IN}
-            placeholder="共有PC1" autoComplete="off" autoFocus/>
-          <button style={BTN(!!label.trim())} disabled={!label.trim()}
-            onClick={()=>finish(pend,kind||'shared',label.trim())}>登録する</button>
+          {devNames===null&&<div style={LBL}>読み込んでいます…</div>}
+          {devNames!==null&&!typing&&devNames.map(d=>(
+            <button key={d.name} style={CARD} onClick={()=>finish(pend,kind||'shared',d.name)}>
+              <b style={{fontSize:15,color:'#111827'}}>{d.name}</b>
+              <span style={{fontSize:12,color:'#6b7280',marginLeft:8}}>{d.store==='sanda'?'三田店':'本店'}</span>
+            </button>
+          ))}
+          {devNames!==null&&!typing&&(
+            <button style={SUB} onClick={()=>setTyping(true)}>一覧にない（自分で入力する）</button>
+          )}
+          {devNames!==null&&typing&&(<>
+            <input type="text" value={label} onChange={e=>setLabel(e.target.value.slice(0,40))} style={IN}
+              placeholder="共有PC1" autoComplete="off" autoFocus/>
+            <button style={BTN(!!label.trim())} disabled={!label.trim()}
+              onClick={()=>finish(pend,kind||'shared',label.trim())}>登録する</button>
+          </>)}
           <div style={{...LBL,marginTop:10}}>名前は端末に1つだけです。2人目からは聞かれません。</div>
         </div>
       )}

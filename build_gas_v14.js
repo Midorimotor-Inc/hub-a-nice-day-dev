@@ -46,6 +46,12 @@ sub('doGet の入口',
     return authAdminSet_(e.parameter.apiKey, authPrefixOf_(e.parameter),
                          e.parameter.op, e.parameter.email, e.parameter.uid);
   }
+  // v14: 6桁コードの保管場所は、外から読ませない。
+  //      APIキーはHTMLに書かれていて秘密にできないため、読めると認証を通されてしまう。
+  //      （値はHMACなので読めても6桁は分からないが、念のため塞いでおく）
+  if (String((e.parameter && (e.parameter.key || e.parameter.keys)) || '').indexOf('auth-codes') >= 0) {
+    return makeResponse('null');
+  }
   // v14: 招待メール（管理者が押す）。登録済みアドレスにだけ手順を送る。
   if (e.parameter.action === 'authInvite') {
     return authInvite_(e.parameter.email, authPrefixOf_(e.parameter));

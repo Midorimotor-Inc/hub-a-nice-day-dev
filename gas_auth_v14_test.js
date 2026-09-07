@@ -42,13 +42,16 @@ vm.runInContext(src+`
 this.T={authMakeToken_,authReadToken_,authValid_,authGate_,authBaseKey_,authPrefixOf_,
         authRequest_,authInvite_,authVerify_,authRenew_,authLoadDevices_,authSaveDevices_,authFindStaffByEmail_,
         authAdmins_,authAdminSave_,authAdminOf_,authAdminGate_,authResolve_,authFindStaffByUid_,
-        authAdminList_,authAdminSet_};`,ctx);
+        authAdminList_,authAdminSet_,authSaveCodes_,authLoadCodes_,authCodeHash_};`,ctx);
 const T=ctx.T;
 
 const ok=[],ng=[];
 const t=(n,c,e)=>{(c?ok:ng).push(n+(c?'':'  ← '+JSON.stringify(e)));};
 const PFX='hub-v8-dev-';
 const body=r=>{try{return JSON.parse(r.__body);}catch(e){return r.__body;}};
+// 6桁はサーバーに保存されなくなった（HMACだけ）。送られたメール本文から取り出す。
+const freshCode=m=>{delete cacheStore['authcnt:'+m];sentMail=[];T.authRequest_(m,PFX);return lastCode();};
+const lastCode=()=>{const m=String((sentMail[sentMail.length-1]||{}).body||'').match(/([0-9]{6})/);return m?m[1]:'';};
 
 // 管理者が登録したスタッフ表（loginEmail つき）
 sheetStore[PFX+'honten-staff-v2']=JSON.stringify([
@@ -167,14 +170,56 @@ t('別環境の台帳を見ると未登録扱いになる',
   t('招待の連打は上限で止まる', sent<=5&&sentMail.length<=5, {送れた:sent});
 }
 
+// 13.8) 6桁コードは24時間有効。ただし総当たりは試行上限で止める。
+{
+  const DAY = 86400000;
+  const code = freshCode('daisuke@example.com');
+  t('コードが6桁で送られる', /^[0-9]{6}$/.test(code), code);
+  t('メールに24時間と書いてある', /24時間有効/.test(sentMail[sentMail.length-1].body));
+
+  // ★コードそのものはサーバーに残さない。APIキーはHTMLに書かれていて秘密にできないので、
+  //   平文で置くと読まれた時点で誰でもログインできてしまう。
+  const stored = sheetStore[PFX + 'auth-codes'] || '';
+  t('コードは保存されない（HMACだけ）', stored.indexOf(code) < 0, stored.slice(0, 120));
+  t('保管場所にHMACがある', /"h":"[A-Za-z0-9_-]{20,}"/.test(stored), stored.slice(0, 120));
+
+  const realNow = Date.now;
+  // 23時間後：まだ使える（以前は10分で切れていた）
+  Date.now = () => realNow() + 23 * 3600000;
+  t('23時間後でもまだ使える',
+    body(T.authVerify_('daisuke@example.com', code, PFX, 'test')).ok === true);
+  Date.now = realNow;
+
+  // 25時間後：切れている
+  const code2 = freshCode('daisuke@example.com');
+  Date.now = () => realNow() + 25 * 3600000;
+  t('25時間たつと切れる',
+    body(T.authVerify_('daisuke@example.com', code2, PFX, 'test')).err === 'expired');
+  Date.now = realNow;
+
+  // 総当たり対策：5回外すと、正しいコードでも通らなくなる
+  const code3 = freshCode('daisuke@example.com');
+  let last = null;
+  for (let i = 0; i < 5; i++) last = body(T.authVerify_('daisuke@example.com', '000000', PFX, 'test'));
+  t('5回までは「コードが違います」', last.err === 'bad_code', last);
+  t('6回目で止まる', body(T.authVerify_('daisuke@example.com', '000000', PFX, 'test')).err === 'too_many_tries');
+  t('止まったあとは正しいコードでも通らない',
+    body(T.authVerify_('daisuke@example.com', code3, PFX, 'test')).err === 'expired');
+
+  // 期限切れは掃除される（放っておくと際限なく溜まる）
+  T.authSaveCodes_(PFX, { 'old@example.com': { h: 'x', t: 0, x: Date.now() - 1000 },
+                          'new@example.com': { h: 'y', t: 0, x: Date.now() + DAY } });
+  const kept = T.authLoadCodes_(PFX);
+  t('期限切れは捨てられる', !kept['old@example.com'] && !!kept['new@example.com'], Object.keys(kept));
+}
+
 // 14) スライド式の有効期限（最後に使った日から90日）
 //     毎日使う人が期限切れに遭わないこと、放置された端末は失効することを確かめる。
 {
   const DAY=86400000, KEY='hub2026co-key|';
   // 本人確認を通して、まっさらな利用証を1枚作る
   sentMail=[];
-  T.authRequest_('daisuke@example.com',PFX);
-  const code=(cacheStore['authcode:daisuke@example.com']||'').split('|')[0];
+  const code=freshCode('daisuke@example.com');
   const v=body(T.authVerify_('daisuke@example.com',code,PFX,'test'));
   t('延長の前提：利用証を発行できた', v.ok===true&&!!v.token, v);
   const fresh=v.token;
@@ -238,10 +283,11 @@ t('別環境の台帳を見ると未登録扱いになる',
 
   // 管理者としてコードを受け取り、利用証を得る
   sentMail=[];
+  delete cacheStore['authcnt:egawa@midori-m.com'];
   let r=body(T.authRequest_('egawa@midori-m.com',PFX));
   t('管理者にはコードを送る', r.ok===true && sentMail.length===1, r);
   t('管理者向けの件名になる', /管理者ログインの確認コード/.test(sentMail[0].sub), sentMail[0].sub);
-  const code=(cacheStore['authcode:egawa@midori-m.com']||'').split('|')[0];
+  const code=lastCode();
   const v=body(T.authVerify_('egawa@midori-m.com',code,PFX,'test'));
   t('管理者の利用証が出る', v.ok===true && v.admin===true, v);
   t('利用証に管理者の印が入る', T.authReadToken_(v.token).a===1, T.authReadToken_(v.token));
@@ -249,8 +295,7 @@ t('別環境の台帳を見ると未登録扱いになる',
 
   // 一般スタッフの利用証では管理者の画面を開けない
   sentMail=[];
-  T.authRequest_('daisuke@example.com',PFX);
-  const c2=(cacheStore['authcode:daisuke@example.com']||'').split('|')[0];
+  const c2=freshCode('daisuke@example.com');
   const v2=body(T.authVerify_('daisuke@example.com',c2,PFX,'test'));
   t('一般スタッフの利用証には印が付かない', T.authReadToken_(v2.token).a===0, T.authReadToken_(v2.token));
   t('一般スタッフは名簿を見られない',

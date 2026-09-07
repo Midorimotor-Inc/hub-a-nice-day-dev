@@ -16,7 +16,7 @@ const ok = [], ng = [];
 const t = (n, c, e) => { (c ? ok : ng).push(n + (c ? '' : '  ← ' + JSON.stringify(e))); };
 const CODE = '515151';
 
-let staffH, staffS, devices, adminProp, sentInvites, sentCodes;
+let staffH, staffS, devices, adminProp, sentInvites, sentCodes, devnames;
 function reset() {
   staffH = [
     { uid:'h1', name:'見取大介', myNumber:1, badge:'manager',  store:'honten', loginEmail:'daisuke@midori-m.com' },
@@ -30,6 +30,7 @@ function reset() {
           at:Date.now()-40*86400000, last:Date.now()-86400000, exp:Date.now()+89*86400000, ua:'Windows Chrome' },
   };
   adminProp = 'egawa@midori-m.com=h7';
+  devnames = [];
   sentInvites = []; sentCodes = [];
 }
 
@@ -77,6 +78,7 @@ const gasRoute = async (route) => {
     let d = {}; try { d = JSON.parse(route.request().postData() || '{}'); } catch (e) {}
     let v = null; try { v = JSON.parse(d.value); } catch (e) {}
     if (d.key === STOR + 'auth-devices' && v && typeof v === 'object') devices = v;
+    if (d.key === STOR + 'auth-devnames' && Array.isArray(v)) devnames = v;
     if (d.key === STOR + 'honten-staff-v2' && Array.isArray(v)) staffH = v;
     if (d.key === STOR + 'sanda-staff-v2'  && Array.isArray(v)) staffS = v;
     return text('ok');
@@ -128,6 +130,7 @@ const gasRoute = async (route) => {
   if (key === STOR + 'honten-staff-v2') return text(JSON.stringify(staffH));
   if (key === STOR + 'sanda-staff-v2')  return text(JSON.stringify(staffS));
   if (key === STOR + 'auth-devices')    return text(JSON.stringify(devices));
+  if (key === STOR + 'auth-devnames')   return text(JSON.stringify(devnames));
   return text('null');
 };
 
@@ -253,6 +256,25 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('店のPCが自分専用のときの直し方を書いてある',
       await see(page, '店のPCが「自分専用」になっていたら'));
     t('失効までの日数が出る', await see(page, 'あと'));
+    // 共有端末の名前を管理者側で登録できる
+    t('共有端末の欄がある', await see(page, '共有端末の名前'));
+    t('最初は空だと案内が出る', await see(page, '「＋ 共有端末を追加」から'));
+    await click(page, '＋ 共有端末を追加');
+    t('追加の画面が出る', await see(page, '置いてある店舗'));
+    await page.fill('#devname', '共有PC1');
+    await click(page, '追加する', '.dialog');
+    await page.waitForTimeout(1300);
+    t('端末名がサーバーに保存される',
+      devnames.some(function(d){ return d.name === '共有PC1' && d.store === 'honten'; }), devnames);
+    t('一覧に出る', await page.evaluate(() => document.body.innerText.includes('共有PC1')));
+    await click(page, '＋ 共有端末を追加');
+    await see(page, '置いてある店舗');
+    await page.fill('#devname', '共有PC1');
+    await click(page, '追加する', '.dialog');
+    await page.waitForTimeout(900);
+    t('同じ名前は二重に足さない', devnames.length === 1, devnames);
+    t('二重登録を知らせる', await see(page, 'その名前はすでにあります'));
+
     const before = Object.keys(devices).length;
     const target = await page.evaluate(() => {
       const b = document.querySelector('[data-revoke]'); if (!b) return null;

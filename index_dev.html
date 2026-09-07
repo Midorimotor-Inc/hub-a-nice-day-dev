@@ -3069,6 +3069,8 @@ const AuthAddScreen=({onDone,onCancel})=>{
   const [who,setWho]=useState(null);
   const [pend,setPend]=useState(null);   // 本人確認は済んだが、端末の種類がまだの人
   const [label,setLabel]=useState(hubLabel());   // この端末の名前（共有のときだけ聞く）
+  const [devNames,setDevNames]=useState(null);   // 管理者が決めた端末名の候補
+  const [typing,setTyping]=useState(false);      // 候補を使わず自分で入力する
   const firstOnDevice = hubLive(hubLoadMine()).length===0;
 
   const sendCode=async(mail)=>{
@@ -3107,6 +3109,15 @@ const AuthAddScreen=({onDone,onCancel})=>{
   };
   // 共有の端末は、最初に登録する人が1回だけ名前を付ける
   const needLabel=k=>k==='shared'&&!hubLabel();
+  // 管理者が決めた端末名を読む（無くても止まらない。その場で入力できる）
+  useEffect(()=>{
+    if(step!=='label'||devNames!==null)return;
+    (async()=>{
+      const v=await sGet(STOR+'auth-devnames');
+      const list=Array.isArray(v)?v.filter(x=>x&&x.name):[];
+      setDevNames(list); setTyping(list.length===0);
+    })();
+  },[step,devNames]);
   const pickKind=k=>{ setKind(k); if(needLabel(k)){setStep('label');return;} finish(pend,k,''); };
   const verify=async()=>{
     setErr('');setBusy(true);
@@ -3114,7 +3125,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
     setBusy(false);
     if(!r||!r.ok){
       setErr(r&&r.err==='bad_code' ? 'コードが違います。もう一度お試しください。'
-        : r&&r.err==='expired' ? 'コードの有効時間（10分）が過ぎました。送り直してください。'
+        : r&&r.err==='expired' ? 'コードの有効時間（24時間）が過ぎました。送り直してください。'
         : r&&r.err==='too_many' ? '入力の失敗が続いたため止めました。送り直してください。'
         : '確認できませんでした。通信の状態をご確認ください。');
       return;
@@ -3190,16 +3201,33 @@ const AuthAddScreen=({onDone,onCancel})=>{
 
         {step==='label'&&(
           <div>
-            <div style={{fontWeight:800,fontSize:15,color:'#111827',marginBottom:3}}>この端末の名前を付けてください</div>
+            <div style={{fontWeight:800,fontSize:15,color:'#111827',marginBottom:3}}>この端末はどれですか？</div>
             <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>
-              みんなで使う端末なので、あとで管理者が見分けられるように名前が要ります。<br/>
-              例：<b>共有PC1</b>、本店 受付PC、三田店タブレット
+              みんなで使う端末なので、あとで管理者が見分けられるように名前が要ります。
             </div>
-            <input type="text" value={label} onChange={e=>setLabel(e.target.value.slice(0,40))} style={IN}
-              placeholder="共有PC1" autoComplete="off" autoFocus
-              onKeyDown={e=>{if(e.key==='Enter'&&label.trim())finish(pend,kind||'shared',label.trim());}}/>
-            <button style={BTN(!!label.trim())} disabled={!label.trim()}
-              onClick={()=>finish(pend,kind||'shared',label.trim())}>登録する</button>
+            {devNames===null&&<p style={{fontSize:12.5,color:'#9ca3af'}}>読み込んでいます…</p>}
+            {devNames!==null&&!typing&&(<>
+              <div style={{display:'grid',gap:8}}>
+                {devNames.map(d=>(
+                  <button key={d.name} onClick={()=>finish(pend,kind||'shared',d.name)}
+                    style={{...CARD,padding:'12px 14px'}}>
+                    <b style={{fontSize:14.5,color:'#111827'}}>{d.name}</b>
+                    <span style={{fontSize:11.5,color:'#6b7280',marginLeft:8}}>
+                      {d.store==='sanda'?'三田店':'本店'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <button style={SUB} onClick={()=>setTyping(true)}>一覧にない（自分で入力する）</button>
+            </>)}
+            {devNames!==null&&typing&&(<>
+              <input type="text" value={label} onChange={e=>setLabel(e.target.value.slice(0,40))} style={IN}
+                placeholder="共有PC1" autoComplete="off" autoFocus
+                onKeyDown={e=>{if(e.key==='Enter'&&label.trim())finish(pend,kind||'shared',label.trim());}}/>
+              <button style={BTN(!!label.trim())} disabled={!label.trim()}
+                onClick={()=>finish(pend,kind||'shared',label.trim())}>登録する</button>
+              {devNames.length>0&&<button style={SUB} onClick={()=>setTyping(false)}>← 一覧から選ぶ</button>}
+            </>)}
             <p style={{fontSize:11.5,color:'#9ca3af',marginTop:11,lineHeight:1.7}}>
               名前は端末に1つだけです。2人目からは聞かれません。
             </p>
@@ -3209,7 +3237,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
         {step==='code'&&(
           <div>
             <div style={{fontWeight:800,fontSize:15,color:'#111827',marginBottom:3}}>6桁のコードを入れてください</div>
-            <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>{email.trim()} 宛に送りました（有効10分）</div>
+            <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>{email.trim()} 宛に送りました（24時間以内に入力してください）</div>
             <input type="text" value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,'').slice(0,6))}
               style={{...IN,fontSize:26,letterSpacing:'0.4em',textAlign:'center',fontWeight:800}}
               placeholder="------" inputMode="numeric" autoComplete="one-time-code" autoFocus

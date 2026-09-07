@@ -242,6 +242,12 @@ function doGet(e) {
     return authAdminSet_(e.parameter.apiKey, authPrefixOf_(e.parameter),
                          e.parameter.op, e.parameter.email, e.parameter.uid);
   }
+  // v14: 6桁コードの保管場所は、外から読ませない。
+  //      APIキーはHTMLに書かれていて秘密にできないため、読めると認証を通されてしまう。
+  //      （値はHMACなので読めても6桁は分からないが、念のため塞いでおく）
+  if (String((e.parameter && (e.parameter.key || e.parameter.keys)) || '').indexOf('auth-codes') >= 0) {
+    return makeResponse('null');
+  }
   // v14: 招待メール（管理者が押す）。登録済みアドレスにだけ手順を送る。
   if (e.parameter.action === 'authInvite') {
     return authInvite_(e.parameter.email, authPrefixOf_(e.parameter));
@@ -1047,7 +1053,10 @@ function testSnapshotDev() {
 
 var AUTH_TTL_DAYS        = 90;    // 利用証の有効期間（「最後に使った日から」90日）
 var AUTH_RENEW_AFTER_DAYS = 15;   // 前回の延長から何日たったら延長し直すか
-var AUTH_CODE_TTL_SEC    = 600;   // 6桁コードの有効時間（10分）
+var AUTH_CODE_TTL_SEC    = 86400; // 6桁コードの有効時間（24時間）
+                                  //   現場は全員バラバラに動く。押してすぐ席を離れることも、
+                                  //   Becky!の受信間隔でメールの到着が遅れることもある。
+                                  //   総当たりは試行回数の上限(AUTH_MAX_TRY)で止める。
 var AUTH_MAX_SEND_PER_HR = 5;     // 同じアドレスへの送信上限（メール枠の保護）
 var AUTH_APP_URL = {              // 招待メールに載せる各環境の入口
   'hub-v8-':     'https://midorimotor-inc.github.io/hub-a-nice-day/',
@@ -1196,6 +1205,35 @@ function authBaseKey_(rawApiKey) {
   var s = String(rawApiKey || '');
   var i = s.indexOf('|');
   return i >= 0 ? s.slice(0, i) : s;
+}
+
+// ── 6桁コードの保管 ───────────────────────────────────────────────────
+//   キャッシュは上限6時間なのでシートに置く。ただしシートの値はAPIキーがあれば
+//   読めてしまうため、コードそのものは置かずHMACの値だけを置く。
+//   （doGet 側でもこのキーは読めないようにしてある）
+function authCodesKey_(prefix) { return String(prefix || '') + 'auth-codes'; }
+
+function authCodeHash_(email, code) {
+  return Utilities.base64EncodeWebSafe(
+    Utilities.computeHmacSha256Signature(String(email) + '|' + String(code), authSecret_()));
+}
+
+function authLoadCodes_(prefix) {
+  try {
+    var raw = readOneValue(getSheet(), CacheService.getScriptCache(), authCodesKey_(prefix), -2);
+    if (!raw || raw === 'null') return {};
+    var o = JSON.parse(raw);
+    return (o && typeof o === 'object' && !(o instanceof Array)) ? o : {};
+  } catch (e) { return {}; }
+}
+
+function authSaveCodes_(prefix, map) {
+  // 期限切れは毎回捨てる。放っておくと際限なく溜まる。
+  var now = Date.now(), clean = {};
+  for (var k in map) { if (map[k] && map[k].x > now) clean[k] = map[k]; }
+  var key = authCodesKey_(prefix);
+  writeRow(getSheet(), key, JSON.stringify(clean), new Date().toLocaleString('ja-JP'));
+  invalidateCache(key);
 }
 
 // ── 管理者の名簿 ─────────────────────────────────────────────────────
@@ -1347,7 +1385,9 @@ function authRequest_(email, prefix) {
     cache.put(cntKey, String(cnt + 1), 3600);
 
     var code = String(Math.floor(100000 + Math.random() * 900000));
-    cache.put('authcode:' + email, code + '|0', AUTH_CODE_TTL_SEC);
+    var codes = authLoadCodes_(prefix);
+    codes[email] = { h: authCodeHash_(email, code), t: 0, x: Date.now() + AUTH_CODE_TTL_SEC * 1000 };
+    authSaveCodes_(prefix, codes);
 
     var env = (String(prefix).indexOf('dev') >= 0) ? '【DEV】' : '';
     MailApp.sendEmail(
@@ -1356,7 +1396,7 @@ function authRequest_(email, prefix) {
       staff.name + ' さん\n\n' +
       'ログイン画面に次の6桁を入力してください。\n\n' +
       '    ' + code + '\n\n' +
-      '有効時間は10分です。\n' +
+      'このコードは24時間有効です。\n' +
       'この操作に心当たりが無い場合は、このメールを無視してください（何も起きません）。\n\n' +
       '--\nHub a Nice Day 自動送信（返信不要）'
     );
@@ -1426,21 +1466,21 @@ function authVerify_(email, code, prefix, ua) {
     if (SNAP_ENV_PREFIXES.indexOf(String(prefix || '')) < 0) {
       return makeResponse(JSON.stringify({ ok: false, err: 'bad_prefix' }));
     }
-    var cache = CacheService.getScriptCache();
-    var rec = cache.get('authcode:' + email);
-    if (!rec) return makeResponse(JSON.stringify({ ok: false, err: 'expired' }));
-
-    var sp = rec.split('|');
-    var want = sp[0], tries = Number(sp[1] || 0);
+    var codes = authLoadCodes_(prefix);
+    var rec = codes[email];
+    if (!rec || !rec.x || rec.x <= Date.now()) {
+      return makeResponse(JSON.stringify({ ok: false, err: 'expired' }));
+    }
+    var tries = Number(rec.t || 0);
     if (tries >= AUTH_MAX_TRY) {
-      cache.remove('authcode:' + email);
+      delete codes[email]; authSaveCodes_(prefix, codes);
       return makeResponse(JSON.stringify({ ok: false, err: 'too_many_tries' }));
     }
-    if (code !== want) {
-      cache.put('authcode:' + email, want + '|' + (tries + 1), AUTH_CODE_TTL_SEC);
+    if (authCodeHash_(email, code) !== rec.h) {
+      rec.t = tries + 1; codes[email] = rec; authSaveCodes_(prefix, codes);
       return makeResponse(JSON.stringify({ ok: false, err: 'bad_code' }));
     }
-    cache.remove('authcode:' + email);
+    delete codes[email]; authSaveCodes_(prefix, codes);
 
     var staff = authResolve_(prefix, email);
     if (!staff) return makeResponse(JSON.stringify({ ok: false, err: 'not_registered' }));

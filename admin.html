@@ -241,7 +241,7 @@ function gasWrite(key, value){
 var S = {
   view:'gate', step:'mail', mail:'', typed:'', err:'', busy:false,
   me:null, tab:'staff', dialog:null, toast:null, loading:false,
-  staffH:[], staffS:[], devices:{}, admins:[]
+  staffH:[], staffS:[], devices:{}, admins:[], devnames:[]
 };
 var toastTimer = null;
 var DAY = 86400000;
@@ -295,7 +295,7 @@ function viewGate(){
       + (S.err ? '<div class="err">' + esc(S.err) + '</div>' : '')
       + '<button class="btn w" id="send"' + (S.busy?' disabled':'') + '>' + (S.busy?'送信中…':'確認コードを送る') + '</button>';
   } else {
-    body = '<p class="hint">' + esc(S.mail) + ' 宛に6桁のコードを送りました。（有効10分）<br>'
+    body = '<p class="hint">' + esc(S.mail) + ' 宛に6桁のコードを送りました。（24時間以内に入力してください）<br>'
       + '届かないときは、迷惑メールフォルダもご確認ください。</p>'
       + '<label class="f" for="c">確認コード</label>'
       + '<input type="text" id="c" class="code mono" maxlength="6" inputmode="numeric" placeholder="------" autocomplete="one-time-code" value="' + esc(S.typed) + '">'
@@ -406,7 +406,8 @@ function viewStaff(){
 function viewDevices(){
   var ids = Object.keys(S.devices);
   if (!ids.length) {
-    return '<div class="panelbox"><div class="panelhead"><div><h3>登録端末</h3>'
+    return viewDevNames()
+      + '<div class="panelbox" style="margin-top:18px"><div class="panelhead"><div><h3>登録された端末</h3>'
       + '<p>本人確認を済ませた端末の一覧です。</p></div></div>'
       + '<div class="empty">まだ登録された端末はありません。<br>スタッフのメールを登録して、招待を送ってください。</div></div>';
   }
@@ -435,8 +436,9 @@ function viewDevices(){
       + '<td class="act"><button class="btn stop sm" data-revoke="' + esc(j) + '">取り消し</button></td>'
       + '</tr>';
   }).join('');
-  return '<div class="panelbox">'
-    + '<div class="panelhead"><div><h3>登録端末</h3>'
+  return viewDevNames()
+    + '<div class="panelbox" style="margin-top:18px">'
+    + '<div class="panelhead"><div><h3>登録された端末</h3>'
     + '<p>紛失や退職のときは「取り消し」を押してください。押した瞬間からその端末は使えなくなります。</p></div>'
     + '<div class="right"><button class="btn ghost sm" id="reload">再読込</button></div></div>'
     + '<div class="tablewrap"><table>'
@@ -447,6 +449,35 @@ function viewDevices(){
     + '直し方は、その端末で2人目を登録するだけです（自動で「共有」に変わります）。'
     + '<br>期限は<b>最後に使った日から90日</b>です。使うたびに先へ延びるので、毎日使う端末がここで切れることはありません。'
     + '3か月まったく開かれなかった端末（買い替えて捨てたPC、機種変前のスマホ）だけが自動で失効します。</div>'
+    + '</div>';
+}
+
+// ── 共有端末の名前（管理者が先に決めておく）────────────────
+function viewDevNames(){
+  var rows = S.devnames.map(function(d, i){
+    var used = Object.keys(S.devices).filter(function(j){ return S.devices[j] && S.devices[j].l === d.name; }).length;
+    return '<tr>'
+      + '<td class="stripe ' + (used ? 'ok' : 'idle') + '"></td>'
+      + '<td class="nm">' + esc(d.name) + '<small>' + (d.store === 'sanda' ? '三田店' : '本店') + '</small></td>'
+      + '<td>' + (used
+          ? '<span class="state ok">' + used + '人が登録済み</span>'
+          : '<span class="state idle">まだ誰も登録していません</span>') + '</td>'
+      + '<td class="act"><button class="btn stop sm" data-delname="' + esc(String(i)) + '">削除</button></td>'
+      + '</tr>';
+  }).join('');
+  return '<div class="panelbox">'
+    + '<div class="panelhead"><div><h3>共有端末の名前</h3>'
+    + '<p>店のPCやタブレットに名前を付けておきます。登録する人は、この一覧から選ぶだけで済みます。</p></div>'
+    + '<div class="right"><button class="btn sm" id="adddev">＋ 共有端末を追加</button></div></div>'
+    + '<div class="tablewrap"><table>'
+    + '<thead><tr><th class="stripe"></th><th>端末名</th><th>状態</th><th style="text-align:right">操作</th></tr></thead>'
+    + '<tbody>' + (rows || '<tr><td colspan="4" class="empty">まだ登録がありません。<br>'
+        + '「＋ 共有端末を追加」から、店のPCの名前を決めてください（例：共有PC1、本店 受付PC）。<br>'
+        + '<span style="font-size:12px">登録しなくても、その端末で登録する人がその場で名前を入力できます。</span></td></tr>')
+    + '</tbody></table></div>'
+    + '<div class="foot">ここで決めた名前は、共有の端末を登録するときに<b>選択肢として出ます</b>。'
+    + '書き方がばらつかないので、あとから一覧を見たときに分かりやすくなります。'
+    + '<br>自分のスマホ（自分専用）には名前を付けません。ここに登録する必要もありません。</div>'
     + '</div>';
 }
 
@@ -519,12 +550,14 @@ function loadAll(){
     gasRead(STOR + 'honten-staff-v2'),
     gasRead(STOR + 'sanda-staff-v2'),
     gasRead(STOR + 'auth-devices'),
-    gasGet({action:'authAdminList', prefix:STOR})
+    gasGet({action:'authAdminList', prefix:STOR}),
+    gasRead(STOR + 'auth-devnames')
   ]).then(function(r){
     S.staffH = (r[0] instanceof Array) ? r[0] : [];
     S.staffS = (r[1] instanceof Array) ? r[1] : [];
     S.devices = (r[2] && typeof r[2] === 'object' && !(r[2] instanceof Array)) ? r[2] : {};
     S.admins = (r[3] && r[3].ok && r[3].admins) ? r[3].admins : [];
+    S.devnames = (r[4] instanceof Array) ? r[4].filter(function(x){ return x && x.name; }) : [];
     S.loading = false; render();
   });
 }
@@ -587,7 +620,7 @@ function bind(){
       S.busy = false;
       if (!r || !r.ok) {
         S.err = (r && r.err === 'bad_code') ? 'コードが違います。もう一度お試しください。'
-          : (r && r.err === 'expired') ? 'コードの有効時間（10分）が過ぎました。送り直してください。'
+          : (r && r.err === 'expired') ? 'コードの有効時間（24時間）が過ぎました。送り直してください。'
           : (r && r.err === 'too_many_tries') ? '入力の失敗が続いたため止めました。送り直してください。'
           : '確認できませんでした。通信の状態をご確認ください。';
         render(); return;
@@ -832,6 +865,78 @@ function bind(){
               if (!okw) { toast('取り消せませんでした', 'もう一度お試しください。'); return; }
               S.devices = next; render();
               toast('端末の登録を取り消しました', (d.n || '') + ' さんのこの端末は、もう使えません。');
+            });
+          });
+        }
+      };
+      render();
+    };
+  });
+
+  // --- 共有端末の名前を追加・削除 ---
+  //     保存はサーバー最新を読んでから足す。画面の一覧を書き戻すと、
+  //     別の管理者が同時に足した分を巻き添えで消してしまう。
+  function saveDevNames(next){
+    return gasWrite(STOR + 'auth-devnames', next).then(function(okw){
+      if (okw) S.devnames = next;
+      return okw;
+    });
+  }
+  if ($('adddev')) $('adddev').onclick = function(){
+    S.dialog = {
+      title:'共有端末を追加', okLabel:'追加する',
+      body:'<p>店のPCやタブレットに名前を付けます。'
+        + 'あとで端末一覧を見たときに、どのPCか分かる名前にしてください。</p>'
+        + '<label class="f" for="devname">端末名</label>'
+        + '<input type="text" id="devname" placeholder="例：共有PC1" autocomplete="off" maxlength="40">'
+        + '<label class="f" style="margin-top:14px">置いてある店舗</label>'
+        + '<select id="devstore">'
+        + '<option value="honten">本店</option><option value="sanda">三田店</option></select>'
+        + '<p style="font-size:12px;color:var(--ink-3);margin-top:10px">'
+        + '自分のスマホ（自分専用）は登録しなくて構いません。共有の端末だけです。</p>',
+      onOk: function(){}
+    };
+    render();
+    var okBtn = document.querySelector('[data-dlg="ok"]');
+    if (okBtn) okBtn.onclick = function(){
+      var nm = ((document.getElementById('devname')||{}).value||'').trim().slice(0,40);
+      var st = (document.getElementById('devstore')||{}).value || 'honten';
+      if (!nm) { toast('追加しませんでした', '端末名を入れてください。'); return; }
+      if (S.devnames.some(function(d){ return d.name === nm; })) {
+        toast('追加しませんでした', 'その名前はすでにあります。'); return;
+      }
+      S.dialog = null; render();
+      gasRead(STOR + 'auth-devnames').then(function(latest){
+        var base = (latest instanceof Array) ? latest.filter(function(x){ return x && x.name; }) : [];
+        if (base.some(function(d){ return d.name === nm; })) {
+          S.devnames = base; render();
+          toast('追加しませんでした', 'その名前はすでにあります。'); return;
+        }
+        saveDevNames(base.concat([{ name: nm, store: st }])).then(function(okw){
+          render();
+          toast(okw ? nm + ' を追加しました' : '追加できませんでした',
+                okw ? 'その端末で登録する人が、この名前を選べるようになります。'
+                    : '通信の状態をご確認ください。');
+        });
+      });
+    };
+  };
+  each('[data-delname]', function(b){
+    b.onclick = function(){
+      var i = Number(b.dataset.delname);
+      var d = S.devnames[i]; if (!d) return;
+      var used = Object.keys(S.devices).filter(function(j){ return S.devices[j] && S.devices[j].l === d.name; }).length;
+      S.dialog = {
+        title:'「' + d.name + '」を一覧から消します', okLabel:'消す', danger:true,
+        body:'<p>これから登録する人に、この名前が出なくなるだけです。</p>'
+          + (used ? '<p style="color:var(--ink-2)"><b>すでにこの名前で登録されている' + used + '台は、そのまま使えます。</b>'
+                  + '端末を使えなくするには、下の一覧から「取り消し」を押してください。</p>' : ''),
+        onOk: function(){
+          gasRead(STOR + 'auth-devnames').then(function(latest){
+            var base = (latest instanceof Array) ? latest.filter(function(x){ return x && x.name; }) : [];
+            saveDevNames(base.filter(function(x){ return x.name !== d.name; })).then(function(okw){
+              render();
+              toast(okw ? '「' + d.name + '」を消しました' : '消せませんでした', okw ? '' : '通信の状態をご確認ください。');
             });
           });
         }
