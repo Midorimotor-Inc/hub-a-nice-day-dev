@@ -429,6 +429,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
   const [label,setLabel]=useState(hubLabel());
   const [devNames,setDevNames]=useState(null);
   const [typing,setTyping]=useState(false);
+  const [plan,setPlan]=useState([]);
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState('');
   const [who,setWho]=useState(null);
@@ -460,6 +461,15 @@ const AuthAddScreen=({onDone,onCancel})=>{
     setWho(r);setStep('done');
   };
   const needLabel=k=>k==='shared'&&!hubLabel();
+  // 管理者がその人に決めた「使う端末」を引く。決まっていれば本人は何も選ばない。
+  const planOf=async r=>{
+    try{
+      const store=(r&&r.store)==='sanda'?'sanda':'honten';
+      const list=await sGet(STOR+store+'-staff-v2');
+      const me=(Array.isArray(list)?list:[]).find(x=>x&&((r.uid&&x.uid===r.uid)||x.name===r.name));
+      return (me&&Array.isArray(me.devPlan))?me.devPlan.filter(Boolean):[];
+    }catch(e){ return []; }
+  };
   useEffect(()=>{
     if(step!=='label'||devNames!==null)return;
     (async()=>{
@@ -479,6 +489,9 @@ const AuthAddScreen=({onDone,onCancel})=>{
         :'確認できませんでした。通信の状態をご確認ください。');
       return;
     }
+    const pl=await planOf(r);
+    if(pl.length===1){ const one=pl[0]; finish(r,one==='own'?'own':'shared',one==='own'?'':one); return; }
+    if(pl.length>1){ setPend(r); setPlan(pl); setStep('plan'); return; }
     if(firstOnDevice&&!kind){setPend(r);setStep('kind');return;}
     const already=hubLive(hubLoadMine()).length>0;
     const finalKind=(already&&(kind||hubKind())==='own')?'shared':(kind||hubKind()||'shared');
@@ -541,6 +554,20 @@ const AuthAddScreen=({onDone,onCancel})=>{
             <div style={{fontWeight:800,fontSize:15,color:'#111827'}}>みんなで使う（共有）</div>
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>店のタブレットなど。使う前に名前を選びます。</div>
           </button>
+        </div>
+      )}
+      {step==='plan'&&(
+        <div>
+          <div style={{color:'white',fontWeight:800,fontSize:17,marginBottom:4}}>{pend&&pend.name} さん、確認できました</div>
+          <div style={LBL}>いま使っているのはどちらの端末ですか？</div>
+          {plan.map(x=>(
+            <button key={x} style={CARD} onClick={()=>finish(pend,x==='own'?'own':'shared',x==='own'?'':x)}>
+              <div style={{fontWeight:800,fontSize:15,color:'#111827'}}>{x==='own'?'個人端末':x}</div>
+              <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>
+                {x==='own'?'自分のスマホ、自分だけが使うPC':'店のPC・タブレット'}
+              </div>
+            </button>
+          ))}
         </div>
       )}
       {step==='label'&&(

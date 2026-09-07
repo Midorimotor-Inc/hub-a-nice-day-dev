@@ -3071,6 +3071,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
   const [label,setLabel]=useState(hubLabel());   // この端末の名前（共有のときだけ聞く）
   const [devNames,setDevNames]=useState(null);   // 管理者が決めた端末名の候補
   const [typing,setTyping]=useState(false);      // 候補を使わず自分で入力する
+  const [plan,setPlan]=useState([]);             // 管理者が決めた「使う端末」
   const firstOnDevice = hubLive(hubLoadMine()).length===0;
 
   const sendCode=async(mail)=>{
@@ -3109,6 +3110,15 @@ const AuthAddScreen=({onDone,onCancel})=>{
   };
   // 共有の端末は、最初に登録する人が1回だけ名前を付ける
   const needLabel=k=>k==='shared'&&!hubLabel();
+  // 管理者がその人に決めた「使う端末」を引く。決まっていれば本人は何も選ばない。
+  const planOf=async r=>{
+    try{
+      const store=(r&&r.store)==='sanda'?'sanda':'honten';
+      const list=await sGet(STOR+store+'-staff-v2');
+      const me=(Array.isArray(list)?list:[]).find(x=>x&&((r.uid&&x.uid===r.uid)||x.name===r.name));
+      return (me&&Array.isArray(me.devPlan))?me.devPlan.filter(Boolean):[];
+    }catch(e){ return []; }
+  };
   // 管理者が決めた端末名を読む（無くても止まらない。その場で入力できる）
   useEffect(()=>{
     if(step!=='label'||devNames!==null)return;
@@ -3130,9 +3140,17 @@ const AuthAddScreen=({onDone,onCancel})=>{
         : '確認できませんでした。通信の状態をご確認ください。');
       return;
     }
-    // 端末の種類は、この端末で最初に登録する人だけが1回選ぶ
+    // 管理者が決めた「使う端末」に従う。1つだけなら本人は何も選ばない。
+    // ★端末の状態より先に見る。管理者の指定があるなら、それが答え。
+    const plan=await planOf(r);
+    if(plan.length===1){
+      const one=plan[0];
+      finish(r, one==='own'?'own':'shared', one==='own'?'':one);
+      return;
+    }
+    if(plan.length>1){ setPend(r); setPlan(plan); setStep('plan'); return; }
+    // 管理者が決めていない場合は、これまでどおり自分で選ぶ
     if(firstOnDevice && !kind){ setPend(r); setStep('kind'); return; }
-    // 2人目が入ると端末は「共有」になる。名前がまだなら、ここで付けてもらう。
     const already=hubLive(hubLoadMine()).length>0;
     const finalKind=(already&&(kind||hubKind())==='own')?'shared':(kind||hubKind()||'shared');
     if(needLabel(finalKind)){ setPend(r); setKind(finalKind); setStep('label'); return; }
@@ -3196,6 +3214,28 @@ const AuthAddScreen=({onDone,onCancel})=>{
               他の人も使う端末で「自分専用」を選ぶと、その人の名義で予約が入ってしまいます。
             </div>
             <button style={SUB} onClick={()=>{setPend(null);setStep('email');setCode('');}}>← やり直す</button>
+          </div>
+        )}
+
+        {step==='plan'&&(
+          <div>
+            <div style={{fontWeight:800,fontSize:15,color:'#111827',marginBottom:3}}>
+              {pend&&pend.name} さん、確認できました
+            </div>
+            <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>
+              いま使っているのはどちらの端末ですか？
+            </div>
+            <div style={{display:'grid',gap:8}}>
+              {plan.map(x=>(
+                <button key={x} onClick={()=>finish(pend,x==='own'?'own':'shared',x==='own'?'':x)}
+                  style={{...CARD,padding:'13px 15px'}}>
+                  <b style={{fontSize:14.5,color:'#111827'}}>{x==='own'?'個人端末':x}</b>
+                  <div style={{fontSize:11.5,color:'#6b7280',marginTop:2}}>
+                    {x==='own'?'自分のスマホ、自分だけが使うPC':'店のPC・タブレット'}
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

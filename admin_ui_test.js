@@ -205,7 +205,7 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('ログイン用メールが保存される',
       (staffH.find(s => s.uid === 'h2') || {}).loginEmail === 'okaue@midori-m.com',
       staffH.find(s => s.uid === 'h2'));
-    t('追加を知らせる', await see(page, 'さんを追加しました'));
+    t('保存を知らせる', await see(page, 'さんを保存しました'));
 
     // メールを空のまま追加できる（あとから入れて招待する運用）
     await click(page, '＋ 追加');
@@ -217,24 +217,6 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
       document.querySelector('.panelbox tbody').innerText.includes('メール未入力')));
     t('あとからメールを入れられる', await page.evaluate(() => !!document.querySelector('[data-mail="s10"]')));
 
-    // 操作しない（アルバイト・助っ人）
-    await click(page, '＋ 追加');
-    await see(page, 'この方はシステムを操作しますか');
-    await page.selectOption('#newuid', 'h8');
-    await page.check('input[name="newrole"][value="none"]');
-    t('操作しないを選ぶとメール欄が隠れる', await page.evaluate(() =>
-      !!document.getElementById('mailwrap') && document.getElementById('mailwrap').hidden));
-    await click(page, '追加する', '.dialog');
-    await page.waitForTimeout(1200);
-    t('操作しないとして保存される', (staffH.find(s => s.uid === 'h8') || {}).noLogin === true,
-      staffH.find(s => s.uid === 'h8'));
-    t('一覧に「操作しない」と出る', await page.evaluate(() =>
-      document.querySelector('.panelbox tbody').innerText.includes('操作しない')));
-    t('スタッフ表から消えない（休日設定で要る）', !!staffH.find(s => s.uid === 'h8'));
-    t('招待の対象にならない', await page.evaluate(() => !document.querySelector('[data-invite="h8"]')));
-    t('操作しない人は母数から外れる（管理者自身も操作者に入る）', await page.evaluate(() =>
-      /4\s*人が操作する/.test(document.querySelector('.progress').innerText.replace(/\s+/g,' '))),
-      await page.evaluate(() => document.querySelector('.progress').innerText.replace(/\s+/g,' ')));
 
     await page.evaluate(() => {
       const b = [...document.querySelectorAll('[data-invite="h2"]')][0]; if (b) b.click();
@@ -256,39 +238,44 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('店のPCが自分専用のときの直し方を書いてある',
       await see(page, '店のPCが「自分専用」になっていたら'));
     t('失効までの日数が出る', await see(page, 'あと'));
-    // 共有端末の名前を管理者側で登録できる
-    t('共有端末の欄がある', await see(page, '共有端末の名前'));
-    t('最初は空だと案内が出る', await see(page, '「＋ 共有端末を追加」から'));
+    // 共有端末は「＋ 追加」の中で、使う端末として作れる
     await click(page, 'スタッフと招待');
-    await page.waitForTimeout(500);
-    await click(page, '＋ 追加');
-    t('＋の中で何を足すか選べる', await see(page, '何を追加しますか'));
-    await page.check('input[name="addwhat"][value="dev"]');
-    t('共有端末を選ぶと端末名の欄が出る', await page.evaluate(() =>
-      !!document.getElementById('devwrap') && !document.getElementById('devwrap').hidden
-      && !!document.getElementById('staffwrap') && document.getElementById('staffwrap').hidden));
-    t('置いてある店舗も選べる', await see(page, '置いてある店舗'));
-    await page.fill('#devname', '共有PC1');
-    await click(page, '追加する', '.dialog');
-    await page.waitForTimeout(1300);
-    t('端末名がサーバーに保存される',
-      devnames.some(function(d){ return d.name === '共有PC1' && d.store === 'honten'; }), devnames);
-    await click(page, '登録端末');
     await page.waitForTimeout(600);
-    t('一覧に出る', await page.evaluate(() => document.body.innerText.includes('共有PC1')));
-    await click(page, 'スタッフと招待');
-    await page.waitForTimeout(500);
-    await click(page, '＋ 追加');
-    await see(page, '何を追加しますか');
-    await page.check('input[name="addwhat"][value="dev"]');
-    await page.fill('#devname', '共有PC1');
-    await click(page, '追加する', '.dialog');
-    await page.waitForTimeout(900);
-    t('同じ名前は二重に足さない', devnames.length === 1, devnames);
-    t('二重登録を知らせる', await see(page, 'その名前はすでにあります'));
-    await click(page, '登録端末');
-    await page.waitForTimeout(600);
+    await page.evaluate(() => { const b = document.querySelector('[data-edit="s10"]'); if (b) b.click(); });
+    t('行の「設定」から用途を変えられる', await see(page, 'この方が使う端末'));
+    t('個人端末と共有端末が選べる', await page.evaluate(() =>
+      !!document.getElementById('planown') && !!document.getElementById('planshared')));
+    await page.check('#planshared');
+    t('共有を選ぶと端末名の欄が出る', await page.evaluate(() =>
+      !!document.getElementById('sharedwrap') && !document.getElementById('sharedwrap').hidden));
+    await page.fill('#plannew', '共有PC1');
+    await page.fill('#newmail', 'fujiwara@midori-m.com');
+    await click(page, '変更する', '.dialog');
+    await page.waitForTimeout(1600);
+    t('端末名が一覧に加わる',
+      devnames.some(function(d){ return d.name === '共有PC1'; }), devnames);
+    t('その人の使う端末として記録される', (function(){
+      var x = staffS.find(function(y){ return y.uid === 's10'; }) || {};
+      return (x.devPlan||[]).indexOf('共有PC1') >= 0; })(),
+      staffS.find(function(y){ return y.uid === 's10'; }));
+    t('一覧に使う端末が出る', await page.evaluate(() =>
+      document.querySelector('.panelbox tbody').innerText.includes('共有PC1')));
 
+    // 個人端末だけの人
+    await click(page, '＋ 追加');
+    await see(page, 'この方が使う端末');
+    await page.selectOption('#newuid', 'h8');
+    await page.check('input[name="newrole"][value="none"]');
+    t('操作しないを選ぶと端末の欄が隠れる', await page.evaluate(() =>
+      !!document.getElementById('usewrap') && document.getElementById('usewrap').hidden));
+    await click(page, '追加する', '.dialog');
+    await page.waitForTimeout(1400);
+    t('操作しないとして保存される', (staffH.find(s => s.uid === 'h8') || {}).noLogin === true,
+      staffH.find(s => s.uid === 'h8'));
+    t('スタッフ表から消えない（休日設定で要る）', !!staffH.find(s => s.uid === 'h8'));
+
+    await click(page, '登録端末');
+    await page.waitForTimeout(700);
     const before = Object.keys(devices).length;
     const target = await page.evaluate(() => {
       const b = document.querySelector('[data-revoke]'); if (!b) return null;

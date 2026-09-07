@@ -26,6 +26,7 @@ let staffH = [
   // PCを持たず、一度もログインしない人（整備補助）。ログイン用メールは持たない。
   { uid: 'h8', name: 'ダク', myNumber: 8, badge: 'mechanic', store: 'honten' },
 ];
+const baseStaffH = staffH.map(x => ({ ...x }));   // 各テストの開始時に戻すための控え
 let devices = {};          // 端末台帳
 let labels = [];           // authLabel で届いた種類と名前
 // 管理者が先に決めておいた共有端末の名前
@@ -129,6 +130,7 @@ const dump = async (page, root) => page.evaluate(r => {
   }
   const run = async (required, fn, file) => {
     devices = {}; sentInvites = []; labels = [];
+    staffH = baseStaffH.map(x => ({ ...x }));   // 前のテストの変更を持ち越さない
     const name = file || 'index_dev.html';
     const base = (name === 'mobile.html') ? mobSrc : src;
     const html = required ? base.replace('const AUTH_REQUIRED = false;', 'const AUTH_REQUIRED = true;') : base;
@@ -305,6 +307,40 @@ const dump = async (page, root) => page.evaluate(r => {
     t('共有になったので名前を選ぶ画面が出る', await seeText(page, '担当者を選択してください'));
     t('2人とも並ぶ', (await seeText(page, '見取大介')) && (await seeText(page, '江川京志')));
     t('自己修復でJSエラーなし', errs.length === 0, errs.slice(0, 2));
+  });
+
+  // ── ③" 管理者が使う端末まで決めていれば、本人は何も選ばない ──────────
+  await run(true, async (page, errs) => {
+    // 管理者が「共有PC1で使う」と決めてある人
+    staffH = staffH.map(x => x.uid === 'h1' ? {...x, devPlan:['共有PC1']} : x);
+    await seeText(page, 'この端末にスタッフを追加');
+    await page.fill('input[type=email]', 'daisuke@example.com');
+    await clickText(page, '確認コードを送る');
+    await seeText(page, '6桁のコードを入れてください');
+    await page.fill('input[inputmode=numeric]', CODE);
+    await clickText(page, '確認する');
+    t('端末の種類を聞かれない', !(await seeText(page, 'この端末はどちらですか', 1500)));
+    t('端末の名前も聞かれない', !(await seeText(page, 'この端末はどれですか', 1200)));
+    t('そのまま登録が終わる', await seeText(page, 'この端末に登録しました'));
+    t('管理者が決めた端末名で記録される',
+      labels.some(x => x.label === '共有PC1' && x.kind === 'shared'), labels);
+
+    // 2つ決めてある人は、どちらの端末かだけ聞かれる
+    staffH = staffH.map(x => x.uid === 'h7' ? {...x, devPlan:['own','共有PC1']} : x);
+    await clickText(page, 'はじめる');
+    await seeText(page, '担当者を選択してください');
+    await clickText(page, 'スタッフを追加');
+    await page.fill('input[type=email]', 'kyoshi@example.com');
+    await clickText(page, '確認コードを送る');
+    await seeText(page, '6桁のコードを入れてください');
+    await page.fill('input[inputmode=numeric]', CODE);
+    await clickText(page, '確認する');
+    t('2つ決めてある人にはどちらか聞く', await seeText(page, 'いま使っているのはどちらの端末ですか'));
+    t('決めた選択肢だけが出る',
+      (await seeText(page, '個人端末')) && (await seeText(page, '共有PC1')));
+    await clickText(page, '個人端末');
+    t('選んだとおりに登録される', await seeText(page, 'この端末に登録しました'));
+    t('用途を決めた登録でJSエラーなし', errs.length === 0, errs.slice(0, 2));
   });
 
   // ── ④ 管理者側：メール登録・招待・端末の取り消し ──────────────────
