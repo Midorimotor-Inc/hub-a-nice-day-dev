@@ -238,6 +238,29 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('店のPCが自分専用のときの直し方を書いてある',
       await see(page, '店のPCが「自分専用」になっていたら'));
     t('失効までの日数が出る', await see(page, 'あと'));
+    // ★画面が小さくても「追加する」に手が届くこと。
+    //   使う端末を選ぶとダイアログが伸びる。中央寄せのままだと上下が切れ、
+    //   背景もスクロールしないのでボタンに触れなくなる（実際にそうなっていた）。
+    for (const h of [900, 700, 600, 500]) {
+      await page.setViewportSize({ width: 1360, height: h });
+      await click(page, 'スタッフと招待'); await page.waitForTimeout(400);
+      await click(page, '＋ 追加'); await page.waitForTimeout(400);
+      await page.check('#planshared').catch(()=>{});
+      await page.waitForTimeout(300);
+      const okBtn = await page.evaluate(() => {
+        const d = document.querySelector('.dialog'); if (!d) return null;
+        const b = [...d.querySelectorAll('button')].find(x => x.innerText.includes('追加する'));
+        if (!b) return null;
+        const r = b.getBoundingClientRect();
+        return { 見えている: r.bottom <= window.innerHeight + 1 && r.top >= 0,
+                 上が切れていない: d.getBoundingClientRect().top >= 0 };
+      });
+      t('画面高' + h + 'でも「追加する」が押せる', !!okBtn && okBtn.見えている, okBtn);
+      await page.evaluate(()=>{const e=document.querySelector('.scrim'); if(e) e.click();});
+      await page.waitForTimeout(300);
+    }
+    await page.setViewportSize({ width: 1360, height: 1000 });
+
     // 共有端末は「＋ 追加」の中で、使う端末として作れる
     await click(page, 'スタッフと招待');
     await page.waitForTimeout(600);
