@@ -194,7 +194,7 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
 
     // ④ ＋ で役割を決めて追加し、招待を送る
     t('まだ決めていない人数が出る', await see(page, 'まだ決めていないスタッフ'));
-    await click(page, '＋ スタッフを追加');
+    await click(page, '＋ 追加');
     t('追加の画面が出る', await see(page, 'この方はシステムを操作しますか'));
     t('操作する／しないを選べる', await page.evaluate(() =>
       document.querySelectorAll('input[name="newrole"]').length === 2));
@@ -208,7 +208,7 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('追加を知らせる', await see(page, 'さんを追加しました'));
 
     // メールを空のまま追加できる（あとから入れて招待する運用）
-    await click(page, '＋ スタッフを追加');
+    await click(page, '＋ 追加');
     await see(page, 'この方はシステムを操作しますか');
     await page.selectOption('#newuid', 's10');
     await click(page, '追加する', '.dialog');
@@ -218,7 +218,7 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('あとからメールを入れられる', await page.evaluate(() => !!document.querySelector('[data-mail="s10"]')));
 
     // 操作しない（アルバイト・助っ人）
-    await click(page, '＋ スタッフを追加');
+    await click(page, '＋ 追加');
     await see(page, 'この方はシステムを操作しますか');
     await page.selectOption('#newuid', 'h8');
     await page.check('input[name="newrole"][value="none"]');
@@ -259,21 +259,35 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     // 共有端末の名前を管理者側で登録できる
     t('共有端末の欄がある', await see(page, '共有端末の名前'));
     t('最初は空だと案内が出る', await see(page, '「＋ 共有端末を追加」から'));
-    await click(page, '＋ 共有端末を追加');
-    t('追加の画面が出る', await see(page, '置いてある店舗'));
+    await click(page, 'スタッフと招待');
+    await page.waitForTimeout(500);
+    await click(page, '＋ 追加');
+    t('＋の中で何を足すか選べる', await see(page, '何を追加しますか'));
+    await page.check('input[name="addwhat"][value="dev"]');
+    t('共有端末を選ぶと端末名の欄が出る', await page.evaluate(() =>
+      !!document.getElementById('devwrap') && !document.getElementById('devwrap').hidden
+      && !!document.getElementById('staffwrap') && document.getElementById('staffwrap').hidden));
+    t('置いてある店舗も選べる', await see(page, '置いてある店舗'));
     await page.fill('#devname', '共有PC1');
     await click(page, '追加する', '.dialog');
     await page.waitForTimeout(1300);
     t('端末名がサーバーに保存される',
       devnames.some(function(d){ return d.name === '共有PC1' && d.store === 'honten'; }), devnames);
+    await click(page, '登録端末');
+    await page.waitForTimeout(600);
     t('一覧に出る', await page.evaluate(() => document.body.innerText.includes('共有PC1')));
-    await click(page, '＋ 共有端末を追加');
-    await see(page, '置いてある店舗');
+    await click(page, 'スタッフと招待');
+    await page.waitForTimeout(500);
+    await click(page, '＋ 追加');
+    await see(page, '何を追加しますか');
+    await page.check('input[name="addwhat"][value="dev"]');
     await page.fill('#devname', '共有PC1');
     await click(page, '追加する', '.dialog');
     await page.waitForTimeout(900);
     t('同じ名前は二重に足さない', devnames.length === 1, devnames);
     t('二重登録を知らせる', await see(page, 'その名前はすでにあります'));
+    await click(page, '登録端末');
+    await page.waitForTimeout(600);
 
     const before = Object.keys(devices).length;
     const target = await page.evaluate(() => {
@@ -327,7 +341,7 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('足す場所の案内が出ている', await see(page, 'スタッフ設定 → ➕ 新規登録'));
     await click(page, '再読込');
     await page.waitForTimeout(1400);
-    await click(page, '＋ スタッフを追加');
+    await click(page, '＋ 追加');
     await see(page, 'この方はシステムを操作しますか');
     t('新入社員が選べるようになる', await page.evaluate(() =>
       [...document.querySelectorAll('#newuid option')].some(o => o.textContent.includes('新人テスト'))));

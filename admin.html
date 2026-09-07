@@ -323,7 +323,7 @@ function viewProgress(){
   return '<section class="progress">'
     + '<h2>本人認証の進み具合</h2>'
     + '<p class="sub">' + (n === 0
-        ? '「＋ スタッフを追加」から、一人ずつ役割を決めてください。'
+        ? '「＋ 追加」から、一人ずつ役割を決めてください。'
         : done
         ? '<b style="color:var(--ok)">追加した方は全員そろいました。</b>名前を選ぶだけのログインを止められます。'
         : 'ここに載っている方が全員「登録済み」になったら、名前を選ぶだけのログインを止められます。') + '</p>'
@@ -382,16 +382,16 @@ function viewStaff(){
     + '<div class="right">'
     + '<button class="btn ghost sm" id="reloadstaff">再読込</button> '
     + (pending ? '<button class="btn ghost sm" id="bulk">未登録の' + pending + '人にまとめて招待</button> ' : '')
-    + '<button class="btn sm" id="adduser">＋ スタッフを追加</button></div></div>'
+    + '<button class="btn sm" id="adduser">＋ 追加</button></div></div>'
     + '<div style="padding:12px 20px;background:var(--panel-2);border-bottom:1px solid var(--rule);font-size:12.5px;color:var(--ink-2);line-height:1.8">'
     + '<b>新しいスタッフが入ったときは</b>、先に<a href="index.html" style="color:var(--pine);font-weight:700">スケジュール画面</a>の'
     + '「⚙️ スタッフ設定 → ➕ 新規登録」で登録してください（氏名・番号・バッジ・対応可能業務を決めるところです）。'
-    + 'そのあとここで<b>「再読込」→「＋ スタッフを追加」</b>で役割を決めます。'
+    + 'そのあとここで<b>「再読込」→「＋ 追加」</b>で役割を決めます。'
     + '</div>'
     + '<div class="tablewrap"><table>'
     + '<thead><tr><th class="stripe"></th><th>No.</th><th>氏名</th><th>ログイン用メール</th><th>状態</th><th style="text-align:right">操作</th></tr></thead>'
     + '<tbody>' + (rows || '<tr><td colspan="6" class="empty">まだ誰も追加していません。<br>'
-        + '右上の「＋ スタッフを追加」から、一人ずつ役割を決めてください。<br>'
+        + '右上の「＋ 追加」から、一人ずつ役割を決めてください。<br>'
         + '<span style="font-size:12px">メールはあとからでも入れられます。</span></td></tr>') + '</tbody></table></div>'
     + '<div class="foot"><b>「操作しない」にした方も、スタッフ表からは消えません。</b>'
     + '休日設定・頭数・予約の担当欄には今までどおり出ます。ログインできないだけです。'
@@ -670,17 +670,36 @@ function bind(){
   //     メールは任意。先に役割だけ決めておき、アドレスが分かってから入れて招待できる。
   if ($('adduser')) $('adduser').onclick = function(){
     var rest = allStaff().filter(function(s){ return !isListed(s); });
-    if (!rest.length) {
-      toast('全員ぶん決まっています', '新しい方は、先にスケジュール画面のスタッフ設定で登録してください。');
-      return;
-    }
     S.dialog = {
-      title:'スタッフを追加', okLabel:'追加する',
-      body:'<label class="f" for="newuid">スタッフ</label>'
-        + '<select id="newuid">'
-        + rest.map(function(s){ return '<option value="' + esc(s.uid) + '">' + esc(s.name)
-            + '（No.' + esc(s.myNumber) + '／' + (s.store==='sanda'?'三田店':'本店') + '）</option>'; }).join('')
-        + '</select>'
+      title:'追加', okLabel:'追加する',
+      body:'<label class="f">何を追加しますか</label>'
+        + '<div style="display:flex;gap:8px;margin-bottom:16px">'
+        + '<label style="flex:1;border:1.5px solid var(--rule-2);border-radius:9px;padding:10px 12px;cursor:pointer;text-align:center">'
+        + '<input type="radio" name="addwhat" value="staff" checked style="width:auto;margin-right:6px">'
+        + '<b>スタッフ</b></label>'
+        + '<label style="flex:1;border:1.5px solid var(--rule-2);border-radius:9px;padding:10px 12px;cursor:pointer;text-align:center">'
+        + '<input type="radio" name="addwhat" value="dev" style="width:auto;margin-right:6px">'
+        + '<b>共有端末</b></label></div>'
+        + '<div id="devwrap" hidden>'
+        + '<p style="font-size:12.5px;color:var(--ink-2);line-height:1.8">'
+        + '店のPCやタブレットに名前を付けます。ここで決めた名前は、その端末で登録する人に'
+        + '<b>選択肢として出ます</b>。書き方がばらつかないので、あとで一覧を見たときに分かりやすくなります。</p>'
+        + '<label class="f" for="devname" style="margin-top:10px">端末名</label>'
+        + '<input type="text" id="devname" placeholder="例：共有PC1" autocomplete="off" maxlength="40">'
+        + '<label class="f" style="margin-top:14px">置いてある店舗</label>'
+        + '<select id="devstore"><option value="honten">本店</option><option value="sanda">三田店</option></select>'
+        + '<p style="font-size:12px;color:var(--ink-3);margin-top:10px">'
+        + '自分のスマホ（自分専用）は登録しなくて構いません。共有の端末だけです。</p></div>'
+        + '<div id="staffwrap">'
+        + '<label class="f" for="newuid">スタッフ</label>'
+        + (rest.length
+          ? '<select id="newuid">'
+            + rest.map(function(s){ return '<option value="' + esc(s.uid) + '">' + esc(s.name)
+                + '（No.' + esc(s.myNumber) + '／' + (s.store==='sanda'?'三田店':'本店') + '）</option>'; }).join('')
+            + '</select>'
+          : '<p style="font-size:12.5px;color:var(--ink-2);line-height:1.8">'
+            + '全員ぶん決まっています。新しい方は、先にスケジュール画面の'
+            + '「⚙️ スタッフ設定 → ➕ 新規登録」で登録してから「再読込」を押してください。</p>')
         + '<label class="f" style="margin-top:14px">この方はシステムを操作しますか</label>'
         + '<label style="display:block;border:1.5px solid var(--rule-2);border-radius:9px;padding:11px 13px;margin-bottom:8px;cursor:pointer">'
         + '<input type="radio" name="newrole" value="use" checked style="width:auto;margin-right:8px">'
@@ -693,10 +712,21 @@ function bind(){
         + '<div id="mailwrap"><label class="f" for="newmail" style="margin-top:14px">ログイン用メール（あとからでも可）</label>'
         + '<input type="email" id="newmail" placeholder="例：okaue@midori-m.com" autocomplete="off" inputmode="email">'
         + '<p style="font-size:12px;color:var(--ink-3);margin-top:6px">'
-        + '本人が受け取れるアドレスにしてください。空欄のままでも追加できます。</p></div>',
+        + '本人が受け取れるアドレスにしてください。空欄のままでも追加できます。</p></div>'
+        + '</div>',
       onOk: function(){ /* 値は押す直前に読む */ }
     };
     render();
+    // 「スタッフ」か「共有端末」かで、出す欄を切り替える
+    var whatIs = function(){ return ((document.querySelector('input[name="addwhat"]:checked') || {}).value) || 'staff'; };
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="addwhat"]'), function(r){
+      r.onchange = function(){
+        var dev = whatIs() === 'dev';
+        var dw = document.getElementById('devwrap'), sw = document.getElementById('staffwrap');
+        if (dw) dw.hidden = !dev;
+        if (sw) sw.hidden = dev;
+      };
+    });
     // 「操作しない」を選んだらメール欄を隠す
     Array.prototype.forEach.call(document.querySelectorAll('input[name="newrole"]'), function(r){
       r.onchange = function(){
@@ -706,9 +736,34 @@ function bind(){
     });
     var okBtn = document.querySelector('[data-dlg="ok"]');
     if (okBtn) okBtn.onclick = function(){
+      // --- 共有端末を足す場合 ---
+      if (whatIs() === 'dev') {
+        var nm = ((document.getElementById('devname')||{}).value||'').trim().slice(0,40);
+        var st2 = (document.getElementById('devstore')||{}).value || 'honten';
+        if (!nm) { toast('追加しませんでした', '端末名を入れてください。'); return; }
+        if (S.devnames.some(function(d){ return d.name === nm; })) {
+          toast('追加しませんでした', 'その名前はすでにあります。'); return;
+        }
+        S.dialog = null; render();
+        gasRead(STOR + 'auth-devnames').then(function(latest){
+          var base = (latest instanceof Array) ? latest.filter(function(x){ return x && x.name; }) : [];
+          if (base.some(function(d){ return d.name === nm; })) {
+            S.devnames = base; render(); toast('追加しませんでした', 'その名前はすでにあります。'); return;
+          }
+          saveDevNames(base.concat([{ name: nm, store: st2 }])).then(function(okw){
+            render();
+            toast(okw ? nm + ' を追加しました' : '追加できませんでした',
+              okw ? 'その端末で登録する人が、この名前を選べるようになります。「登録端末」タブで確認できます。'
+                  : '通信の状態をご確認ください。');
+          });
+        });
+        return;
+      }
+      // --- スタッフを足す場合 ---
       var uid = (document.getElementById('newuid')||{}).value;
       var role = ((document.querySelector('input[name="newrole"]:checked')||{}).value) || 'use';
       var mail = ((document.getElementById('newmail')||{}).value||'').trim().toLowerCase();
+      if (!uid) { toast('追加しませんでした', '足せるスタッフがいません。'); return; }
       var s2 = findStaff(uid); if (!s2) return;
       if (role === 'use' && mail) {
         if (mail.indexOf('@') < 1) { toast('追加しませんでした', 'メールアドレスの形式が正しくありません。'); return; }
