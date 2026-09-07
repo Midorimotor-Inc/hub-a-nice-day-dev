@@ -261,32 +261,73 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     }
     await page.setViewportSize({ width: 1360, height: 1000 });
 
-    // 共有端末は「＋ 追加」の中で、使う端末として作れる
+    // 共有端末は「＋ 追加 → 共有端末」で足す。人は選ばない。
     await click(page, 'スタッフと招待');
     await page.waitForTimeout(600);
+    await click(page, '＋ 追加');
+    t('何を追加するか選べる', await see(page, '何を追加しますか'));
+    t('最初はスタッフ側が出ている', await page.evaluate(() =>
+      !!document.getElementById('staffwrap') && !document.getElementById('staffwrap').hidden));
+    await page.check('input[name="addwhat"][value="dev"]');
+    t('共有端末を選ぶとスタッフ一覧が消える', await page.evaluate(() =>
+      document.getElementById('staffwrap').hidden && !document.getElementById('devwrap').hidden));
+    await page.fill('#devname', '共有PC1');
+    await click(page, '追加する', '.dialog');
+    await page.waitForTimeout(1500);
+    t('端末名が一覧に加わる', devnames.some(function(d){ return d.name === '共有PC1'; }), devnames);
+
+    // 一覧にない人を、ここで新しく登録できる
+    await click(page, '＋ 追加');
+    await see(page, '何を追加しますか');
+    await page.selectOption('#newuid', '__new__');
+    t('氏名を入力する欄が出る', await page.evaluate(() =>
+      !!document.getElementById('newstaffwrap') && !document.getElementById('newstaffwrap').hidden));
+    await page.fill('#nsname', '新人テスト');
+    await page.fill('#nsno', '21');
+    await page.fill('#newmail', 'shinjin@midori-m.com');
+    await click(page, '追加する', '.dialog');
+    await page.waitForTimeout(1600);
+    t('新しいスタッフがスタッフ表に入る',
+      staffH.some(function(x){ return x.name === '新人テスト' && Number(x.myNumber) === 21; }),
+      staffH.map(function(x){ return x.name; }));
+    t('ログイン用メールも一緒に入る', (function(){
+      var x = staffH.find(function(y){ return y.name === '新人テスト'; }) || {};
+      return x.loginEmail === 'shinjin@midori-m.com'; })(),
+      staffH.find(function(y){ return y.name === '新人テスト'; }));
+    t('使う端末も記録される', (function(){
+      var x = staffH.find(function(y){ return y.name === '新人テスト'; }) || {};
+      return (x.devPlan||[]).indexOf('own') >= 0; })());
+    t('番号が重なると断る', await (async function(){
+      await click(page, '＋ 追加');
+      await see(page, '何を追加しますか');
+      await page.selectOption('#newuid', '__new__');
+      await page.fill('#nsname', 'もう一人');
+      await page.fill('#nsno', '21');
+      await click(page, '追加する', '.dialog');
+      await page.waitForTimeout(700);
+      return await see(page, 'すでに使われています');
+    })());
+    await page.evaluate(()=>{const e=document.querySelector('.scrim'); if(e) e.click();});
+    await page.waitForTimeout(400);
+
+    // 既存の人の用途は、行の「設定」から決める
     await page.evaluate(() => { const b = document.querySelector('[data-edit="s10"]'); if (b) b.click(); });
     t('行の「設定」から用途を変えられる', await see(page, 'この方が使う端末'));
-    t('個人端末と共有端末が選べる', await page.evaluate(() =>
-      !!document.getElementById('planown') && !!document.getElementById('planshared')));
     await page.check('#planshared');
-    t('共有を選ぶと端末名の欄が出る', await page.evaluate(() =>
-      !!document.getElementById('sharedwrap') && !document.getElementById('sharedwrap').hidden));
-    await page.fill('#plannew', '共有PC1');
+    t('登録済みの共有端末から選べる', await page.evaluate(() =>
+      !!document.getElementById('planname') &&
+      [...document.querySelectorAll('#planname option')].some(o => o.value === '共有PC1')));
     await page.fill('#newmail', 'fujiwara@midori-m.com');
     await click(page, '変更する', '.dialog');
-    await page.waitForTimeout(1600);
-    t('端末名が一覧に加わる',
-      devnames.some(function(d){ return d.name === '共有PC1'; }), devnames);
+    await page.waitForTimeout(1500);
     t('その人の使う端末として記録される', (function(){
       var x = staffS.find(function(y){ return y.uid === 's10'; }) || {};
       return (x.devPlan||[]).indexOf('共有PC1') >= 0; })(),
       staffS.find(function(y){ return y.uid === 's10'; }));
-    t('一覧に使う端末が出る', await page.evaluate(() =>
-      document.querySelector('.panelbox tbody').innerText.includes('共有PC1')));
 
-    // 個人端末だけの人
+    // 操作しない人
     await click(page, '＋ 追加');
-    await see(page, 'この方が使う端末');
+    await see(page, '何を追加しますか');
     await page.selectOption('#newuid', 'h8');
     await page.check('input[name="newrole"][value="none"]');
     t('操作しないを選ぶと端末の欄が隠れる', await page.evaluate(() =>
@@ -345,27 +386,19 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('一覧からは消えない（招待を送り直せる）', await page.evaluate(() =>
       document.querySelector('.panelbox tbody').innerText.includes('岡上秀一')), await dump(page));
 
-    // ⑨ 新しく入ったスタッフ —— スタッフ設定で足した人を、再読込で拾えること
-    t('新入社員はまだ一覧に居ない', !(await see(page, '新人テスト', 1200)));
-    staffH.push({ uid:'h20', name:'新人テスト', myNumber:20, badge:'mechanic', store:'honten' });
+    // ⑨ スケジュール画面で足した人も、再読込で拾える
+    staffH.push({ uid:'h30', name:'あとから入った人', myNumber:30, badge:'mechanic', store:'honten' });
     t('足す場所の案内が出ている', await see(page, 'スタッフ設定 → ➕ 新規登録'));
+    await click(page, 'スタッフと招待');
+    await page.waitForTimeout(500);
     await click(page, '再読込');
     await page.waitForTimeout(1400);
     await click(page, '＋ 追加');
-    await see(page, 'この方はシステムを操作しますか');
-    t('新入社員が選べるようになる', await page.evaluate(() =>
-      [...document.querySelectorAll('#newuid option')].some(o => o.textContent.includes('新人テスト'))));
-    await page.selectOption('#newuid', 'h20');
-    await page.fill('#newmail', 'shinjin@midori-m.com');
-    await click(page, '追加する', '.dialog');
-    await page.waitForTimeout(1300);
-    t('新入社員にメールを登録できる',
-      (staffH.find(s => s.uid === 'h20') || {}).loginEmail === 'shinjin@midori-m.com',
-      staffH.find(s => s.uid === 'h20'));
-    await page.evaluate(() => { const b = document.querySelector('[data-invite="h20"]'); if (b) b.click(); });
-    await click(page, '送る', '.dialog');
-    await page.waitForTimeout(900);
-    t('新入社員に招待を送れる', sentInvites.includes('shinjin@midori-m.com'), sentInvites);
+    await see(page, '何を追加しますか');
+    t('再読込でその人が選べるようになる', await page.evaluate(() =>
+      [...document.querySelectorAll('#newuid option')].some(o => o.textContent.includes('あとから入った人'))));
+    await page.evaluate(()=>{const e=document.querySelector('.scrim'); if(e) e.click();});
+    await page.waitForTimeout(400);
 
     // ⑩ 開き直しても入れる（利用証が端末に残っている）
     await page.reload({ waitUntil: 'domcontentloaded' });
