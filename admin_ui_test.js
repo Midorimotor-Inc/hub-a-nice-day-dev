@@ -17,6 +17,7 @@ const t = (n, c, e) => { (c ? ok : ng).push(n + (c ? '' : '  ← ' + JSON.string
 const CODE = '515151';
 
 let staffH, staffS, devices, adminProp, sentInvites, sentCodes, devnames;
+let lockOn = false, lockBusy = false, lockHits = 0;   // GASの25秒ロックの模擬
 function reset() {
   staffH = [
     { uid:'h1', name:'見取大介', myNumber:1, badge:'manager',  store:'honten', loginEmail:'daisuke@midori-m.com' },
@@ -32,6 +33,7 @@ function reset() {
   adminProp = 'egawa@midori-m.com=h7';
   devnames = [];
   sentInvites = []; sentCodes = [];
+  lockOn = false; lockBusy = false; lockHits = 0;
 }
 
 const admins = () => adminProp.split(',').filter(Boolean).map(p => {
@@ -77,6 +79,13 @@ const gasRoute = async (route) => {
   if (route.request().method() === 'POST') {
     let d = {}; try { d = JSON.parse(route.request().postData() || '{}'); } catch (e) {}
     let v = null; try { v = JSON.parse(d.value); } catch (e) {}
+    // GASは書き込みを25秒ロックで直列化する。埋まっている間の要求は lock_timeout。
+    if (lockBusy) { lockHits++; return text('lock_timeout'); }
+    if (lockOn) {
+      lockBusy = true;
+      await new Promise(r => setTimeout(r, 1800));  // GASの書き込みは実際2〜10秒かかる
+      lockBusy = false;
+    }
     if (d.key === STOR + 'auth-devices' && v && typeof v === 'object') devices = v;
     if (d.key === STOR + 'auth-devnames' && Array.isArray(v)) devnames = v;
     if (d.key === STOR + 'honten-staff-v2' && Array.isArray(v)) staffH = v;
@@ -276,6 +285,12 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     await page.waitForTimeout(1500);
     t('端末名が一覧に加わる', devnames.some(function(d){ return d.name === '共有PC1'; }), devnames);
 
+    // 端末を足すと「登録端末」タブへ移るので、スタッフ側へ戻す
+    t('足すと端末の一覧が見える（何も起きていないように見せない）',
+      await see(page, '共有端末の名前', 8000), await dump(page));
+    await click(page, 'スタッフと招待');
+    await page.waitForTimeout(500);
+
     // 一覧にない人を、ここで新しく登録できる
     await click(page, '＋ 追加');
     await see(page, '何を追加しますか');
@@ -400,7 +415,73 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     await page.evaluate(()=>{const e=document.querySelector('.scrim'); if(e) e.click();});
     await page.waitForTimeout(400);
 
-    // ⑩ 開き直しても入れる（利用証が端末に残っている）
+    // ⑨ サーバーが混んでいても取りこぼさない
+    //    共有端末を足したあと、続けてその端末を人に割り当てると2回書き込む。
+    //    GASは25秒ロックで直列化するので、続けて投げると2回目が lock_timeout で
+    //    落ちる。以前は再送しておらず、無言で消えていた。
+    lockOn = true;
+    await click(page, 'スタッフと招待');
+    await page.waitForTimeout(500);
+
+    // 1回目の書き込み：共有端末を足す
+    await click(page, '＋ 追加');
+    await see(page, '何を追加しますか');
+    await page.evaluate(() => {
+      const r = document.querySelector('input[name="addwhat"][value="dev"]');
+      if (r) { r.checked = true; r.dispatchEvent(new Event('change', {bubbles:true})); }
+    });
+    await page.waitForTimeout(300);
+    await page.fill('#devname', '共有PC2');
+    await click(page, '追加する', '.dialog');
+
+    // 2回目の書き込み：間を置かずに、その端末を人へ割り当てる
+    t('足すと端末の一覧が見える（何も起きていないように見せない）',
+      await see(page, '共有端末の名前', 8000), await dump(page));
+    await click(page, 'スタッフと招待');
+    await page.waitForTimeout(400);
+    // 端末の登録が終わるのを待ってから割り当てる（1回目の書き込みは数秒かかる）
+    for (let i = 0; i < 40 && !devnames.some(d => d.name === '共有PC2'); i++) {
+      await page.waitForTimeout(250);
+    }
+    await page.waitForTimeout(600);
+    await page.evaluate(() => { const b = document.querySelector('[data-edit]'); if (b) b.click(); });
+    await see(page, 'この方が使う端末');
+    const who = await page.evaluate(() => {
+      const ck = document.getElementById('planshared');
+      if (ck && !ck.checked) { ck.checked = true; ck.dispatchEvent(new Event('change', {bubbles:true})); }
+      const sel = document.getElementById('planname');
+      if (sel) { const o = [...sel.options].find(x => x.value === '共有PC2');
+                 if (o) { sel.value = '共有PC2'; sel.dispatchEvent(new Event('change', {bubbles:true})); } }
+      const t = document.querySelector('.dialog p');
+      return { 人: t ? t.innerText.replace('さん','').trim() : '',
+               選べた: !!document.getElementById('planname') &&
+                       document.getElementById('planname').value === '共有PC2' };
+    });
+    t('足した端末がすぐ選択肢に出る', who.選べた, who);
+    await click(page, '変更する', '.dialog');
+    await page.waitForTimeout(12000);   // 混雑時は待って送り直すので時間がかかる
+
+    t('混んでいても端末名が保存される',
+      devnames.some(d => d.name === '共有PC2'), devnames);
+    t('混んでいても割り当ても保存される（ここが無言で落ちていた）',
+      [...staffH, ...staffS].some(x => (x.devPlan || []).indexOf('共有PC2') >= 0),
+      { 開いた人: who.人, 本店: staffH.map(x => ({ n:x.name, p:x.devPlan })) });
+    // 順番待ちの列が効いていれば、そもそもロックに当たらない。
+    // ここが0でなくなったら、2本同時に投げてしまっている合図。
+    t('書き込みが重ならない（列に並んでいる）', lockHits === 0, lockHits);
+    lockOn = false;
+
+    // ⑩ メールの形式チェック（カンマ混じりを弾く）
+    //    egawa@midori-m,com が実際に保存されてしまっていた。
+    await page.evaluate(() => { const b = document.querySelector('[data-edit]'); if (b) b.click(); });
+    await see(page, 'この方が使う端末');
+    await page.fill('#newmail', 'egawa@midori-m,com');
+    await click(page, '変更する', '.dialog');
+    await page.waitForTimeout(800);
+    t('カンマ混じりのアドレスを弾く', await see(page, 'カンマや空白'), await dump(page));
+    await page.evaluate(()=>{const e=document.querySelector('.scrim'); if(e) e.click();});
+    await page.waitForTimeout(400);
+    // ⑫ 開き直しても入れる（利用証が端末に残っている）
     await page.reload({ waitUntil: 'domcontentloaded' });
     t('開き直すとログインを求められない', await see(page, '本人認証の進み具合', 8000), await dump(page));
 

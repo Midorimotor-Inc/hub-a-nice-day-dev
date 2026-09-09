@@ -237,12 +237,45 @@ function gasRead(key){
     .catch(function(){ return null; });
 }
 // 書き込みは応答を必ず読む。'ok' が返るまでは書けたと見なさない。
-function gasWrite(key, value){
+// GASは書き込みを25秒ロックで直列化する。続けて2回書くと2回目がロックに
+// 当たり、'lock_timeout' が返って無言で落ちる。本体の sSet と同じ作法にする:
+//   ・順番待ちの列に並べて、同時に2本走らせない
+//   ・混んでいた（busy）ら待って再送する
+var gasQueue = Promise.resolve();
+function gasWriteOnce(key, value){
   return fetch(GAS_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify({key:key, value:JSON.stringify(value), apiKey:GAS_API_KEY})})
     .then(function(r){ return r.text(); })
-    .then(function(t){ return String(t||'').trim() === 'ok'; })
-    .catch(function(){ return false; });
+    .then(function(t){
+      t = String(t||'').trim();
+      if (t === 'ok') return 'ok';
+      if (t.indexOf('lock_timeout') >= 0) return 'busy';
+      return 'error:' + t.slice(0, 80);
+    })
+    .catch(function(){ return 'busy'; });   // 通信の失敗も、待って送り直す
+}
+function gasWrite(key, value){
+  var job = gasQueue.then(function(){
+    var attempt = function(i){
+      return gasWriteOnce(key, value).then(function(r){
+        if (r === 'ok') return true;
+        if (r === 'busy' && i < 3) {
+          return new Promise(function(done){ setTimeout(done, 3000 + 4000 * i); })
+            .then(function(){ return attempt(i + 1); });
+        }
+        return false;
+      });
+    };
+    return attempt(0);
+  });
+  gasQueue = job.then(function(){}, function(){});   // 失敗しても列は止めない
+  return job;
+}
+
+// メールの形式。'@' があるだけでは弱く、egawa@midori-m,com（カンマ）が通っていた。
+// 空白・カンマを弾き、@のうしろにドットを必須にする。
+function badMail(v){
+  return !/^[^\s@,]+@[^\s@,]+\.[^\s@,]{2,}$/.test(String(v || '').trim());
 }
 
 // ── 状態 ────────────────────────────────────────
@@ -605,7 +638,7 @@ function bind(){
   // --- ログイン ---
   if ($('send')) $('send').onclick = function(){
     var v = ($('m').value || '').trim();
-    if (v.indexOf('@') < 1) { S.err = 'メールアドレスの形式が正しくありません。'; render(); return; }
+    if (badMail(v)) { S.err = 'メールアドレスの形式が正しくありません。（カンマや空白が入っていませんか）'; render(); return; }
     S.mail = v; S.err = ''; S.busy = true; render();
     gasGet({action:'authRequest', prefix:STOR, email:v}).then(function(r){
       S.busy = false;
@@ -667,11 +700,11 @@ function bind(){
       var uid = i.dataset.mail, store = i.dataset.store;
       var s = findStaff(uid); if (!s) return;
       var v = i.value.trim().toLowerCase();
-      if (v && v.indexOf('@') < 1) { toast('保存しませんでした', 'メールアドレスの形式が正しくありません。'); i.value = s.loginEmail||''; return; }
+      if (v && badMail(v)) { toast('保存しませんでした', 'メールアドレスの形式が正しくありません。カンマや空白が入っていないか確かめてください。'); i.value = s.loginEmail||''; return; }
       i.disabled = true;
       saveStaffField(uid, store, {loginEmail: v || undefined}).then(function(res){
         i.disabled = false;
-        if (!res.ok) { toast('保存できませんでした', res.why + '。もう一度お試しください。'); return; }
+        if (!res.ok) { toast('保存できませんでした', res.why + '。サーバーが混んでいた可能性があります。「再読込」で今の状態を確かめてから、もう一度お試しください。'); return; }
         render();
         toast('保存しました', v ? (s.name + ' さんのログイン用メールを ' + v + ' にしました。続けて「招待を送る」を押してください。')
                                : (s.name + ' さんのログイン用メールを消しました。'));
@@ -827,9 +860,14 @@ function bind(){
             S.devnames = base; render(); toast('追加しませんでした', 'その名前はすでにあります。'); return;
           }
           saveDevNames(base.concat([{ name: nm, store: st2 }])).then(function(okw){
+            // 足した端末は「スタッフと招待」には出ない（人ではないので）。
+            // 何も起きていないように見えるため、一覧のあるタブへ移して見せる。
+            if (okw) S.tab = 'devices';
             render();
             toast(okw ? nm + ' を追加しました' : '追加できませんでした',
-              okw ? 'この端末で登録する人が、この名前を選べるようになります。' : '通信の状態をご確認ください。');
+              okw ? '「登録端末」の一覧に入りました。次はスタッフの「設定」を開いて、'
+                    + 'この端末を使う人に割り当ててください。'
+                  : '通信の状態をご確認ください。');
           });
         });
         return;
@@ -849,7 +887,7 @@ function bind(){
         if (!newPlan.length) { toast('保存しませんでした', '使う端末を1つ以上選んでください。'); return; }
       }
       if (role === 'use' && mail) {
-        if (mail.indexOf('@') < 1) { toast('保存しませんでした', 'メールアドレスの形式が正しくありません。'); return; }
+        if (badMail(mail)) { toast('保存しませんでした', 'メールアドレスの形式が正しくありません。カンマや空白が入っていないか確かめてください。'); return; }
         var dup = allStaff().filter(function(x){ return (!target || x.uid !== target.uid) && (x.loginEmail||'').toLowerCase() === mail; })[0];
         if (dup) { toast('保存しませんでした', 'そのアドレスは ' + dup.name + ' さんで使われています。'); return; }
       }
@@ -886,7 +924,7 @@ function bind(){
       var s2 = findStaff(uid); if (!s2) return;
       S.dialog = null; render();
       saveStaffField(uid, s2.store, patch).then(function(res){
-        if (!res.ok) { toast('保存できませんでした', res.why + '。もう一度お試しください。'); return; }
+        if (!res.ok) { toast('保存できませんでした', res.why + '。サーバーが混んでいた可能性があります。「再読込」で今の状態を確かめてから、もう一度お試しください。'); return; }
         render();
         toast(s2.name + ' さんを保存しました', role === 'none'
           ? '「操作しない」にしました。休日設定や頭数には今までどおり出ます。'
