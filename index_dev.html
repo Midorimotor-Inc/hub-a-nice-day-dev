@@ -3331,7 +3331,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
   );
 };
 
-const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop,onAddAuth,onAutoLogin,deviceName,deviceStore})=>{
+const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop,onAddAuth,onAutoLogin,deviceName,deviceStore,authOn})=>{
   const [sel,setSel]=useState(null);
   // タイムアウト後（initialDesktopあり）はすぐスタッフ選択画面を表示
   const [deskSel,setDeskSel]=useState(()=>{
@@ -3510,8 +3510,10 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
             <div style={{fontSize:12,color:'#9a3412',lineHeight:1.7,marginBottom:7}}>
               {((staffListH||[]).length+(staffListS||[]).length===0)
                 ? <b>この端末には、まだ誰も登録されていません。</b>
-                : <span>この端末で本人確認を済ませた方が並んでいます。</span>}
-              {' '}名前が無い方は、下のボタンから登録してください（1回だけ）。
+                : authOn
+                  ? <span>この端末で本人確認を済ませた方が並んでいます。</span>
+                  : <span>いまは移行期間のため、<b>全員が並んでいます</b>。</span>}
+              {' '}この端末をお使いの方は、下のボタンから登録してください（1回だけ）。
             </div>
             <button onClick={onAddAuth}
               style={{width:'100%',padding:'9px 0',background:'white',border:'2px dashed #f97316',borderRadius:9,
@@ -9996,7 +9998,7 @@ function AppInner() {
       <LoginScreen
         onLogin={u=>{hubUse(u.name);hubRenew(u.name);setCurrentUserPersist(u);setViewStore(u.store?.id||'honten');setView('schedule');setTimeout(()=>window.scrollTo({top:0,behavior:'instant'}),50);}}
         onAddAuth={_needEnrol?()=>setShowAuthAdd(true):null}
-        deviceName={_devName} deviceStore={_devStore}
+        deviceName={_devName} deviceStore={_devStore} authOn={AUTH_REQUIRED}
         onAutoLogin={authAutoOff&&hubKind()==='own'&&authMine.length===1?()=>setAuthAutoOff(false):null}
         staffListH={_loginH} staffListS={_loginS}
         desktopListH={desktopListH} desktopListS={desktopListS}
