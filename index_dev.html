@@ -3331,7 +3331,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
   );
 };
 
-const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop,onAddAuth,onAutoLogin})=>{
+const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop,onAddAuth,onAutoLogin,deviceName,deviceStore})=>{
   const [sel,setSel]=useState(null);
   // タイムアウト後（initialDesktopあり）はすぐスタッフ選択画面を表示
   const [deskSel,setDeskSel]=useState(()=>{
@@ -3428,6 +3428,25 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
           <p style={{fontSize:12,color:'#6b7280',marginTop:4}}>統合管理システム</p>
           <span style={{display:'inline-block',marginTop:6,padding:'2px 10px',borderRadius:20,background:'#eff6ff',border:'1px solid #bfdbfe',color:'#1d4ed8',fontSize:11,fontWeight:700}}>v{APP_VERSION}</span>
         </div>
+        {/* 認証済みの共有端末。どのPCで作業しているかを掲げ、
+            その中から担当者を選ぶ形にする（インデックスカードの見立て）。 */}
+        {deviceName&&(
+          <div style={{marginBottom:18}}>
+            <div style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 16px 5px',
+              background:'#1e3a34',color:'white',borderRadius:'10px 10px 0 0',fontWeight:800,fontSize:13,
+              letterSpacing:'.02em',boxShadow:'0 -1px 0 rgba(0,0,0,.08)'}}>
+              <span style={{fontSize:15}}>🖥️</span>{deviceName}
+            </div>
+            <div style={{border:'2px solid #1e3a34',borderRadius:'0 12px 12px 12px',
+              padding:'12px 15px',background:'#f4f8f6'}}>
+              <div style={{fontSize:12.5,color:'#31544c',lineHeight:1.8}}>
+                このPCは<b>共有端末として登録済み</b>です
+                {deviceStore?`（${deviceStore}）`:''}。<br/>
+                下から<b>担当者を選ぶだけ</b>で使えます。追加の登録は要りません。
+              </div>
+            </div>
+          </div>
+        )}
         {/* 社長エリア（0番・本店・三田店の枠外上部） */}
         {(()=>{
           const allStaff=[...(staffListH||[]),...(staffListS||[])];
@@ -3451,35 +3470,24 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
             </div>
           );
         })()}
-        <div style={{display:'flex',gap:14,marginBottom:16}}>
-          <StorePanel store={STORES[0]} staffList={staffListH}/>
-          <StorePanel store={STORES[1]} staffList={staffListS}/>
-        </div>
-        {/* 共有デスクトップ端末 */}
-        {((desktopListH||[]).length>0||(desktopListS||[]).length>0)&&(
-          <div style={{marginBottom:16}}>
-            <div style={{fontSize:12,fontWeight:700,color:'#6b7280',marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
-              🖥️ 共有端末 <span style={{fontWeight:400,color:'#9ca3af'}}>（タップ後にスタッフを選びます）</span>
+        {/* 端末が三田店にあるなら三田店を左に。自分の店を探す手間を無くす。 */}
+        {(() => {
+          const sanda = deviceStore === '三田店';
+          const first  = sanda ? {st:STORES[1], list:staffListS} : {st:STORES[0], list:staffListH};
+          const second = sanda ? {st:STORES[0], list:staffListH} : {st:STORES[1], list:staffListS};
+          return (
+            <div style={{display:'flex',gap:14,marginBottom:16}}>
+              <StorePanel store={first.st}  staffList={first.list}/>
+              <StorePanel store={second.st} staffList={second.list}/>
             </div>
-            <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-              {[...(desktopListH||[]).map(d=>({...d,store:'honten'})),...(desktopListS||[]).map(d=>({...d,store:'sanda'}))].map(d=>{
-                const st=STORES.find(s=>s.id===d.store)||STORES[0];
-                return(
-                  <button key={d.uid} onClick={()=>{setDeskSel(d);setSel(null);}}
-                    style={{padding:'10px 18px',borderRadius:10,border:`2px solid ${st.color}55`,background:st.bg,color:st.color,fontWeight:700,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',gap:8,transition:'all 0.12s'}}>
-                    <span style={{fontSize:18}}>🖥️</span>
-                    <div style={{textAlign:'left'}}>
-                      <div style={{fontWeight:800}}>{d.name}</div>
-                      <div style={{fontSize:10,opacity:0.7}}>{st.name}</div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+          );
+        })()}
+        {/* 旧「共有端末タイル」は廃止。端末そのものをメールで認証する方式に置き換えた。
+            タイルは選ばずに名前を直接押せば素通りできてしまい、共有PCの設定が意味を
+            持たなかったため（2026-09-09、ユーザー指摘）。 */}
         <button
-          onClick={()=>{if(sel)onLogin({...sel.staff,id:sel.staff.myNumber,store:sel.store});}}
+          onClick={()=>{if(sel)onLogin({...sel.staff,id:sel.staff.myNumber,store:sel.store,
+            ...(deviceName?{desktopName:deviceName}:{})});}}
           disabled={!sel}
           style={{width:'100%',padding:'14px 0',background:sel?`linear-gradient(135deg,${sel.store.color},${sel.store.accent})`:'#e5e7eb',color:sel?'white':'#9ca3af',border:'none',borderRadius:12,fontWeight:800,fontSize:16,cursor:sel?'pointer':'default',transition:'all 0.2s',marginBottom:10}}>
           {sel?`【${sel.store.name}】${sel.staff.name} でログイン →`:'担当者を選択してください'}
@@ -9976,6 +9984,10 @@ function AppInner() {
   // 端末そのものが認証済みで、承認済みのスタッフは全員並ぶため、個別の登録は不要。
   // 個人端末では、2人目を足せるように残す。
   const _needEnrol=!authMine.some(m=>m.isDevice);
+  // 認証済みの共有端末なら、その端末名を掲げる
+  const _devMine=authMine.find(m=>m.isDevice)||null;
+  const _devName=_devMine?_devMine.name:'';
+  const _devStore=_devMine?(_devMine.store==='sanda'?'三田店':'本店'):'';
   const _loginH=_pick(dynStaffH);
   const _loginS=_pick(dynStaffS);
   if(!currentUser)return(
@@ -9984,6 +9996,7 @@ function AppInner() {
       <LoginScreen
         onLogin={u=>{hubUse(u.name);hubRenew(u.name);setCurrentUserPersist(u);setViewStore(u.store?.id||'honten');setView('schedule');setTimeout(()=>window.scrollTo({top:0,behavior:'instant'}),50);}}
         onAddAuth={_needEnrol?()=>setShowAuthAdd(true):null}
+        deviceName={_devName} deviceStore={_devStore}
         onAutoLogin={authAutoOff&&hubKind()==='own'&&authMine.length===1?()=>setAuthAutoOff(false):null}
         staffListH={_loginH} staffListS={_loginS}
         desktopListH={desktopListH} desktopListS={desktopListS}

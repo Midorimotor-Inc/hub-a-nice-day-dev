@@ -378,6 +378,18 @@ const dump = async (page, root) => page.evaluate(r => {
     // 承認済みのスタッフは全員並ぶので、ここで追加の操作をさせない
     t('登録済みの端末では「＋ スタッフを追加」を出さない',
       !(await seeText(page, 'スタッフを追加', 1200)), await dump(page));
+    // どのPCで作業しているかを掲げ、その中から担当者を選ぶ
+    t('端末名が掲げられる', await seeText(page, '共有PC1'));
+    t('共有端末として登録済みと分かる', await seeText(page, '共有端末として登録済み'));
+    t('古い共有端末タイルは出さない', !(await seeText(page, '🖥️ 共有端末', 1200)));
+    // 名前を選ぶだけで入れる。氏名は汚さず、どの端末かは別に持つ。
+    await clickText(page, '見取大介');
+    await clickText(page, 'でログイン');
+    const who = await page.evaluate(() => {
+      try { return JSON.parse(sessionStorage.getItem('hub_currentUser')||'null'); } catch(e){ return null; }
+    });
+    t('氏名に端末名が混ざらない', !!who && who.name === '見取大介', who);
+    t('どの端末から入ったかを持つ', !!who && who.desktopName === '共有PC1', who);
     const st = await page.evaluate(() => JSON.parse(localStorage.getItem('hub-v8-dev-auth-mine')||'[]'));
     t('端末の証として保存される', st.length===1 && st[0].isDevice===true, st);
     t('共有として記録される',
