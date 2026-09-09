@@ -116,10 +116,15 @@ const hubLabel = () => { try { return localStorage.getItem(HUB_LABEL_KEY) || '';
 const hubSetLabel = v => { try { localStorage.setItem(HUB_LABEL_KEY, String(v || '').slice(0, 40)); } catch (e) {} };
 // その人の利用証を通信に載せる。居なければ認証前（本来のキーだけ）に戻す。
 const hubUse = name => {
-  const m = hubLive(hubLoadMine()).find(x => x.name === name);
+  const live = hubLive(hubLoadMine());
+  // 共有端末として認証したPCでは、誰が操作していてもその端末の利用証を使う。
+  // 人ごとの利用証があればそちらを優先する（個人端末・共有PCに各自が登録した場合）。
+  const m = live.find(x => x.name === name) || live.find(x => x.isDevice) || null;
   hubApplyToken(m ? m.token : '');
-  return m || null;
+  return m;
 };
+// この端末そのものが共有端末として認証されているか
+const hubIsDevice = () => hubLive(hubLoadMine()).some(x => x.isDevice);
 // 起動時：登録済みなら誰かの利用証を載せる（ログイン画面のデータ読み込みに要る）
 try { const _m = hubLive(hubLoadMine()); if (_m.length) hubApplyToken(_m[0].token); } catch (e) {}
 
@@ -452,9 +457,10 @@ const AuthAddScreen=({onDone,onCancel})=>{
     hubSetKind(k);
     if(lb) hubSetLabel(lb);
     const list=hubLoadMine().filter(x=>x.name!==r.name);
-    list.push({uid:r.uid||'',name:r.name,myNumber:r.myNumber,store:r.store||'honten',token:r.token,exp:r.exp});
+    list.push({uid:r.uid||'',name:r.name,myNumber:r.myNumber,store:r.store||'honten',
+               token:r.token,exp:r.exp,isDevice:!!r.device});
     hubSaveMine(list);
-    if(hubLive(hubLoadMine()).length>1&&hubKind()==='own')hubSetKind('shared');
+    if(hubLive(hubLoadMine()).filter(x=>!x.isDevice).length>1&&hubKind()==='own')hubSetKind('shared');
     // 管理者の端末一覧で読めるように、種類と名前をサーバーへ記録する
     hubApplyToken(r.token);
     hubAuthCall('authLabel',{kind:hubKind()||k,label:hubLabel()||lb||''});
@@ -489,6 +495,9 @@ const AuthAddScreen=({onDone,onCancel})=>{
         :'確認できませんでした。通信の状態をご確認ください。');
       return;
     }
+    // ★共有端末そのもののアドレスで認証した場合。人ではないので、
+    //   その端末を「共有端末」として登録し、以後は担当者を選んで使う。
+    if(r.device){ finish(r,'shared',r.label||r.name||''); return; }
     const pl=await planOf(r);
     if(pl.length===1){ const one=pl[0]; finish(r,one==='own'?'own':'shared',one==='own'?'':one); return; }
     if(pl.length>1){ setPend(r); setPlan(pl); setStep('plan'); return; }
@@ -623,8 +632,12 @@ const LoginScreen=({onLogin,onAddAuth})=>{
         let all=[...(h||[]).map(st=>({...st,store:'honten'})),...(s||[]).map(st=>({...st,store:'sanda'}))].filter(st=>st.name&&st.myNumber!=null);
         // 本人認証が必須の間は、この端末で本人確認を済ませた人だけを出す
         if(AUTH_REQUIRED){
-          const mine=new Set(hubLive(hubLoadMine()).map(m=>m.name));
-          all=all.filter(st=>mine.has(st.name));
+          if(hubIsDevice()){
+            all=all.filter(st=>!st.noLogin);   // 端末が認証済みなら操作する人は全員
+          }else{
+            const mine=new Set(hubLive(hubLoadMine()).map(m=>m.name));
+            all=all.filter(st=>mine.has(st.name));
+          }
         }
         if(all.length>0)setStaffList(all);
       }catch(e){}
@@ -636,7 +649,7 @@ const LoginScreen=({onLogin,onAddAuth})=>{
     const s=staffList.find(s=>s.myNumber===n);
     if(!s){setErr('コードが正しくありません');setCode('');return;}
     // 本人認証が必須の間は、この端末で本人確認を済ませた人しか入れない
-    if(AUTH_REQUIRED&&!hubLive(hubLoadMine()).some(m=>m.name===s.name)){
+    if(AUTH_REQUIRED&&!hubIsDevice()&&!hubLive(hubLoadMine()).some(m=>m.name===s.name)){
       setErr('この端末では登録されていません。下から登録してください。');setCode('');return;
     }
     setErr('');
@@ -1965,6 +1978,7 @@ const App=()=>{
     if(user||!AUTH_REQUIRED||authAutoOff)return;
     if(hubKind()!=='own'||authMine.length!==1)return;
     const m=authMine[0];
+    if(m.isDevice)return;          // 共有端末は必ず担当者を選ばせる
     const rec=[...(staffH||[]),...(staffS||[])].find(x=>(m.uid&&x.uid===m.uid)||x.name===m.name);
     const u=rec?{...rec,store:rec.store||m.store}:{uid:m.uid,name:m.name,myNumber:m.myNumber,store:m.store,badge:'mechanic'};
     hubUse(m.name); hubRenew(m.name);

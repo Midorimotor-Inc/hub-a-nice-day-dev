@@ -1985,10 +1985,15 @@ const hubLabel = () => { try { return localStorage.getItem(HUB_LABEL_KEY) || '';
 const hubSetLabel = v => { try { localStorage.setItem(HUB_LABEL_KEY, String(v || '').slice(0, 40)); } catch (e) {} };
 // その人の利用証を通信に載せる。居なければ認証前（本来のキーだけ）に戻す。
 const hubUse = name => {
-  const m = hubLive(hubLoadMine()).find(x => x.name === name);
+  const live = hubLive(hubLoadMine());
+  // 共有端末として認証したPCでは、誰が操作していてもその端末の利用証を使う。
+  // 人ごとの利用証があればそちらを優先する（個人端末・共有PCに各自が登録した場合）。
+  const m = live.find(x => x.name === name) || live.find(x => x.isDevice) || null;
   hubApplyToken(m ? m.token : '');
-  return m || null;
+  return m;
 };
+// この端末そのものが共有端末として認証されているか
+const hubIsDevice = () => hubLive(hubLoadMine()).some(x => x.isDevice);
 // 起動時：登録済みなら誰かの利用証を載せる（ログイン画面のデータ読み込みに要る）
 try { const _m = hubLive(hubLoadMine()); if (_m.length) hubApplyToken(_m[0].token); } catch (e) {}
 
@@ -3099,10 +3104,11 @@ const AuthAddScreen=({onDone,onCancel})=>{
     hubSetKind(k);
     if(lb) hubSetLabel(lb);
     const list=hubLoadMine().filter(x=>x.name!==r.name);
-    list.push({uid:r.uid||'',name:r.name,myNumber:r.myNumber,store:r.store||'honten',token:r.token,exp:r.exp});
+    list.push({uid:r.uid||'',name:r.name,myNumber:r.myNumber,store:r.store||'honten',
+               token:r.token,exp:r.exp,isDevice:!!r.device});
     hubSaveMine(list);
     // 2人目が入った端末は「共有」に直す（自分専用のままだと他人の名義で予約が入る）
-    if(hubLive(hubLoadMine()).length>1 && hubKind()==='own') hubSetKind('shared');
+    if(hubLive(hubLoadMine()).filter(x=>!x.isDevice).length>1 && hubKind()==='own') hubSetKind('shared');
     // 管理者の端末一覧で読めるように、種類と名前をサーバーへ記録する
     hubApplyToken(r.token);
     hubAuthCall('authLabel',{kind:hubKind()||k,label:hubLabel()||lb||''});
@@ -3140,6 +3146,9 @@ const AuthAddScreen=({onDone,onCancel})=>{
         : '確認できませんでした。通信の状態をご確認ください。');
       return;
     }
+    // ★共有端末そのもののアドレスで認証した場合。人ではないので、
+    //   その端末を「共有端末」として登録し、以後は担当者を選んで使う。
+    if(r.device){ finish(r,'shared',r.label||r.name||''); return; }
     // 管理者が決めた「使う端末」に従う。1つだけなら本人は何も選ばない。
     // ★端末の状態より先に見る。管理者の指定があるなら、それが答え。
     const plan=await planOf(r);
@@ -9870,6 +9879,7 @@ function AppInner() {
     if(currentUser||!AUTH_REQUIRED||authAutoOff)return;
     if(hubKind()!=='own'||authMine.length!==1)return;
     const m=authMine[0];
+    if(m.isDevice)return;          // 共有端末は必ず担当者を選ばせる
     const rec=[...(dynStaffH||[]),...(dynStaffS||[])].find(x=>(m.uid&&x.uid===m.uid)||x.name===m.name);
     if(!rec)return;                     // スタッフ表から消えた人は入れない
     const store=STORES.find(x=>x.id===(rec.store||m.store))||STORES[0];
@@ -9944,9 +9954,15 @@ function AppInner() {
     </>
   );
   // AUTH_REQUIRED の間は、この端末で本人確認を済ませた人しかログイン画面に出さない
+  // この端末そのものが共有端末として認証されていれば、操作する人は全員選べる。
+  // 端末の側が認証済みなので、人ごとの登録は要らない（店のPCの使い方に合う）。
+  const _devCert=authMine.some(m=>m.isDevice);
   const _authNames=new Set(authMine.map(m=>m.name));
-  const _loginH=AUTH_REQUIRED?(dynStaffH||[]).filter(x=>_authNames.has(x.name)):dynStaffH;
-  const _loginS=AUTH_REQUIRED?(dynStaffS||[]).filter(x=>_authNames.has(x.name)):dynStaffS;
+  const _pick=(list)=>!AUTH_REQUIRED?list
+    :_devCert?(list||[]).filter(x=>!x.noLogin)
+    :(list||[]).filter(x=>_authNames.has(x.name));
+  const _loginH=_pick(dynStaffH);
+  const _loginS=_pick(dynStaffS);
   if(!currentUser)return(
     <>
       <style>{GCSS}</style>

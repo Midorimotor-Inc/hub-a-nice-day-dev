@@ -24,13 +24,14 @@ let staffH = [
   { uid: 'h2', name: '岡上秀一', myNumber: 2, badge: 'mechanic', store: 'honten' },
   { uid: 'h7', name: '江川京志', myNumber: 7, badge: 'mechanic', store: 'honten', loginEmail: 'kyoshi@example.com' },
   // PCを持たず、一度もログインしない人（整備補助）。ログイン用メールは持たない。
-  { uid: 'h8', name: 'ダク', myNumber: 8, badge: 'mechanic', store: 'honten' },
+  { uid: 'h8', name: 'ダク', myNumber: 8, badge: 'mechanic', store: 'honten', noLogin: true },
 ];
 const baseStaffH = staffH.map(x => ({ ...x }));   // 各テストの開始時に戻すための控え
 let devices = {};          // 端末台帳
 let labels = [];           // authLabel で届いた種類と名前
 // 管理者が先に決めておいた共有端末の名前
-let devnames = [{ name:'共有PC1', store:'honten' }, { name:'三田店タブレット', store:'sanda' }];
+let devnames = [{ name:'共有PC1', store:'honten', mail:'pc1@midori-m.com' },
+                { name:'三田店タブレット', store:'sanda' }];
 let sentInvites = [];      // 送った招待
 const CODE = '424242';
 
@@ -64,11 +65,23 @@ const gasRoute = async (route) => {
   switch (q.get('action')) {
     case 'authRequest': {
       const m = String(q.get('email') || '').trim().toLowerCase();
+      if (devnames.some(d => (d.mail || '').toLowerCase() === m)) return body({ ok: true });
       const s = staffH.find(x => (x.loginEmail || '').toLowerCase() === m);
       return body(s ? { ok: true } : { ok: false, err: 'not_registered' });
     }
     case 'authVerify': {
       const m = String(q.get('email') || '').trim().toLowerCase();
+      // 共有端末そのもののアドレス。人ではなく端末として認証する。
+      const dv = devnames.find(d => (d.mail || '').toLowerCase() === m);
+      if (dv) {
+        if (q.get('code') !== CODE) return body({ ok: false, err: 'bad_code' });
+        const jd = 'v' + Object.keys(devices).length;
+        devices[jd] = { n: dv.name, dev: 1, k: 'shared', l: dv.name, e: m,
+          at: Date.now(), exp: Date.now() + 90 * 86400000, ua: 'test' };
+        return body({ ok: true, token: 'TKDEV-' + dv.name, exp: Date.now() + 90 * 86400000,
+          name: dv.name, myNumber: '', store: dv.store, uid: '',
+          admin: false, device: true, label: dv.name });
+      }
       const s = staffH.find(x => (x.loginEmail || '').toLowerCase() === m);
       if (!s) return body({ ok: false, err: 'not_registered' });
       if (q.get('code') !== CODE) return body({ ok: false, err: 'bad_code' });
@@ -341,6 +354,32 @@ const dump = async (page, root) => page.evaluate(r => {
     await clickText(page, '個人端末');
     t('選んだとおりに登録される', await seeText(page, 'この端末に登録しました'));
     t('用途を決めた登録でJSエラーなし', errs.length === 0, errs.slice(0, 2));
+  });
+
+  // ── ③''' 共有端末そのものをメールで認証する（人と同じ流れ）──────────
+  await run(true, async (page, errs) => {
+    t('まず登録画面が出る', await seeText(page, 'この端末にスタッフを追加'));
+    await page.fill('input[type=email]', 'pc1@midori-m.com');   // 端末のアドレス
+    await clickText(page, '確認コードを送る');
+    await seeText(page, '6桁のコードを入れてください');
+    await page.fill('input[inputmode=numeric]', CODE);
+    await clickText(page, '確認する');
+    t('端末の種類を聞かれない', !(await seeText(page, 'この端末はどちらですか', 1500)));
+    t('端末の名前も聞かれない', !(await seeText(page, 'この端末の名前', 1200)));
+    t('そのまま登録が終わる', await seeText(page, 'この端末に登録しました'));
+    t('端末名で登録される', await seeText(page, '共有PC1'));
+    await clickText(page, 'はじめる');
+
+    t('担当者を選ぶ画面になる', await seeText(page, '担当者を選択してください'));
+    // 端末が認証済みなので、個別に登録していない人も選べる
+    t('操作する人は全員選べる',
+      (await seeText(page, '見取大介')) && (await seeText(page, '岡上秀一')));
+    t('操作しない人は出ない', !(await seeText(page, 'ダク', 1200)));
+    const st = await page.evaluate(() => JSON.parse(localStorage.getItem('hub-v8-dev-auth-mine')||'[]'));
+    t('端末の証として保存される', st.length===1 && st[0].isDevice===true, st);
+    t('共有として記録される',
+      (await page.evaluate(() => localStorage.getItem('hub-v8-dev-auth-kind')))==='shared');
+    t('共有端末でJSエラーなし', errs.length === 0, errs.slice(0, 2));
   });
 
   // ── ④ 管理者側：メール登録・招待・端末の取り消し ──────────────────

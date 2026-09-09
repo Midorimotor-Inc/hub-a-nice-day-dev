@@ -42,7 +42,7 @@ vm.runInContext(src+`
 this.T={authMakeToken_,authReadToken_,authValid_,authGate_,authBaseKey_,authPrefixOf_,
         authRequest_,authInvite_,authVerify_,authRenew_,authLoadDevices_,authSaveDevices_,authFindStaffByEmail_,
         authAdmins_,authAdminSave_,authAdminOf_,authAdminGate_,authResolve_,authFindStaffByUid_,
-        authAdminList_,authAdminSet_,authSaveCodes_,authLoadCodes_,authCodeHash_};`,ctx);
+        authAdminList_,authAdminSet_,authFindDeviceByEmail_,authSaveCodes_,authLoadCodes_,authCodeHash_};`,ctx);
 const T=ctx.T;
 
 const ok=[],ng=[];
@@ -351,6 +351,51 @@ t('別環境の台帳を見ると未登録扱いになる',
   t('新しい利用証にも印が付かない', T.authReadToken_(rr.token).a===0, T.authReadToken_(rr.token));
   Date.now=realNow2;
   props['HUB_ADMIN_EMAILS']='egawa@midori-m.com=h7';
+}
+
+// 16) 共有端末もメールで認証する（人とまったく同じ流れ）
+{
+  const KEY='hub2026co-key|';
+  sheetStore[PFX+'auth-devnames']=JSON.stringify([
+    {name:'共有PC1', store:'honten', mail:'pc1@midori-m.com'},
+    {name:'共有PC2', store:'sanda'},                      // メール未設定
+  ]);
+  t('端末をメールで引ける',
+    (T.authFindDeviceByEmail_(PFX,'PC1@Midori-M.com')||{}).name==='共有PC1');
+  t('メール未設定の端末は引けない', T.authFindDeviceByEmail_(PFX,'')===null);
+
+  const rv=T.authResolve_(PFX,'pc1@midori-m.com');
+  t('端末は人ではなく端末として返る', !!rv && rv.device===true && rv.name==='共有PC1', rv);
+  t('端末は管理者ではない', rv.admin===false);
+
+  // 招待を送れる（端末向けの文面）
+  sentMail=[];
+  let r=body(T.authInvite_('pc1@midori-m.com',PFX));
+  t('端末に招待を送れる', r.ok===true && r.device===true && sentMail.length===1, r);
+  t('端末向けの件名になる', /共有端末「共有PC1」の登録のご案内/.test(sentMail[0].sub), sentMail[0].sub);
+  t('その端末の前で操作するよう書いてある', /この端末の前で/.test(sentMail[0].body));
+
+  // コードを受け取り、端末として利用証を得る
+  sentMail=[];
+  r=body(T.authRequest_('pc1@midori-m.com',PFX));
+  t('端末にコードを送れる', r.ok===true && sentMail.length===1, r);
+  t('端末向けのコード件名', /共有端末「共有PC1」の確認コード/.test(sentMail[0].sub), sentMail[0].sub);
+  const code=lastCode();
+  const v=body(T.authVerify_('pc1@midori-m.com',code,PFX,'ShopPC'));
+  t('端末の利用証が出る', v.ok===true && v.device===true && v.label==='共有PC1', v);
+  t('利用証に端末の印が入る', T.authReadToken_(v.token).v===1, T.authReadToken_(v.token));
+  t('端末は管理者になれない', T.authAdminGate_(KEY+v.token,PFX)===null);
+  t('端末の利用証でも通信は通る', T.authGate_(KEY+v.token,'',PFX)===null);
+
+  const d=T.authLoadDevices_(PFX);
+  const j=Object.keys(d).filter(k=>d[k].e==='pc1@midori-m.com')[0];
+  t('台帳に端末として残る', !!j && d[j].dev===1 && d[j].k==='shared' && d[j].l==='共有PC1', d[j]);
+
+  // メールが登録されていない端末には送らない
+  t('メール未設定の端末には送れない',
+    body(T.authInvite_('pc2@midori-m.com',PFX)).err==='not_registered');
+  t('名簿にないアドレスは通らない', T.authResolve_(PFX,'stranger@example.com')===null);
+  delete sheetStore[PFX+'auth-devnames'];
 }
 
 console.log('\n=== 合格 ('+ok.length+') ===');ok.forEach(s=>console.log('  ✓ '+s));

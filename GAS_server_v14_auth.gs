@@ -1104,13 +1104,15 @@ function authEnforced_(prefix) {
 
 // ── 利用証の発行と検証 ──────────────────────────────────────────────
 //   形式: base64url(本文).base64url(HMAC-SHA256署名)
-//   本文: {n:氏名, m:ナンバー, s:店舗, j:端末ID, x:失効時刻, a:管理者なら1}
-function authMakeToken_(name, myNumber, store, jti, isAdmin) {
+//   本文: {n:氏名または端末名, m:ナンバー, s:店舗, j:端末ID, x:失効時刻,
+//         a:管理者なら1, v:共有端末そのものなら1}
+function authMakeToken_(name, myNumber, store, jti, isAdmin, isDevice) {
   var payload = JSON.stringify({
     n: String(name || ''), m: (myNumber == null ? '' : myNumber),
     s: String(store || ''), j: String(jti || ''),
     x: Date.now() + AUTH_TTL_DAYS * 86400000,
-    a: isAdmin ? 1 : 0
+    a: isAdmin ? 1 : 0,
+    v: isDevice ? 1 : 0
   });
   var p64 = Utilities.base64EncodeWebSafe(Utilities.newBlob(payload).getBytes());
   var sig = Utilities.computeHmacSha256Signature(p64, authSecret_());
@@ -1294,10 +1296,37 @@ function authAdminGate_(rawApiKey, prefix) {
 // ── スタッフ表と管理者名簿の両方から本人を確定する ───────────────────────
 //   管理者は「まだスタッフ表に loginEmail が入っていない」段階でも入れる必要がある
 //   （最初の1人が入れないと、誰もメールを登録できず堂々巡りになるため）。
+// ── 共有端末の名簿（管理者が名前とメールを登録する）───────────────────
+//   <prefix>auth-devnames に [{name, store, mail}] で入っている。
+//   人と同じくメールで認証するので、ここも突き合わせの対象になる。
+function authFindDeviceByEmail_(prefix, email) {
+  var m = String(email || '').trim().toLowerCase();
+  if (!m) return null;
+  try {
+    var raw = readOneValue(getSheet(), CacheService.getScriptCache(),
+                           String(prefix) + 'auth-devnames', -2);
+    if (!raw || raw === 'null') return null;
+    var list = JSON.parse(raw);
+    if (!(list instanceof Array)) return null;
+    for (var i = 0; i < list.length; i++) {
+      var d = list[i];
+      if (d && d.mail && String(d.mail).trim().toLowerCase() === m) return d;
+    }
+  } catch (e) {}
+  return null;
+}
+
 function authResolve_(prefix, email) {
   var staff = authFindStaffByEmail_(prefix, email);
   var adm = authAdminOf_(email);
   if (staff) { staff.admin = !!adm; return staff; }
+  // 共有端末のアドレス。人ではないので氏名は持たず、端末の名前を名乗る。
+  var dev = authFindDeviceByEmail_(prefix, email);
+  if (dev) {
+    return { name: String(dev.name || '共有端末'), myNumber: '', uid: '',
+             store: dev.store || 'honten', admin: false,
+             device: true, label: String(dev.name || '共有端末') };
+  }
   if (!adm) return null;
   // スタッフ表に登録が無い管理者は、名簿の uid から氏名を引く
   var byUid = adm.uid ? authFindStaffByUid_(prefix, adm.uid) : null;
@@ -1392,7 +1421,8 @@ function authRequest_(email, prefix) {
     var env = (String(prefix).indexOf('dev') >= 0) ? '【DEV】' : '';
     MailApp.sendEmail(
       email,
-      env + '【Hub a Nice Day】' + (staff.admin ? '管理者ログインの確認コード' : 'ログイン確認コード'),
+      env + '【Hub a Nice Day】' + (staff.admin ? '管理者ログインの確認コード'
+            : staff.device ? ('共有端末「' + staff.label + '」の確認コード') : 'ログイン確認コード'),
       staff.name + ' さん\n\n' +
       'ログイン画面に次の6桁を入力してください。\n\n' +
       '    ' + code + '\n\n' +
@@ -1419,10 +1449,11 @@ function authInvite_(email, prefix) {
     if (SNAP_ENV_PREFIXES.indexOf(String(prefix || '')) < 0) {
       return makeResponse(JSON.stringify({ ok: false, err: 'bad_prefix' }));
     }
-    // スタッフ表に登録済みのアドレスにしか送らない。
+    // 登録済みのアドレスにしか送らない（スタッフ表、または共有端末の名簿）。
     // 管理者が部外者のアドレスを入れても、招待は飛ばない。
     var staff = authFindStaffByEmail_(prefix, email);
-    if (!staff) return makeResponse(JSON.stringify({ ok: false, err: 'not_registered' }));
+    var devv = staff ? null : authFindDeviceByEmail_(prefix, email);
+    if (!staff && !devv) return makeResponse(JSON.stringify({ ok: false, err: 'not_registered' }));
 
     var cache = CacheService.getScriptCache();
     var cntKey = 'authinv:' + email;
@@ -1432,6 +1463,29 @@ function authInvite_(email, prefix) {
 
     var env = (String(prefix).indexOf('dev') >= 0) ? '【DEV】' : '';
     var url = AUTH_APP_URL[String(prefix)] || AUTH_APP_URL['hub-v8-'];
+
+    // 共有端末あての招待。人ではないので文面を分ける。
+    if (devv) {
+      MailApp.sendEmail(
+        email,
+        env + '【Hub a Nice Day】共有端末「' + devv.name + '」の登録のご案内',
+        '共有端末「' + devv.name + '」の登録手順です。\n\n' +
+        'この端末の前で、次のとおり操作してください。\n\n' +
+        '▼ 手順\n' +
+        '1. その端末で Hub を開く\n' +
+        '   ' + url + '\n' +
+        '2.「＋ スタッフを追加」を押す\n' +
+        '3. このアドレス（' + email + '）を入れる\n' +
+        '4. 届いた6桁のコードを入れる\n\n' +
+        '登録が済むと、その端末では担当者を選ぶだけで使えるようになります。\n' +
+        '※ 登録は端末ごとに1回だけです。\n' +
+        '※ この登録はその端末を使う全員で共有します。個人のスマホには使わないでください。\n\n' +
+        '心当たりが無い場合は、このメールを破棄してください。\n\n' +
+        '--\nHub a Nice Day 自動送信（返信不要）'
+      );
+      return makeResponse(JSON.stringify({ ok: true, name: devv.name, device: true }));
+    }
+
     MailApp.sendEmail(
       email,
       env + '【Hub a Nice Day】ログインの登録をお願いします',
@@ -1500,14 +1554,20 @@ function authVerify_(email, code, prefix, ua) {
         n: staff.name, m: staff.myNumber, s: staff.store, e: email,
         at: Date.now(), exp: exp, ua: String(ua || '').slice(0, 120)
       };
+      if (staff.device) {   // 共有端末そのものの登録
+        devices[jti].dev = 1;
+        devices[jti].k = 'shared';
+        devices[jti].l = staff.label;
+      }
       authSaveDevices_(prefix, devices);
     } finally { if (locked) lock.releaseLock(); }
 
     return makeResponse(JSON.stringify({
       ok: true,
-      token: authMakeToken_(staff.name, staff.myNumber, staff.store, jti, staff.admin),
+      token: authMakeToken_(staff.name, staff.myNumber, staff.store, jti, staff.admin, staff.device),
       name: staff.name, myNumber: staff.myNumber, store: staff.store,
-      uid: staff.uid || '', exp: exp, admin: !!staff.admin
+      uid: staff.uid || '', exp: exp, admin: !!staff.admin,
+      device: !!staff.device, label: staff.label || ''
     }));
   } catch (err) {
     return makeResponse(JSON.stringify({ ok: false, err: 'verify_failed' }));
@@ -1607,7 +1667,7 @@ function authRenew_(rawApiKey, prefix) {
     } catch (e) { stillAdmin = false; }
     return makeResponse(JSON.stringify({
       ok: true, renewed: true, exp: exp, admin: stillAdmin,
-      token: authMakeToken_(payload.n, payload.m, payload.s, payload.j, stillAdmin)
+      token: authMakeToken_(payload.n, payload.m, payload.s, payload.j, stillAdmin, payload.v)
     }));
   } catch (err) {
     return makeResponse(JSON.stringify({ ok: false, err: 'renew_failed' }));

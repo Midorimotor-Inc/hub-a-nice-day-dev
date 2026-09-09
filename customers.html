@@ -127,10 +127,15 @@ const hubLabel = () => { try { return localStorage.getItem(HUB_LABEL_KEY) || '';
 const hubSetLabel = v => { try { localStorage.setItem(HUB_LABEL_KEY, String(v || '').slice(0, 40)); } catch (e) {} };
 // その人の利用証を通信に載せる。居なければ認証前（本来のキーだけ）に戻す。
 const hubUse = name => {
-  const m = hubLive(hubLoadMine()).find(x => x.name === name);
+  const live = hubLive(hubLoadMine());
+  // 共有端末として認証したPCでは、誰が操作していてもその端末の利用証を使う。
+  // 人ごとの利用証があればそちらを優先する（個人端末・共有PCに各自が登録した場合）。
+  const m = live.find(x => x.name === name) || live.find(x => x.isDevice) || null;
   hubApplyToken(m ? m.token : '');
-  return m || null;
+  return m;
 };
+// この端末そのものが共有端末として認証されているか
+const hubIsDevice = () => hubLive(hubLoadMine()).some(x => x.isDevice);
 // 起動時：登録済みなら誰かの利用証を載せる（ログイン画面のデータ読み込みに要る）
 try { const _m = hubLive(hubLoadMine()); if (_m.length) hubApplyToken(_m[0].token); } catch (e) {}
 

@@ -502,24 +502,32 @@ function viewDevices(){
 function viewDevNames(){
   var rows = S.devnames.map(function(d, i){
     var used = Object.keys(S.devices).filter(function(j){ return S.devices[j] && S.devices[j].l === d.name; }).length;
+    var done = Object.keys(S.devices).some(function(j){
+      return S.devices[j] && S.devices[j].dev && S.devices[j].l === d.name; });
     return '<tr>'
-      + '<td class="stripe ' + (used ? 'ok' : 'idle') + '"></td>'
+      + '<td class="stripe ' + (done ? 'ok' : (d.mail ? 'wait' : 'idle')) + '"></td>'
       + '<td class="nm">' + esc(d.name) + '<small>' + (d.store === 'sanda' ? '三田店' : '本店') + '</small></td>'
-      + '<td>' + (used
-          ? '<span class="state ok">' + used + '人が登録済み</span>'
-          : '<span class="state idle">まだ誰も登録していません</span>') + '</td>'
-      + '<td class="act"><button class="btn stop sm" data-delname="' + esc(String(i)) + '">削除</button></td>'
+      + '<td><input class="mailin" data-devmail="' + esc(String(i)) + '" value="' + esc(d.mail || '')
+      + '" placeholder="未設定" autocomplete="off" aria-label="' + esc(d.name) + ' の登録用メール"></td>'
+      + '<td>' + (done
+          ? '<span class="state ok">この端末は登録済み</span>'
+          : d.mail ? '<span class="state wait">招待して、その端末で登録</span>'
+                   : '<span class="state idle">メール未設定</span>') + '</td>'
+      + '<td class="act">'
+      + '<button class="btn ghost sm" data-devinvite="' + esc(String(i)) + '"' + (d.mail ? '' : ' disabled') + '>招待を送る</button> '
+      + '<button class="btn stop sm" data-delname="' + esc(String(i)) + '">削除</button></td>'
       + '</tr>';
   }).join('');
   return '<div class="panelbox">'
     + '<div class="panelhead"><div><h3>共有端末の名前</h3>'
-    + '<p>店のPCやタブレットに名前を付けておきます。登録する人は、この一覧から選ぶだけで済みます。</p></div>'
+    + '<p>店のPCやタブレットを、人と同じようにメールで認証します。'
+    + 'メールを入れて「招待を送る」→ その端末でアドレスと6桁を入れる、で登録できます。</p></div>'
     + '<div class="right"><button class="btn sm" id="adddev">＋ 共有端末を追加</button></div></div>'
     + '<div class="tablewrap"><table>'
-    + '<thead><tr><th class="stripe"></th><th>端末名</th><th>状態</th><th style="text-align:right">操作</th></tr></thead>'
-    + '<tbody>' + (rows || '<tr><td colspan="4" class="empty">まだ登録がありません。<br>'
-        + '「＋ 共有端末を追加」から、店のPCの名前を決めてください（例：共有PC1、本店 受付PC）。<br>'
-        + '<span style="font-size:12px">登録しなくても、その端末で登録する人がその場で名前を入力できます。</span></td></tr>')
+    + '<thead><tr><th class="stripe"></th><th>端末名</th><th>登録用メール</th><th>状態</th><th style="text-align:right">操作</th></tr></thead>'
+    + '<tbody>' + (rows || '<tr><td colspan="5" class="empty">まだ登録がありません。<br>'
+        + '「＋ 共有端末を追加」から、店のPCの名前と登録用メールを決めてください（例：共有PC1）。<br>'
+        + '<span style="font-size:12px">個人のスマホはここに登録しません。</span></td></tr>')
     + '</tbody></table></div>'
     + '<div class="foot">ここで決めた名前は、共有の端末を登録するときに<b>選択肢として出ます</b>。'
     + '書き方がばらつかないので、あとから一覧を見たときに分かりやすくなります。'
@@ -750,14 +758,18 @@ function bind(){
       // 共有端末：人は選ばない。名前と置き場所だけ。
       + '<div id="devwrap" hidden>'
       + '<p style="font-size:12.5px;color:var(--ink-2);line-height:1.8">'
-      + '店のPCやタブレットに名前を付けます。ここで決めた名前は、その端末で登録する人に'
-      + '<b>選択肢として出ます</b>。書き方がばらつかないので、あとで一覧を見たときに分かりやすくなります。</p>'
+      + '店のPCやタブレットを登録します。<b>人と同じで、メールで認証します。</b>'
+      + '登録用のアドレスに招待を送り、その端末でアドレスと6桁を入れてもらいます。</p>'
       + '<label class="f" for="devname" style="margin-top:10px">端末名</label>'
       + '<input type="text" id="devname" placeholder="例：共有PC1" autocomplete="off" maxlength="40">'
       + '<label class="f" style="margin-top:14px">置いてある店舗</label>'
       + '<select id="devstore"><option value="honten">本店</option><option value="sanda">三田店</option></select>'
-      + '<p style="font-size:12px;color:var(--ink-3);margin-top:10px">'
-      + '自分のスマホ（個人端末）は登録しなくて構いません。共有の端末だけです。</p></div>');
+      + '<label class="f" for="devmail" style="margin-top:14px">登録用メール（あとからでも可）</label>'
+      + '<input type="email" id="devmail" placeholder="例：pc1@midori-m.com" autocomplete="off" inputmode="email">'
+      + '<p style="font-size:12px;color:var(--ink-3);margin-top:8px;line-height:1.8">'
+      + 'この端末の登録に使うアドレスです。<b>管理者が受け取れるアドレスで構いません</b>'
+      + '（端末の登録は管理者の作業なので、専用のアドレスを用意する必要はありません）。<br>'
+      + '自分のスマホ（個人端末）はここに登録しません。共有の端末だけです。</p></div>');
 
     var staffPicker = target
       ? '<p style="font-size:13px;font-weight:700">' + esc(target.name) + ' さん</p>'
@@ -859,7 +871,14 @@ function bind(){
           if (base.some(function(d){ return d.name === nm; })) {
             S.devnames = base; render(); toast('追加しませんでした', 'その名前はすでにあります。'); return;
           }
-          saveDevNames(base.concat([{ name: nm, store: st2 }])).then(function(okw){
+          var dmail = (($('devmail')||{}).value||'').trim().toLowerCase();
+          if (dmail && badMail(dmail)) {
+            toast('追加しませんでした', 'メールアドレスの形式が正しくありません。カンマや空白が入っていないか確かめてください。');
+            return;
+          }
+          var recDev = { name: nm, store: st2 };
+          if (dmail) recDev.mail = dmail;
+          saveDevNames(base.concat([recDev])).then(function(okw){
             // 足した端末は「スタッフと招待」には出ない（人ではないので）。
             // 何も起きていないように見えるため、一覧のあるタブへ移して見せる。
             if (okw) S.tab = 'devices';
@@ -1073,6 +1092,68 @@ function bind(){
               S.devices = next; render();
               toast('端末の登録を取り消しました', (d.n || '') + ' さんのこの端末は、もう使えません。');
             });
+          });
+        }
+      };
+      render();
+    };
+  });
+
+  // --- 共有端末のメールを保存する ---
+  each('[data-devmail]', function(i){
+    i.onchange = function(){
+      var idx = Number(i.dataset.devmail);
+      var v = i.value.trim().toLowerCase();
+      if (v && badMail(v)) {
+        toast('保存しませんでした', 'メールアドレスの形式が正しくありません。カンマや空白が入っていないか確かめてください。');
+        i.value = (S.devnames[idx] || {}).mail || ''; return;
+      }
+      var dup = allStaff().filter(function(x){ return (x.loginEmail||'').toLowerCase() === v; })[0];
+      if (v && dup) {
+        toast('保存しませんでした', 'そのアドレスは ' + dup.name + ' さんで使われています。');
+        i.value = (S.devnames[idx] || {}).mail || ''; return;
+      }
+      i.disabled = true;
+      // 端末の名簿はサーバー最新を土台にして、対象の1件だけ直す
+      gasRead(STOR + 'auth-devnames').then(function(latest){
+        var base = (latest instanceof Array) ? latest.filter(function(x){ return x && x.name; }) : null;
+        if (!base) { i.disabled = false; toast('保存できませんでした', 'サーバーから一覧を読めていません。'); return; }
+        var name = (S.devnames[idx] || {}).name;
+        var next = base.map(function(d){
+          if (d.name !== name) return d;
+          var o = Object.assign({}, d);
+          if (v) o.mail = v; else delete o.mail;
+          return o;
+        });
+        saveDevNames(next).then(function(okw){
+          i.disabled = false; render();
+          toast(okw ? '保存しました' : '保存できませんでした',
+            okw ? (v ? (name + ' の登録用メールを ' + v + ' にしました。続けて「招待を送る」を押してください。')
+                     : (name + ' の登録用メールを消しました。'))
+                : 'サーバーが混んでいた可能性があります。「再読込」で確かめてください。');
+        });
+      });
+    };
+  });
+
+  // --- 共有端末に招待を送る（人とまったく同じ流れ）---
+  each('[data-devinvite]', function(b){
+    b.onclick = function(){
+      var d = S.devnames[Number(b.dataset.devinvite)]; if (!d || !d.mail) return;
+      S.dialog = {
+        title:'この端末に招待を送ります', okLabel:'送る',
+        body:'<p>宛先に間違いはありませんか。1文字違うと、何も届かないだけで理由が分かりません。</p>'
+          + '<div class="addr">' + esc(d.mail) + '</div>'
+          + '<p style="font-size:12px;color:var(--ink-3)">' + esc(d.name) + ' 用／'
+          + '届いたら<b>その端末の前で</b>、このアドレスと6桁を入れてください。</p>',
+        onOk: function(){
+          gasGet({action:'authInvite', prefix:STOR, email:d.mail}).then(function(r){
+            if (r && r.ok) toast('招待メールを送りました',
+              d.name + '（' + d.mail + '）宛。その端末の前で、アドレスと6桁を入れてください。');
+            else toast('送れませんでした', (r && r.err === 'not_registered')
+              ? 'このアドレスが登録として保存されていません。メール欄を入れ直して保存してください。'
+              : (r && r.err === 'too_many') ? '送信が続いています。しばらく待ってからお試しください。'
+              : '通信の状態をご確認ください。');
           });
         }
       };
