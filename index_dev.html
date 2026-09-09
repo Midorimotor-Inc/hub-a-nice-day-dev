@@ -9972,6 +9972,10 @@ function AppInner() {
   const _pick=(list)=>!AUTH_REQUIRED?list
     :_devCert?(list||[]).filter(x=>!x.noLogin)
     :(list||[]).filter(x=>_authNames.has(x.name));
+  // 「＋ スタッフを追加」は、共有端末として認証済みのPCでは出さない。
+  // 端末そのものが認証済みで、承認済みのスタッフは全員並ぶため、個別の登録は不要。
+  // 個人端末では、2人目を足せるように残す。
+  const _needEnrol=!authMine.some(m=>m.isDevice);
   const _loginH=_pick(dynStaffH);
   const _loginS=_pick(dynStaffS);
   if(!currentUser)return(
@@ -9979,7 +9983,7 @@ function AppInner() {
       <style>{GCSS}</style>
       <LoginScreen
         onLogin={u=>{hubUse(u.name);hubRenew(u.name);setCurrentUserPersist(u);setViewStore(u.store?.id||'honten');setView('schedule');setTimeout(()=>window.scrollTo({top:0,behavior:'instant'}),50);}}
-        onAddAuth={()=>setShowAuthAdd(true)}
+        onAddAuth={_needEnrol?()=>setShowAuthAdd(true):null}
         onAutoLogin={authAutoOff&&hubKind()==='own'&&authMine.length===1?()=>setAuthAutoOff(false):null}
         staffListH={_loginH} staffListS={_loginS}
         desktopListH={desktopListH} desktopListS={desktopListS}

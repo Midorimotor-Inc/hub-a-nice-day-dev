@@ -375,6 +375,9 @@ const dump = async (page, root) => page.evaluate(r => {
     t('操作する人は全員選べる',
       (await seeText(page, '見取大介')) && (await seeText(page, '岡上秀一')));
     t('操作しない人は出ない', !(await seeText(page, 'ダク', 1200)));
+    // 承認済みのスタッフは全員並ぶので、ここで追加の操作をさせない
+    t('登録済みの端末では「＋ スタッフを追加」を出さない',
+      !(await seeText(page, 'スタッフを追加', 1200)), await dump(page));
     const st = await page.evaluate(() => JSON.parse(localStorage.getItem('hub-v8-dev-auth-mine')||'[]'));
     t('端末の証として保存される', st.length===1 && st[0].isDevice===true, st);
     t('共有として記録される',
