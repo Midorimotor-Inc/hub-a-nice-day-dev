@@ -431,6 +431,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
   const [code,setCode]=useState('');
   const [kind,setKind]=useState(hubKind());
   const [pend,setPend]=useState(null);
+  const [fromInvite,setFromInvite]=useState(false);   // 招待メールの6桁を使う
   const [label,setLabel]=useState(hubLabel());
   const [devNames,setDevNames]=useState(null);
   const [typing,setTyping]=useState(false);
@@ -440,10 +441,12 @@ const AuthAddScreen=({onDone,onCancel})=>{
   const [who,setWho]=useState(null);
   const firstOnDevice=hubLive(hubLoadMine()).length===0;
 
-  const sendCode=async()=>{
+  const sendCode=async(mail,resend)=>{
     setErr('');setBusy(true);
-    const r=await hubAuthCall('authRequest',{email:email.trim()});
+    const r=await hubAuthCall('authRequest',Object.assign({email:String(mail||email).trim()},resend?{resend:'1'}:{}));
     setBusy(false);
+    // すでに招待メールに6桁が書いてある場合は、送り直さずそれを使ってもらう
+    if(r&&r.ok) setFromInvite(!!r.existing);
     if(!r||!r.ok){
       setErr(r&&r.err==='not_registered'?'このアドレスは登録されていません。管理者にご確認ください。'
         :r&&r.err==='too_many'?'送信が続いています。しばらく待ってからお試しください。'
@@ -540,7 +543,9 @@ const AuthAddScreen=({onDone,onCancel})=>{
       )}
       {step==='code'&&(
         <div>
-          <div style={LBL}>{email.trim()} 宛に6桁のコードを送りました（24時間以内に入力してください）</div>
+          <div style={LBL}>{fromInvite
+            ? '届いている招待メールに書かれた6桁を入れてください。'
+            : (email.trim() + ' 宛に6桁のコードを送りました（24時間以内に入力してください）')}</div>
           <input type="text" value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,'').slice(0,6))}
             style={{...IN,fontSize:30,letterSpacing:'0.35em',textAlign:'center',fontWeight:800}}
             placeholder="------" inputMode="numeric" autoComplete="one-time-code" autoFocus/>
@@ -549,6 +554,8 @@ const AuthAddScreen=({onDone,onCancel})=>{
             {busy?'確認中…':'確認する'}
           </button>
           <button style={SUB} onClick={()=>{setStep('email');setCode('');setErr('');}}>← アドレスを入れ直す</button>
+          <button style={SUB} disabled={busy} onClick={()=>{setCode('');sendCode(email,true);}}>
+            メールが見つからない → コードを送り直す</button>
         </div>
       )}
       {step==='kind'&&(

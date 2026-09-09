@@ -50,7 +50,8 @@ const t=(n,c,e)=>{(c?ok:ng).push(n+(c?'':'  ← '+JSON.stringify(e)));};
 const PFX='hub-v8-dev-';
 const body=r=>{try{return JSON.parse(r.__body);}catch(e){return r.__body;}};
 // 6桁はサーバーに保存されなくなった（HMACだけ）。送られたメール本文から取り出す。
-const freshCode=m=>{delete cacheStore['authcnt:'+m];sentMail=[];T.authRequest_(m,PFX);return lastCode();};
+// 生きているコードがあると送り直さない仕様になったので、テストでは必ず新しく出させる
+const freshCode=m=>{delete cacheStore['authcnt:'+m];sentMail=[];T.authRequest_(m,PFX,'1');return lastCode();};
 const lastCode=()=>{const m=String((sentMail[sentMail.length-1]||{}).body||'').match(/([0-9]{6})/);return m?m[1]:'';};
 
 // 管理者が登録したスタッフ表（loginEmail つき）
@@ -375,11 +376,14 @@ t('別環境の台帳を見ると未登録扱いになる',
   t('端末向けの件名になる', /共有端末「共有PC1」の登録のご案内/.test(sentMail[0].sub), sentMail[0].sub);
   t('その端末の前で操作するよう書いてある', /この端末の前で/.test(sentMail[0].body));
 
-  // コードを受け取り、端末として利用証を得る
+  // 招待に6桁が入っているので、端末で申し込んでも送り直さない
   sentMail=[];
   r=body(T.authRequest_('pc1@midori-m.com',PFX));
-  t('端末にコードを送れる', r.ok===true && sentMail.length===1, r);
-  t('端末向けのコード件名', /共有端末「共有PC1」の確認コード/.test(sentMail[0].sub), sentMail[0].sub);
+  t('招待の6桁が生きていれば送り直さない', r.ok===true && r.existing===true && sentMail.length===0, r);
+  // 送り直しを頼めば、端末向けの件名で新しい6桁が届く
+  sentMail=[];
+  T.authRequest_('pc1@midori-m.com',PFX,'1');
+  t('送り直すと端末向けの件名で届く', /共有端末「共有PC1」の確認コード/.test((sentMail[0]||{}).sub||''), (sentMail[0]||{}).sub);
   const code=lastCode();
   const v=body(T.authVerify_('pc1@midori-m.com',code,PFX,'ShopPC'));
   t('端末の利用証が出る', v.ok===true && v.device===true && v.label==='共有PC1', v);
@@ -395,6 +399,32 @@ t('別環境の台帳を見ると未登録扱いになる',
   t('メール未設定の端末には送れない',
     body(T.authInvite_('pc2@midori-m.com',PFX)).err==='not_registered');
   t('名簿にないアドレスは通らない', T.authResolve_(PFX,'stranger@example.com')===null);
+  delete sheetStore[PFX+'auth-devnames'];
+}
+
+// 17) メールは1通。招待に6桁を入れて、受け取った端末でそのまま入れられる。
+{
+  sheetStore[PFX+'auth-devnames']=JSON.stringify([{name:'共有PC1',store:'honten',mail:'pc1@midori-m.com'}]);
+  delete cacheStore['authinv:pc1@midori-m.com'];
+  delete cacheStore['authcnt:pc1@midori-m.com'];
+  sentMail=[];
+  let r=body(T.authInvite_('pc1@midori-m.com',PFX));
+  t('招待は1通で送られる', r.ok===true && sentMail.length===1, r);
+  const inv=sentMail[0].body;
+  const c=(inv.match(/([0-9]{6})/)||[])[1];
+  t('招待に6桁が入っている', !!c, inv.slice(0,140));
+  t('24時間有効と書いてある', /24時間有効/.test(inv));
+  t('招待に手順も入っている', /スタッフを追加/.test(inv));
+  sentMail=[];
+  r=body(T.authRequest_('pc1@midori-m.com',PFX));
+  t('端末で申し込んでも送り直さない', r.ok===true && r.existing===true && sentMail.length===0, r);
+  const v=body(T.authVerify_('pc1@midori-m.com',c,PFX,'ShopPC'));
+  t('招待に書いた6桁でそのまま登録できる', v.ok===true && v.device===true, v);
+  sentMail=[];
+  delete cacheStore['authcnt:pc1@midori-m.com'];
+  T.authRequest_('pc1@midori-m.com',PFX,'1');
+  const c2=((sentMail[0]||{}).body||'').match(/([0-9]{6})/);
+  t('紛失したら送り直せる', !!c2 && c2[1]!==c, {前:c, 後:c2&&c2[1]});
   delete sheetStore[PFX+'auth-devnames'];
 }
 

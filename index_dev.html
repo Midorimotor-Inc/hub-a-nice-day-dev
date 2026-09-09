@@ -3072,18 +3072,21 @@ const AuthAddScreen=({onDone,onCancel})=>{
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState('');
   const [who,setWho]=useState(null);
-  const [pend,setPend]=useState(null);   // 本人確認は済んだが、端末の種類がまだの人
+  const [pend,setPend]=useState(null);
+  const [fromInvite,setFromInvite]=useState(false);   // 招待メールの6桁を使う   // 本人確認は済んだが、端末の種類がまだの人
   const [label,setLabel]=useState(hubLabel());   // この端末の名前（共有のときだけ聞く）
   const [devNames,setDevNames]=useState(null);   // 管理者が決めた端末名の候補
   const [typing,setTyping]=useState(false);      // 候補を使わず自分で入力する
   const [plan,setPlan]=useState([]);             // 管理者が決めた「使う端末」
   const firstOnDevice = hubLive(hubLoadMine()).length===0;
 
-  const sendCode=async(mail)=>{
+  const sendCode=async(mail,resend)=>{
     const target=String(mail||email).trim();
     setErr('');setBusy(true);
-    const r=await hubAuthCall('authRequest',{email:target});
+    const r=await hubAuthCall('authRequest',Object.assign({email:target},resend?{resend:'1'}:{}));
     setBusy(false);
+    // すでに招待メールに6桁が書いてある場合は、送り直さずそれを使ってもらう
+    if(r&&r.ok) setFromInvite(!!r.existing);
     if(!r||!r.ok){
       setStep('email');
       setErr(r&&r.err==='not_registered'
@@ -3286,7 +3289,11 @@ const AuthAddScreen=({onDone,onCancel})=>{
         {step==='code'&&(
           <div>
             <div style={{fontWeight:800,fontSize:15,color:'#111827',marginBottom:3}}>6桁のコードを入れてください</div>
-            <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>{email.trim()} 宛に送りました（24時間以内に入力してください）</div>
+            <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>
+              {fromInvite
+                ? <><b>届いている招待メールに書かれた6桁</b>を入れてください。</>
+                : <>{email.trim()} 宛に送りました（24時間以内に入力してください）</>}
+            </div>
             <input type="text" value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,'').slice(0,6))}
               style={{...IN,fontSize:26,letterSpacing:'0.4em',textAlign:'center',fontWeight:800}}
               placeholder="------" inputMode="numeric" autoComplete="one-time-code" autoFocus
@@ -3296,6 +3303,10 @@ const AuthAddScreen=({onDone,onCancel})=>{
               {busy?'確認中…':'確認する'}
             </button>
             <button style={SUB} onClick={()=>{setStep('email');setCode('');setErr('');}}>← アドレスを入れ直す</button>
+            <button style={{...SUB,marginTop:6}} disabled={busy}
+              onClick={()=>{setCode('');sendCode(email,true);}}>
+              メールが見つからない → コードを送り直す
+            </button>
           </div>
         )}
 

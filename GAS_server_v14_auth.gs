@@ -229,7 +229,7 @@ function doGet(e) {
   }
   // v14: 認証そのもの（コード送信・照合）は利用証を要求しない
   if (e.parameter.action === 'authRequest') {
-    return authRequest_(e.parameter.email, authPrefixOf_(e.parameter));
+    return authRequest_(e.parameter.email, authPrefixOf_(e.parameter), e.parameter.resend);
   }
   if (e.parameter.action === 'authVerify') {
     return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua);
@@ -1392,7 +1392,27 @@ function authAdminSet_(rawApiKey, prefix, op, email, uid) {
 // ── ① コードの送信要求 ───────────────────────────────────────────────
 //   GET ?action=authRequest&email=...&prefix=hub-v8-dev-&apiKey=...
 //   登録済みのアドレスにだけ6桁を送る。誰の名前かはここでは返さない。
-function authRequest_(email, prefix) {
+// いま生きているコードがあるか（招待に書いた6桁を無駄にしないため）
+function authCodeAlive_(prefix, email) {
+  try {
+    var c = authLoadCodes_(prefix)[email];
+    return !!(c && c.x && Date.now() < c.x);
+  } catch (e) { return false; }
+}
+
+// 新しい6桁を作って保管する
+function authIssueCode_(prefix, email) {
+  var code = String(Math.floor(100000 + Math.random() * 900000));
+  var codes = authLoadCodes_(prefix);
+  codes[email] = { h: authCodeHash_(email, code), t: 0, x: Date.now() + AUTH_CODE_TTL_SEC * 1000 };
+  authSaveCodes_(prefix, codes);
+  return code;
+}
+
+//   GET ?action=authRequest&email=...&resend=1&prefix=...
+//   resend が無いときは、生きているコードがあれば送り直さない
+//   （招待メールに書いた6桁をそのまま使ってもらう）。
+function authRequest_(email, prefix, resend) {
   try {
     email = String(email || '').trim().toLowerCase();
     if (email.indexOf('@') <= 0) return makeResponse(JSON.stringify({ ok: false, err: 'bad_email' }));
@@ -1404,6 +1424,12 @@ function authRequest_(email, prefix) {
     var staff = authResolve_(prefix, email);
     if (!staff) return makeResponse(JSON.stringify({ ok: false, err: 'not_registered' }));
 
+    // 招待メールに書いた6桁がまだ生きているなら、作り直さない。
+    // 作り直すと、その6桁が使えなくなってしまう。
+    if (!resend && authCodeAlive_(prefix, email)) {
+      return makeResponse(JSON.stringify({ ok: true, existing: true }));
+    }
+
     var cache = CacheService.getScriptCache();
     // 送りすぎ防止（メール枠は1日100通）
     var cntKey = 'authcnt:' + email;
@@ -1413,10 +1439,7 @@ function authRequest_(email, prefix) {
     }
     cache.put(cntKey, String(cnt + 1), 3600);
 
-    var code = String(Math.floor(100000 + Math.random() * 900000));
-    var codes = authLoadCodes_(prefix);
-    codes[email] = { h: authCodeHash_(email, code), t: 0, x: Date.now() + AUTH_CODE_TTL_SEC * 1000 };
-    authSaveCodes_(prefix, codes);
+    var code = authIssueCode_(prefix, email);
 
     var env = (String(prefix).indexOf('dev') >= 0) ? '【DEV】' : '';
     MailApp.sendEmail(
@@ -1463,6 +1486,9 @@ function authInvite_(email, prefix) {
 
     var env = (String(prefix).indexOf('dev') >= 0) ? '【DEV】' : '';
     var url = AUTH_APP_URL[String(prefix)] || AUTH_APP_URL['hub-v8-'];
+    // メールは1通で済ませる。招待に6桁を入れておき、受け取った端末で
+    // そのまま入力できるようにする（2通に分けると必ず取り違える）。
+    var code = authIssueCode_(prefix, email);
 
     // 共有端末あての招待。人ではないので文面を分ける。
     if (devv) {
@@ -1471,12 +1497,14 @@ function authInvite_(email, prefix) {
         env + '【Hub a Nice Day】共有端末「' + devv.name + '」の登録のご案内',
         '共有端末「' + devv.name + '」の登録手順です。\n\n' +
         'この端末の前で、次のとおり操作してください。\n\n' +
+        '▼ 確認コード（24時間有効）\n' +
+        '    ' + code + '\n\n' +
         '▼ 手順\n' +
         '1. その端末で Hub を開く\n' +
         '   ' + url + '\n' +
         '2.「＋ スタッフを追加」を押す\n' +
         '3. このアドレス（' + email + '）を入れる\n' +
-        '4. 届いた6桁のコードを入れる\n\n' +
+        '4. 上の6桁を入れる\n\n' +
         '登録が済むと、その端末では担当者を選ぶだけで使えるようになります。\n' +
         '※ 登録は端末ごとに1回だけです。\n' +
         '※ この登録はその端末を使う全員で共有します。個人のスマホには使わないでください。\n\n' +
@@ -1492,12 +1520,14 @@ function authInvite_(email, prefix) {
       staff.name + ' さん\n\n' +
       'Hub a Nice Day のログイン用アドレスとして、\n' +
       'このアドレス（' + email + '）が登録されました。\n\n' +
+      '▼ 確認コード（24時間有効）\n' +
+      '    ' + code + '\n\n' +
       '▼ 使いはじめる手順\n' +
       '1. 使いたい端末で Hub を開く\n' +
       '   ' + url + '\n' +
       '2.「＋ スタッフを追加」を押す\n' +
-      '3. このアドレスを入れると、6桁のコードが届きます\n' +
-      '4. コードを入れれば完了です\n\n' +
+      '3. このアドレスを入れる\n' +
+      '4. 上の6桁を入れれば完了です\n\n' +
       '※ 自分のスマホと店の共有PC、両方で登録できます。\n' +
       '   端末ごとに1回ずつお願いします。\n' +
       '※ 使っているうちは登録が切れることはありません。\n' +

@@ -33,7 +33,7 @@ sub('doGet の入口',
   }
   // v14: 認証そのもの（コード送信・照合）は利用証を要求しない
   if (e.parameter.action === 'authRequest') {
-    return authRequest_(e.parameter.email, authPrefixOf_(e.parameter));
+    return authRequest_(e.parameter.email, authPrefixOf_(e.parameter), e.parameter.resend);
   }
   if (e.parameter.action === 'authVerify') {
     return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua);
