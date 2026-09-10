@@ -9897,7 +9897,7 @@ function AppInner() {
   //   共有PCでは必ず名前を選ばせる（前の人の名義で予約が入るのを防ぐため）。
   //   ★このフックはログイン判定より前に置くこと（下の注意書きと同じ理由）。
   useEffect(()=>{
-    if(currentUser||!AUTH_REQUIRED||authAutoOff)return;
+    if(currentUser||authAutoOff)return;   // 移行期間でも自動ログインする
     if(hubKind()!=='own'||authMine.length!==1)return;
     const m=authMine[0];
     if(m.isDevice)return;          // 共有端末は必ず担当者を選ばせる

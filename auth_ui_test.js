@@ -170,6 +170,25 @@ const dump = async (page, root) => page.evaluate(r => {
     t('移行期間：従来どおり全員が並ぶ', await seeText(page, '岡上秀一'));
     t('移行期間：登録の入口がある', await seeText(page, 'スタッフを追加'));
     t('移行期間：JSエラーなし', errs.length === 0, errs.slice(0, 2));
+
+    // ★移行期間でも、自分専用として登録した人は次から素通しで入れる。
+    //   「登録したのに何も変わらない」と、登録した意味が伝わらない。
+    await clickText(page, 'スタッフを追加');
+    await seeText(page, 'この端末にスタッフを追加');
+    await page.fill('input[type=email]', 'daisuke@example.com');
+    await clickText(page, '確認コードを送る');
+    await seeText(page, '6桁のコードを入れてください');
+    await page.fill('input[inputmode=numeric]', CODE);
+    await clickText(page, '確認する');
+    await seeText(page, 'この端末はどちらですか');
+    await clickText(page, '自分専用');
+    await seeText(page, 'この端末に登録しました');
+    await clickText(page, 'はじめる');
+    t('移行期間でも自分専用なら自動ログインする',
+      !(await seeText(page, '担当者を選択してください', 2500)), await dump(page));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    t('移行期間でも開き直しで素通しで入れる',
+      !(await seeText(page, '担当者を選択してください', 4000)));
   });
 
   // ── ② 必須：登録が無ければ、まず登録画面 ───────────────────────

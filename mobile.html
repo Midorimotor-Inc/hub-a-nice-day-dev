@@ -1982,7 +1982,7 @@ const App=()=>{
   // 自分専用の端末（＝自分のスマホ）は、番号すら打たずに開いた瞬間その人として使える。
   // 共有のタブレットでは必ず名前を選ばせる（前の人の名義で予約が入るのを防ぐため）。
   useEffect(()=>{
-    if(user||!AUTH_REQUIRED||authAutoOff)return;
+    if(user||authAutoOff)return;   // 移行期間でも自動ログインする
     if(hubKind()!=='own'||authMine.length!==1)return;
     const m=authMine[0];
     if(m.isDevice)return;          // 共有端末は必ず担当者を選ばせる
