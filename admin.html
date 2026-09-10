@@ -476,7 +476,13 @@ function viewDevices(){
           : d.k === 'shared' ? '<span class="state idle">共有</span>'
           : '<span class="state none">不明</span>') + '</td>'
       + '<td class="mono" style="font-size:12px;color:var(--ink-2)">' + (d.at ? ymd(d.at) : '—') + '</td>'
-      + '<td class="mono" style="font-size:12px;color:var(--ink-2)">' + (d.last ? ymd(d.last) : '—') + '</td>'
+      + '<td style="font-size:12px;color:var(--ink-2)">' + (function(){
+          // 使うたびに失効予定が90日先へ戻る。残りが75日を超えていれば、
+          // この15日以内に使われたと言い切れる。
+          if (!dead && left > 75) return '<span class="state ok">15日以内に使用</span>';
+          if (d.last) return '<span class="mono">' + ymd(d.last) + '</span>';
+          return '<span style="color:var(--ink-3)">記録なし</span>';
+        })() + '</td>'
       + '<td>' + (dead ? '<span class="state idle">失効済み</span>'
                        : '<span class="state ok">あと <span class="devs">' + left + '</span> 日</span>') + '</td>'
       + '<td class="act"><button class="btn stop sm" data-revoke="' + esc(j) + '">取り消し</button></td>'
@@ -488,11 +494,15 @@ function viewDevices(){
     + '<p>紛失や退職のときは「取り消し」を押してください。押した瞬間からその端末は使えなくなります。</p></div>'
     + '<div class="right"><button class="btn ghost sm" id="reload">再読込</button></div></div>'
     + '<div class="tablewrap"><table>'
-    + '<thead><tr><th class="stripe"></th><th>氏名</th><th>端末</th><th>種類</th><th>登録日</th><th>最後に使った日</th><th>失効まで</th><th style="text-align:right">操作</th></tr></thead>'
+    + '<thead><tr><th class="stripe"></th><th>氏名</th><th>端末</th><th>種類</th><th>登録日</th><th>最終利用</th><th>失効まで</th><th style="text-align:right">操作</th></tr></thead>'
     + '<tbody>' + rows + '</tbody></table></div>'
     + '<div class="foot"><b>店のPCが「自分専用」になっていたら直してください。</b>'
     + 'そのままだと、次に座った人が前の人の名義で予約を入れてしまいます。'
     + '直し方は、その端末で2人目を登録するだけです（自動で「共有」に変わります）。'
+    + '<br><b>「最終利用」について。</b>日付はサーバーへの書き込みを減らすため'
+    + '<b>15日ごとにしか記録しません</b>。毎日使っていても、その間は日付が動きません。'
+    + 'そのため「15日以内に使用」と出ていれば、いま現役で使われている端末です。'
+    + '登録したばかりの端末も同じ表示になります。'
     + '<br>期限は<b>最後に使った日から90日</b>です。使うたびに先へ延びるので、毎日使う端末がここで切れることはありません。'
     + '3か月まったく開かれなかった端末（買い替えて捨てたPC、機種変前のスマホ）だけが自動で失効します。</div>'
     + '</div>';

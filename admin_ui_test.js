@@ -29,6 +29,9 @@ function reset() {
   devices = {
     dA: { n:'見取大介', m:1, s:'honten', e:'daisuke@midori-m.com', k:'shared', l:'共有PC1',
           at:Date.now()-40*86400000, last:Date.now()-86400000, exp:Date.now()+89*86400000, ua:'Windows Chrome' },
+    // 登録したばかりで、まだ「最後に使った日」が記録されていない端末
+    dB: { n:'舟田祥子', m:6, s:'honten', e:'funada@midori-m.com', k:'own',
+          at:Date.now()-2*86400000, exp:Date.now()+88*86400000, ua:'iPhone Safari' },
   };
   adminProp = 'egawa@midori-m.com=h7';
   devnames = [];
@@ -239,7 +242,15 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
 
     // ⑤ 端末タブ
     await click(page, '登録端末');
-    t('端末一覧が出る', await see(page, '最後に使った日'));
+    t('端末一覧が出る', await see(page, '最終利用'));
+    // 記録が無くても、失効予定から「使われている」と分かるように出す
+    t('使いたての端末を「使われていない」と見せない',
+      await page.evaluate(() => {
+        const rows=[...document.querySelectorAll('tbody tr')];
+        const r=rows.find(x=>x.innerText.includes('舟田祥子'));
+        return !!r && r.innerText.includes('15日以内に使用');
+      }), await dump(page));
+    t('15日ごとにしか記録しないと書いてある', await see(page, '15日ごとにしか記録しません'));
     t('端末の持ち主が出る', await see(page, '見取大介'));
     t('端末の名前が出る', await see(page, '共有PC1'));
     t('種類が出る', await page.evaluate(() =>
