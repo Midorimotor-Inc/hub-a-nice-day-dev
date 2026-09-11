@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.22';
+const APP_VERSION = '2.23';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -8800,7 +8800,17 @@ function AppInner() {
     setModalData(data);
     // 既存データにレンタカー情報があれば復元（編集時の再表示用）
     const savedRentalId=data.rentalCarId??null;
-    const savedRentalRec=savedRentalId?{id:'restored',carId:savedRentalId}:null;
+    // ★本物のレンタカー予約(rres)を bookingKey（無ければ氏名）で探して持つ。
+    //   以前は {id:'restored'} という中身の無い仮の記録を持たせていたため、この予約を開いて
+    //   保存し直すと、保存処理が「同じ予約に紐づく古いレンタカーを消して置き直す」際に
+    //   本物（貸出期間つき）を消して仮の記録に置き換えていた。代車管理からは期間の無い記録は
+    //   見えないので「レンタカーが消えた」ように見える（2026-09-12、長崎様のレンタカーD）。
+    //   同じ理由で、モーダルの「削除」も仮の id では本物を消せていなかった。
+    //   本物が見つからない時だけ仮の記録にし、保存時は rres を触らない（下の保存処理を参照）。
+    const _rBk0=type==='insp'?`insp-${dk}-${idx||0}`:`sched-${dk}-${slot||''}`;
+    const _rRecs=savedRentalId?Object.values(_resObj(rresRef.current)[savedRentalId]||{}).filter(r=>r&&r.id!=='restored'):[];
+    const _rReal=_rRecs.find(r=>r.bookingKey===_rBk0)||_rRecs.find(r=>r.user&&data.name&&r.user===data.name&&!r.bookingKey);
+    const savedRentalRec=savedRentalId?(_rReal?{..._rReal}:{id:'restored',carId:savedRentalId}):null;
     setPendingLoanerId(null);
     setPendingRentalId(savedRentalId);
     setPendingRentalRec(savedRentalRec);
@@ -9162,7 +9172,9 @@ function AppInner() {
         :`sched-${_dcTargetDk}-${modalSlot||''}`;
       const _rRec={...pendingRentalRec,bookingKey:_rBk,carId:pendingRentalId};
       const _rCar=pendingRentalId;
-      setTimeout(()=>persistRres(
+      // ★中身の無い仮の記録（id:'restored'＝本物が見つからなかった時）は書かない。
+      //   書くと本物を消して期間の無い記録に置き換えてしまう。ラベルだけ予約カードに残す。
+      if(_rRec.id!=='restored')setTimeout(()=>persistRres(
         base=>putResRec(removeResByBk(base,[_rBk]),_rCar,String(_rRec.id),_rRec),
         back=>resHasRec(back,_rCar,_rRec.id),
         {verb:'登録',name:_rRec.user}
