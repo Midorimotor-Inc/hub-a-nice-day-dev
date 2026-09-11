@@ -694,7 +694,8 @@ function bind(){
       var list = hubLoadMine().filter(function(x){ return x.name !== r.name; });
       list.push({uid:r.uid||'', name:r.name, myNumber:r.myNumber, store:r.store||'honten', token:r.token, exp:r.exp});
       hubSaveMine(list);
-      if (!hubKind()) hubSetKind('shared');   // 管理者画面は共有PCで開くことが多い。安全側に倒す。
+      // 端末の種類（自分専用／共有）はここでは決めない。決めるのはスケジュール画面の登録時。
+      // 以前ここで「共有」を入れていたため、その端末が自動ログインしなくなる不具合があった。
       hubApplyToken(r.token);
       S.me = {name:r.name, uid:r.uid, mail:S.mail};
       S.view = 'console'; S.tab = 'staff'; render();

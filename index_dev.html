@@ -3344,7 +3344,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
   );
 };
 
-const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop,onAddAuth,onAutoLogin,deviceName,deviceStore,authOn})=>{
+const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop,onAddAuth,onAutoLogin,deviceName,deviceStore,authOn,onMakeOwn})=>{
   const [sel,setSel]=useState(null);
   // タイムアウト後（initialDesktopあり）はすぐスタッフ選択画面を表示
   const [deskSel,setDeskSel]=useState(()=>{
@@ -3505,6 +3505,21 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
           style={{width:'100%',padding:'14px 0',background:sel?`linear-gradient(135deg,${sel.store.color},${sel.store.accent})`:'#e5e7eb',color:sel?'white':'#9ca3af',border:'none',borderRadius:12,fontWeight:800,fontSize:16,cursor:sel?'pointer':'default',transition:'all 0.2s',marginBottom:10}}>
           {sel?`【${sel.store.name}】${sel.staff.name} でログイン →`:'担当者を選択してください'}
         </button>
+        {/* 登録者が1人だけの端末で、種類が「自分専用」になっていないとき。
+            自分しか使わない端末なら、ここで切り替えれば次から開くだけで入れる。 */}
+        {onMakeOwn&&(
+          <div style={{marginBottom:10,padding:'10px 13px',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:10}}>
+            <div style={{fontSize:12,color:'#1e40af',lineHeight:1.7,marginBottom:7}}>
+              この端末は<b>共有</b>として登録されています。
+              ご自分しか使わない端末なら、<b>自分専用</b>に切り替えると次から開くだけで入れます。
+            </div>
+            <button onClick={onMakeOwn}
+              style={{width:'100%',padding:'9px 0',background:'white',border:'2px solid #93c5fd',borderRadius:9,
+                fontWeight:800,fontSize:13,color:'#1d4ed8',cursor:'pointer'}}>
+              この端末を自分専用にする
+            </button>
+          </div>
+        )}
         {onAutoLogin&&(
           <div style={{marginBottom:10,padding:'10px 13px',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:10}}>
             <div style={{fontSize:12,color:'#1e40af',lineHeight:1.7,marginBottom:7}}>
@@ -10017,6 +10032,8 @@ function AppInner() {
         onLogin={u=>{hubUse(u.name);hubRenew(u.name);setCurrentUserPersist(u);setViewStore(u.store?.id||'honten');setView('schedule');setTimeout(()=>window.scrollTo({top:0,behavior:'instant'}),50);}}
         onAddAuth={_needEnrol?()=>setShowAuthAdd(true):null}
         deviceName={_devName} deviceStore={_devStore} authOn={AUTH_REQUIRED}
+        onMakeOwn={(authMine.length===1&&!authMine[0].isDevice&&hubKind()!=='own')
+          ?()=>{hubSetKind('own');setAuthAutoOff(false);refreshAuthMine();}:null}
         onAutoLogin={authAutoOff&&hubKind()==='own'&&authMine.length===1?()=>setAuthAutoOff(false):null}
         staffListH={_loginH} staffListS={_loginS}
         desktopListH={desktopListH} desktopListS={desktopListS}

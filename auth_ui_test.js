@@ -479,6 +479,27 @@ const dump = async (page, root) => page.evaluate(r => {
     t('共有端末：JSエラーなし', errs.length === 0, errs.slice(0, 2));
   });
 
+  // ── ③"" 「共有」になってしまった個人端末を、自分専用に戻せる ─────────
+  //   管理者コンソールが種類を勝手に「共有」にしていたため、自動ログインしなくなる
+  //   端末があった。直す手段が無かったので、ログイン画面から切り替えられるようにした。
+  await run(true, async (page, errs) => {
+    await regAs(page, 'daisuke@example.com');
+    await page.waitForTimeout(800);
+    // 種類を「共有」に書き換えて開き直す（コンソールが以前やっていたことを再現）
+    // 画面を閉じて開き直した状況にする（同じタブの再読み込みだとログイン状態が残る）
+    await page.evaluate(() => { localStorage.setItem('hub-v8-dev-auth-kind', 'shared'); sessionStorage.clear(); });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    t('共有扱いだとログイン画面が出る', await seeText(page, '担当者を選択してください'));
+    t('自分専用に切り替える案内が出る', await seeText(page, 'この端末を自分専用にする'));
+    await clickText(page, 'この端末を自分専用にする');
+    await page.waitForTimeout(1200);
+    t('切り替えるとそのまま入れる', !(await seeText(page, '担当者を選択してください', 2000)), await dump(page));
+    t('種類が自分専用になる', (await page.evaluate(() => localStorage.getItem('hub-v8-dev-auth-kind')))==='own');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    t('開き直しても素通しで入れる', !(await seeText(page, '担当者を選択してください', 4000)));
+    t('切り替えでJSエラーなし', errs.length === 0, errs.slice(0, 2));
+  });
+
   // ── ④ 管理者側：メール登録・招待・端末の取り消し ──────────────────
   await run(false, async (page, errs) => {
     await seeText(page, '担当者を選択してください');
