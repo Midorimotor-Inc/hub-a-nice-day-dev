@@ -295,8 +295,20 @@ const dump = async (page, root) => page.evaluate(r => {
     t('自分専用として保存される', kind === 'own', kind);
     t('自分専用はログイン画面を出さない', !(await seeText(page, '担当者を選択してください', 2500)));
     // リロードしてもログイン画面は出ない
+    // 画面を閉じて開き直す。ログイン画面が一瞬でも見えてはいけない。
+    await page.evaluate(() => sessionStorage.clear());
     await page.reload({ waitUntil: 'domcontentloaded' });
-    t('開き直しても素通しで入れる', !(await seeText(page, '担当者を選択してください', 3500)));
+    // 描画のたびにログイン画面の文字が出ていないかを見張る（一瞬でも出たら記録される）
+    const flashed = await page.evaluate(() => new Promise(res => {
+      let seen = false; const t0 = Date.now();
+      const tick = () => {
+        if (document.body.innerText.includes('担当者を選択してください')) seen = true;
+        if (Date.now() - t0 > 6000) return res(seen);
+        requestAnimationFrame(tick);
+      }; tick();
+    }));
+    t('開き直してもログイン画面が一瞬も見えない', flashed === false, {一瞬見えた:flashed});
+    t('開き直しても素通しで入れる', !(await seeText(page, '担当者を選択してください', 1500)));
     t('自分専用でJSエラーなし', errs.length === 0, errs.slice(0, 2));
   });
 
@@ -322,7 +334,7 @@ const dump = async (page, root) => page.evaluate(r => {
     // ログイン画面を出す（ここが出ないと、誤って自分専用にした端末を直せない）。
     await page.evaluate(() => { const b=document.querySelector('[title="ログアウト"]'); if(b) b.click(); });
     t('ログアウトするとログイン画面に戻れる', await seeText(page, '担当者を選択してください'));
-    t('自分専用に戻る案内が出る', await seeText(page, 'そのまま使う'));
+    t('「そのまま使う」は出さない（担当者を選ぶのと同じ働きなので廃止）', !(await seeText(page, 'そのまま使う', 1000)));
     await clickText(page, 'スタッフを追加');
     await seeText(page, 'この端末にスタッフを追加');
     await page.fill('input[type=email]', 'kyoshi@example.com');

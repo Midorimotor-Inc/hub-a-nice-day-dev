@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.20';
+const APP_VERSION = '2.21';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -2389,9 +2389,12 @@ const GCSS=`
   .slide-in{animation:slideIn 0.2s ease both;}
   .fade-in{animation:fadeIn 0.18s ease both;}
   *{box-sizing:border-box;} input,select,textarea,button{font-family:inherit;}
-  ::-webkit-scrollbar{width:6px;height:6px}
+  /* スクロールバーは太めに。細いとマウスで掴みにくい（ユーザー要望・2026-09-11） */
+  ::-webkit-scrollbar{width:14px;height:12px}
   ::-webkit-scrollbar-track{background:#f1f5f9}
-  ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+  ::-webkit-scrollbar-thumb{background:#a8b3c2;border-radius:8px;border:3px solid #f1f5f9}
+  ::-webkit-scrollbar-thumb:hover{background:#7b8798}
+  *{scrollbar-width:auto}
   /* 代車管理など横スクロールを掴みやすくする太めバー（クリックしやすいよう約2倍） */
   .fat-hscroll{scrollbar-width:auto;}
   .fat-hscroll::-webkit-scrollbar{height:14px;width:14px}
@@ -3344,7 +3347,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
   );
 };
 
-const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop,onAddAuth,onAutoLogin,deviceName,deviceStore,authOn,onMakeOwn})=>{
+const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop,onAddAuth,deviceName,deviceStore,authOn,onMakeOwn})=>{
   const [sel,setSel]=useState(null);
   // タイムアウト後（initialDesktopあり）はすぐスタッフ選択画面を表示
   const [deskSel,setDeskSel]=useState(()=>{
@@ -3517,19 +3520,6 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
               style={{width:'100%',padding:'9px 0',background:'white',border:'2px solid #93c5fd',borderRadius:9,
                 fontWeight:800,fontSize:13,color:'#1d4ed8',cursor:'pointer'}}>
               この端末を自分専用にする
-            </button>
-          </div>
-        )}
-        {onAutoLogin&&(
-          <div style={{marginBottom:10,padding:'10px 13px',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:10}}>
-            <div style={{fontSize:12,color:'#1e40af',lineHeight:1.7,marginBottom:7}}>
-              この端末は<b>自分専用</b>です。ふだんは開くだけで使えます。<br/>
-              別の方も使う端末なら、下から追加してください（2人目を足すと自動で「共有」に変わります）。
-            </div>
-            <button onClick={onAutoLogin}
-              style={{width:'100%',padding:'9px 0',background:'white',border:'2px solid #93c5fd',borderRadius:9,
-                fontWeight:800,fontSize:13,color:'#1d4ed8',cursor:'pointer'}}>
-              ← そのまま使う（自分専用に戻る）
             </button>
           </div>
         )}
@@ -7735,6 +7725,16 @@ function AppInner() {
   // 自分でログアウトした直後は、自動ログインを止めてログイン画面を出す。
   // 止めないと押した瞬間に入り直してしまい、交代も「＋スタッフを追加」もできない。
   const [authAutoOff,setAuthAutoOff]=useState(false);
+  // 自動ログインの判定はスタッフ表が届いてから決まる。それまでログイン画面を描くと
+  // 一瞬だけ見えてしまうので、判定中は何も描かない。長く待たされないよう5秒で諦める。
+  const [autoGaveUp,setAutoGaveUp]=useState(false);
+  const _autoPending=!currentUser&&!authAutoOff&&!autoGaveUp
+    &&hubKind()==='own'&&authMine.length===1&&!authMine[0].isDevice;
+  useEffect(()=>{
+    if(!_autoPending)return;
+    const t=setTimeout(()=>setAutoGaveUp(true),5000);
+    return()=>clearTimeout(t);
+  },[_autoPending]);
   const refreshAuthMine=useCallback(()=>{setAuthMine(hubLive(hubLoadMine()));},[]);
 
   // ── 共有PC：10分無操作でスタッフ選択画面に戻る ──
@@ -9998,6 +9998,13 @@ function AppInner() {
     return()=>{clearInterval(initIv);clearInterval(iv);document.removeEventListener('visibilitychange',onVis);};
   },[currentUser,view,selDate,schedCollapsed]);
 
+  // 自動ログインの判定中は、ログイン画面を一瞬でも見せない（開いた瞬間に一瞬出るのを防ぐ）
+  if(!currentUser&&_autoPending)return(
+    <>
+      <style>{GCSS}</style>
+      <div style={{position:'fixed',inset:0,background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)'}}/>
+    </>
+  );
   // 本人認証：この端末に誰も登録されていなければ、まず登録してもらう
   if(!currentUser&&(showAuthAdd||(AUTH_REQUIRED&&authMine.length===0)))return(
     <>
@@ -10034,7 +10041,7 @@ function AppInner() {
         deviceName={_devName} deviceStore={_devStore} authOn={AUTH_REQUIRED}
         onMakeOwn={(authMine.length===1&&!authMine[0].isDevice&&hubKind()!=='own')
           ?()=>{hubSetKind('own');setAuthAutoOff(false);refreshAuthMine();}:null}
-        onAutoLogin={authAutoOff&&hubKind()==='own'&&authMine.length===1?()=>setAuthAutoOff(false):null}
+
         staffListH={_loginH} staffListS={_loginS}
         desktopListH={desktopListH} desktopListS={desktopListS}
         onRegister={()=>setShowStaffRegister(true)}
@@ -10128,9 +10135,7 @@ function AppInner() {
                     <Settings size={14}/>
                   </button>
                   )}
-                  {(closedDays.length>0||closedDates.length>0)&&(
-                    <span style={{background:'#dc2626',color:'white',borderRadius:10,padding:'1px 5px',fontSize:10,fontWeight:700}}>{closedDays.length+closedDates.length}</span>
-                  )}
+                  {/* 休業日の件数バッジは廃止（意味が伝わらないため・2026-09-11）。 */}
                   {/* データ復旧（バックアップから戻す）— 指定された4名のみ表示 */}
                   {canRestore(currentUser)&&(
                     <button onClick={()=>setShowRestore(true)} title="データ復旧（バックアップから戻す）"

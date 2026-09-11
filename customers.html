@@ -65,8 +65,12 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans",sans-serif;background:#f8fafc;color:#1e293b;font-size:13px;}
-::-webkit-scrollbar{width:5px;height:5px;}
-::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px;}
+/* スクロールバーは太めに。細いとマウスで掴みにくい（ユーザー要望・2026-09-11） */
+::-webkit-scrollbar{width:14px;height:12px;}
+::-webkit-scrollbar-track{background:#f1f5f9;}
+::-webkit-scrollbar-thumb{background:#a8b3c2;border-radius:8px;border:3px solid #f1f5f9;}
+::-webkit-scrollbar-thumb:hover{background:#7b8798;}
+*{scrollbar-width:auto;}
 button{cursor:pointer;font-family:inherit;}
 input,select,textarea{font-family:inherit;}
 .row-none    {background:white;}
@@ -164,7 +168,7 @@ const hubRenew = async name => {
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.20'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.21'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
