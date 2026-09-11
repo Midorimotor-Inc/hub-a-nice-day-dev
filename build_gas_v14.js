@@ -53,6 +53,10 @@ sub('doGet の入口',
     return makeResponse('null');
   }
   // v14: 招待メール（管理者が押す）。登録済みアドレスにだけ手順を送る。
+  // v14: 管理者の名前一覧。スケジュール画面の権限判定に使う（メールは返さない）。
+  if (e.parameter.action === 'authAdminNames') {
+    return authAdminNames_(authPrefixOf_(e.parameter));
+  }
   if (e.parameter.action === 'authInvite') {
     return authInvite_(e.parameter.email, authPrefixOf_(e.parameter));
   }
@@ -76,7 +80,18 @@ sub('doPost の入口',
   if (authBaseKey_(body.apiKey) !== HUB_API_KEY) { return makeResponse('unauthorized'); }
   // v14: 利用証の門番。HUB_AUTH_ENFORCE='1' を入れるまでは素通りする（段階移行）
   var _gateP = authGate_(body.apiKey, body.action, authPrefixOf_(body));
-  if (_gateP) return _gateP;`);
+  if (_gateP) return _gateP;
+  // v14: 管理者しか書けないキー（スタッフ表・休業日・端末台帳）は、管理者の利用証を要求する。
+  //      setMany は中の各キーを見る。
+  var _wg = null, _pfx = authPrefixOf_(body);
+  if (body.action === 'setMany' && body.items && body.items.length) {
+    for (var _wi = 0; _wi < body.items.length && !_wg; _wi++) {
+      _wg = authWriteGate_(body.apiKey, body.items[_wi] && body.items[_wi].key, _pfx);
+    }
+  } else if (body.key) {
+    _wg = authWriteGate_(body.apiKey, body.key, _pfx);
+  }
+  if (_wg) return _wg;`);
 
 // ③ caps: フロントが「このGASは認証に対応している」と判別できるようにする
 sub('caps の申告',

@@ -42,7 +42,7 @@ vm.runInContext(src+`
 this.T={authMakeToken_,authReadToken_,authValid_,authGate_,authBaseKey_,authPrefixOf_,
         authRequest_,authInvite_,authVerify_,authRenew_,authLoadDevices_,authSaveDevices_,authFindStaffByEmail_,
         authAdmins_,authAdminSave_,authAdminOf_,authAdminGate_,authResolve_,authFindStaffByUid_,
-        authAdminList_,authAdminSet_,authFindDeviceByEmail_,authSaveCodes_,authLoadCodes_,authCodeHash_};`,ctx);
+        authAdminList_,authAdminSet_,authFindDeviceByEmail_,authAdminNames_,authWriteGate_,authIsAdminOnlyKey_,authSaveCodes_,authLoadCodes_,authCodeHash_};`,ctx);
 const T=ctx.T;
 
 const ok=[],ng=[];
@@ -425,6 +425,46 @@ t('別環境の台帳を見ると未登録扱いになる',
   T.authRequest_('pc1@midori-m.com',PFX,'1');
   const c2=((sentMail[0]||{}).body||'').match(/([0-9]{6})/);
   t('紛失したら送り直せる', !!c2 && c2[1]!==c, {前:c, 後:c2&&c2[1]});
+  delete sheetStore[PFX+'auth-devnames'];
+}
+
+// 18) 権限：管理者しか書けないキーと、管理者の名前一覧
+{
+  const KEY='hub2026co-key|';
+  props['HUB_ADMIN_EMAILS']='egawa@midori-m.com=h7';
+  sheetStore[PFX+'honten-staff-v2']=JSON.stringify([
+    {uid:'h1',name:'見取大介',myNumber:1,store:'honten',loginEmail:'daisuke@example.com'},
+    {uid:'h7',name:'江川京志',myNumber:7,store:'honten',loginEmail:'egawa@midori-m.com'},
+  ]);
+  sheetStore[PFX+'auth-devnames']=JSON.stringify([{name:'共有PC1',store:'honten',mail:'pc1@midori-m.com'}]);
+
+  // 名前一覧は利用証なしで読める。メールは含まない
+  const nm=body(T.authAdminNames_(PFX));
+  t('管理者の名前一覧を返す', nm.ok===true && nm.names.length===1 && nm.names[0]==='江川京志', nm);
+  t('名前一覧にメールは含まない', JSON.stringify(nm).indexOf('@')<0);
+
+  // どのキーが管理者専用か
+  t('スタッフ表は管理者専用', T.authIsAdminOnlyKey_(PFX+'honten-staff-v2'));
+  t('休業日は管理者専用', T.authIsAdminOnlyKey_(PFX+'honten-cdow') && T.authIsAdminOnlyKey_(PFX+'override-open'));
+  t('予約は誰でも書ける', !T.authIsAdminOnlyKey_(PFX+'insp'));
+  t('台数制限は誰でも書ける（決定②）', !T.authIsAdminOnlyKey_(PFX+'inspLimits'));
+  t('各自の休日は誰でも書ける（決定①）', !T.authIsAdminOnlyKey_(PFX+'honten-dayoff'));
+
+  // 利用証を用意する：管理者・一般・共有端末
+  const tok=m=>{ sentMail=[]; delete cacheStore['authcnt:'+m]; T.authRequest_(m,PFX,'1');
+    const c=lastCode(); return KEY+body(T.authVerify_(m,c,PFX,'t')).token; };
+  const adm=tok('egawa@midori-m.com');
+  const gen=tok('daisuke@example.com');
+  const dev=tok('pc1@midori-m.com');
+
+  t('管理者はスタッフ表に書ける', T.authWriteGate_(adm, PFX+'honten-staff-v2', PFX)===null);
+  t('一般スタッフはスタッフ表に書けない', body(T.authWriteGate_(gen, PFX+'honten-staff-v2', PFX))==='unauthorized: admin');
+  t('共有端末の利用証ではスタッフ表に書けない（誰が座っているか分からないため）',
+    body(T.authWriteGate_(dev, PFX+'honten-staff-v2', PFX))==='unauthorized: admin');
+  t('一般スタッフでも予約は書ける', T.authWriteGate_(gen, PFX+'insp', PFX)===null);
+  t('一般スタッフでも台数制限は書ける', T.authWriteGate_(gen, PFX+'inspLimits', PFX)===null);
+  t('一般スタッフは休業日を書けない', body(T.authWriteGate_(gen, PFX+'honten-cdate', PFX))==='unauthorized: admin');
+  t('利用証なし（移行期間）は通す', T.authWriteGate_('hub2026co-key', PFX+'honten-staff-v2', PFX)===null);
   delete sheetStore[PFX+'auth-devnames'];
 }
 

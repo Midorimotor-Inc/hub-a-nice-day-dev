@@ -2021,15 +2021,28 @@ const hubRenew = async name => {
 
 const GAS_READY = GAS_URL !== 'YOUR_GAS_URL_HERE' && GAS_URL !== '';
 
-// 復旧（過去の時点に戻す）を実行できる人。全データ上書きの危険操作のため名指しで限定。
-// uid か 氏名 のどちらか一致で許可（スタッフ再登録でuidが変わっても氏名で拾う）。
-const RESTORE_ALLOWED = [
-  {uid:'h0',  name:'見取勇一'},
-  {uid:'h1',  name:'見取大介'},
-  {uid:'s10', name:'藤原昭人'},
-  {uid:'h7',  name:'江川京志'},
-];
-const canRestore = (u) => !!u && RESTORE_ALLOWED.some(a => (u.uid && a.uid===u.uid) || (u.name && a.name===u.name));
+// ★管理者の判定（v2.20・2026-09-11）
+//   以前はここに4人の名前を直書きしていた。管理者コンソールの名簿と別物になり、
+//   片方を変えても片方が変わらないので、コンソールの名簿（GASの HUB_ADMIN_EMAILS）に一本化した。
+//   起動時に名前一覧を取り、以後は名前で判定する。個人端末では利用証の印でも判定できる。
+//   ★共有端末では誰が座っているか分からないので、誰であっても管理者扱いにしない。
+//     管理者の作業は、自分の端末か管理者コンソールから行う。
+let HUB_ADMIN_NAMES = null;   // null=未取得。取得できるまでは利用証の印だけで判定する
+const hubLoadAdminNames = async () => {
+  try {
+    const r = await hubAuthCall('authAdminNames');
+    if (r && r.ok && Array.isArray(r.names)) HUB_ADMIN_NAMES = r.names;
+  } catch (e) {}
+};
+const canRestore = (u) => {
+  if (!u || !u.name) return false;
+  if (hubIsDevice()) return false;                       // 共有端末では管理者の操作を出さない
+  const cert = hubLive(hubLoadMine()).find(x => x.name === u.name);
+  if (cert && cert.isAdmin) return true;                 // 自分の端末で管理者として認証済み
+  return Array.isArray(HUB_ADMIN_NAMES) && HUB_ADMIN_NAMES.indexOf(u.name) >= 0;
+};
+// 名簿は起動時に1回だけ取る（60秒待たずに描けるよう、結果は後から効く）
+try { hubLoadAdminNames(); } catch (e) {}
 
 // GASからデータを読み込む
 // ★サーバーに繋がっているかの目印。読み取りに失敗した時に画面を空のまま描くと
@@ -3108,7 +3121,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
     if(lb) hubSetLabel(lb);
     const list=hubLoadMine().filter(x=>x.name!==r.name);
     list.push({uid:r.uid||'',name:r.name,myNumber:r.myNumber,store:r.store||'honten',
-               token:r.token,exp:r.exp,isDevice:!!r.device});
+               token:r.token,exp:r.exp,isDevice:!!r.device,isAdmin:!!r.admin});
     hubSaveMine(list);
     // 2人目が入った端末は「共有」に直す（自分専用のままだと他人の名義で予約が入る）
     if(hubLive(hubLoadMine()).filter(x=>!x.isDevice).length>1 && hubKind()==='own') hubSetKind('shared');
@@ -4084,7 +4097,7 @@ const RestrictionModal=memo(({isOpen,onClose,dateLabel,dk,restriction,onSave})=>
 // ============================================
 //  スタッフ休日・有給カレンダーモーダル
 // ============================================
-const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,
+const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
   dynStaffH,dynStaffS,
   dayOffDataH,setDayOffDataH,dayOffDataS,setDayOffDataS,
   paidLeaveDataH,setPaidLeaveDataH,paidLeaveDataS,setPaidLeaveDataS,
@@ -4138,6 +4151,8 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,
 
   const handleDayClick=(dkk,year,month,day)=>{
     if(!selStaff)return;
+    // 一般スタッフは自分の休日しか触れない（画面で絞っているが、念のためここでも）
+    if(!adminMode && selStaff!==(currentUser&&currentUser.name))return;
     if(isStoreClosed(year,month,day))return; // 店休日は操作不可
     if(selType==='dayoff'){
       const cur=dayOffData[dkk]||[];
@@ -4216,13 +4231,16 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,
           </div>
           <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:selStaff?8:0}}>
             <span style={{fontSize:11,fontWeight:700,color:'#374151',flexShrink:0}}>スタッフ：</span>
+            {!adminMode&&<span style={{fontSize:10.5,color:'#9ca3af'}}>（ご自分の休日だけ設定できます）</span>}
             <button onClick={()=>setSelStaff(null)}
               style={{padding:'4px 10px',borderRadius:6,border:`2px solid ${!selStaff?'#6366f1':'#d1d5db'}`,
                 background:!selStaff?'#eef2ff':'white',color:!selStaff?'#c2410c':'#6b7280',
                 fontWeight:!selStaff?700:500,fontSize:11,cursor:'pointer'}}>
               全員表示
             </button>
-            {staffList.map(s=>{
+            {/* 一般スタッフは自分の名前だけ。他人の休日は管理者が設定する（決定①）。
+                「全員表示」は残すので、他人の休みを見ることはできる。 */}
+            {(adminMode?staffList:staffList.filter(s=>s.name===(currentUser&&currentUser.name))).map(s=>{
               const hasDayoff=Object.values(dayOffData).some(arr=>arr.includes(s.name));
               const hasLeave=Object.values(pleaveData).some(arr=>arr.includes(s.name));
               return(
@@ -10077,18 +10095,22 @@ function AppInner() {
                   <span style={{width:22,height:22,borderRadius:'50%',background:userStore.color,color:'white',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:11}}>{currentUser?.myNumber??currentUser?.id}</span>
                   <span style={{fontWeight:700,color:userStore.accent,fontSize:12}}>{currentUser?.name}</span>
                   {currentUser?.badge&&<BadgeIcon badge={currentUser.badge} size={18}/>}
+                  {canRestore(currentUser)&&(
                   <button onClick={()=>document.dispatchEvent(new CustomEvent('openStaffSettings'))} title="スタッフ管理"
                     style={{background:'none',border:'none',cursor:'pointer',color:'#6b7280',display:'flex',alignItems:'center',padding:'1px',borderRadius:3}}
                     onMouseEnter={e=>e.currentTarget.style.color='#c2410c'}
                     onMouseLeave={e=>e.currentTarget.style.color='#6b7280'}>
                     <Users size={14}/>
                   </button>
+                  )}
+                  {canRestore(currentUser)&&(
                   <button onClick={()=>setShowHoliday(true)} title="休業日設定"
                     style={{background:'none',border:'none',cursor:'pointer',color:'#6b7280',display:'flex',alignItems:'center',padding:'1px',borderRadius:3}}
                     onMouseEnter={e=>e.currentTarget.style.color='#c2410c'}
                     onMouseLeave={e=>e.currentTarget.style.color='#6b7280'}>
                     <Settings size={14}/>
                   </button>
+                  )}
                   {(closedDays.length>0||closedDates.length>0)&&(
                     <span style={{background:'#dc2626',color:'white',borderRadius:10,padding:'1px 5px',fontSize:10,fontWeight:700}}>{closedDays.length+closedDates.length}</span>
                   )}
@@ -11278,6 +11300,7 @@ function AppInner() {
         onClose={()=>setShowStaffCal(false)}
         initMonth={curMonth}
         currentUser={currentUser}
+        adminMode={canRestore(currentUser)}
         dynStaffH={dynStaffH} dynStaffS={dynStaffS}
         dayOffDataH={dayOffDataH}   setDayOffDataH={setDayOffDataH}
         dayOffDataS={dayOffDataS}   setDayOffDataS={setDayOffDataS}

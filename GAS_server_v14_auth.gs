@@ -249,6 +249,10 @@ function doGet(e) {
     return makeResponse('null');
   }
   // v14: 招待メール（管理者が押す）。登録済みアドレスにだけ手順を送る。
+  // v14: 管理者の名前一覧。スケジュール画面の権限判定に使う（メールは返さない）。
+  if (e.parameter.action === 'authAdminNames') {
+    return authAdminNames_(authPrefixOf_(e.parameter));
+  }
   if (e.parameter.action === 'authInvite') {
     return authInvite_(e.parameter.email, authPrefixOf_(e.parameter));
   }
@@ -372,6 +376,17 @@ function doPost(e) {
   // v14: 利用証の門番。HUB_AUTH_ENFORCE='1' を入れるまでは素通りする（段階移行）
   var _gateP = authGate_(body.apiKey, body.action, authPrefixOf_(body));
   if (_gateP) return _gateP;
+  // v14: 管理者しか書けないキー（スタッフ表・休業日・端末台帳）は、管理者の利用証を要求する。
+  //      setMany は中の各キーを見る。
+  var _wg = null, _pfx = authPrefixOf_(body);
+  if (body.action === 'setMany' && body.items && body.items.length) {
+    for (var _wi = 0; _wi < body.items.length && !_wg; _wi++) {
+      _wg = authWriteGate_(body.apiKey, body.items[_wi] && body.items[_wi].key, _pfx);
+    }
+  } else if (body.key) {
+    _wg = authWriteGate_(body.apiKey, body.key, _pfx);
+  }
+  if (_wg) return _wg;
 
   // 通知メールはシートを書かないのでロック不要。混雑（ロック詰まり）の時こそ送れる必要がある
   if (body.action === 'notifyFail') return handleNotifyFail(body);
@@ -1291,6 +1306,47 @@ function authAdminGate_(rawApiKey, prefix) {
   if (!d || !d.e) return null;                 // 認証に使ったアドレスが分からない端末
   if (!authAdminOf_(d.e)) return null;         // いま名簿に載っていない
   return payload;
+}
+
+// ── 管理者の名前だけを返す（利用証は要らない）────────────────────────
+//   GET ?action=authAdminNames&prefix=...
+//   スケジュール画面が「この人は管理者か」を判定するために使う。
+//   名前はスタッフ表で公開済みなので、どの名前が管理者かを知られても害は小さい。
+//   メールアドレスは返さない（そちらは authAdminList_ で、管理者の利用証が要る）。
+function authAdminNames_(prefix) {
+  var out = [];
+  authAdmins_().forEach(function (a) {
+    var st = a.uid ? authFindStaffByUid_(prefix, a.uid) : null;
+    if (st && st.name) out.push(st.name);
+  });
+  return makeResponse(JSON.stringify({ ok: true, names: out }));
+}
+
+// ── 管理者しか書けないキー ──────────────────────────────────────────
+//   スタッフ表・休業日・今月の休日数・端末の台帳。
+//   予約や代車、台数制限、各自の休日はここに入れない（一般スタッフも書く）。
+var AUTH_ADMIN_ONLY_KEYS = [
+  /-staff-v2$/,        // スタッフの追加・削除・番号・バッジ
+  /-cdow$/, /-cdate$/, /override-open$/,   // 休業日
+  /mholidays$/,        // 今月の休日数
+  /auth-devnames$/, /auth-devices$/,       // 端末の名簿と台帳
+];
+function authIsAdminOnlyKey_(key) {
+  var k = String(key || '');
+  for (var i = 0; i < AUTH_ADMIN_ONLY_KEYS.length; i++) if (AUTH_ADMIN_ONLY_KEYS[i].test(k)) return true;
+  return false;
+}
+
+// 書き込みの門番。管理者しか書けないキーへの書き込みは、管理者の利用証が無ければ断る。
+//   利用証を持たない要求（移行期間の未登録端末）は、これまでどおり通す。
+//   ＝登録済みの端末からは守られ、本番の移行期間を壊さない。
+//   利用証そのものを必須にするのは authGate_（HUB_AUTH_ENFORCE）の役目。
+function authWriteGate_(rawApiKey, key, prefix) {
+  if (!authIsAdminOnlyKey_(key)) return null;
+  var i = String(rawApiKey || '').indexOf('|');
+  if (i < 0) return null;                      // 利用証なし＝移行期間。通す
+  if (authAdminGate_(rawApiKey, prefix)) return null;
+  return makeResponse('unauthorized: admin');
 }
 
 // ── スタッフ表と管理者名簿の両方から本人を確定する ───────────────────────

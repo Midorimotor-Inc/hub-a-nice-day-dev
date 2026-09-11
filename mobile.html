@@ -461,7 +461,7 @@ const AuthAddScreen=({onDone,onCancel})=>{
     if(lb) hubSetLabel(lb);
     const list=hubLoadMine().filter(x=>x.name!==r.name);
     list.push({uid:r.uid||'',name:r.name,myNumber:r.myNumber,store:r.store||'honten',
-               token:r.token,exp:r.exp,isDevice:!!r.device});
+               token:r.token,exp:r.exp,isDevice:!!r.device,isAdmin:!!r.admin});
     hubSaveMine(list);
     if(hubLive(hubLoadMine()).filter(x=>!x.isDevice).length>1&&hubKind()==='own')hubSetKind('shared');
     // 管理者の端末一覧で読めるように、種類と名前をサーバーへ記録する

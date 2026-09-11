@@ -28,6 +28,7 @@ let staffH = [
 ];
 const baseStaffH = staffH.map(x => ({ ...x }));   // 各テストの開始時に戻すための控え
 let devices = {};          // 端末台帳
+const ADMIN_NAMES = ['江川京志'];   // 管理者コンソールの名簿（模擬）。見取大介は一般スタッフ
 let labels = [];           // authLabel で届いた種類と名前
 // 管理者が先に決めておいた共有端末の名前
 let devnames = [{ name:'共有PC1', store:'honten', mail:'pc1@midori-m.com' },
@@ -89,9 +90,11 @@ const gasRoute = async (route) => {
       devices[jti] = { n: s.name, m: s.myNumber, s: s.store, at: Date.now(),
         exp: Date.now() + 90 * 86400000, ua: 'test' };
       return body({ ok: true, token: 'TKN-' + s.uid, exp: Date.now() + 90 * 86400000,
-        name: s.name, myNumber: s.myNumber, store: s.store, uid: s.uid });
+        name: s.name, myNumber: s.myNumber, store: s.store, uid: s.uid,
+        admin: ADMIN_NAMES.indexOf(s.name) >= 0 });
     }
     case 'authRenew':  return body({ ok: true, renewed: false, exp: Date.now() + 90 * 86400000 });
+    case 'authAdminNames': return body({ ok: true, names: ADMIN_NAMES });
     case 'authLabel': {
       labels.push({ kind: q.get('kind'), label: q.get('label') });
       return body({ ok: true, kind: q.get('kind'), label: q.get('label') });
@@ -416,6 +419,64 @@ const dump = async (page, root) => page.evaluate(r => {
     t('共有として記録される',
       (await page.evaluate(() => localStorage.getItem('hub-v8-dev-auth-kind')))==='shared');
     t('共有端末でJSエラーなし', errs.length === 0, errs.slice(0, 2));
+  });
+
+  // ── ③'''' 権限：一般スタッフと管理者で出るものを分ける ────────────────
+  //   管理者の判定は名簿に一本化（コードに直書きした4人は使わない）。
+  const regAs = async (page, mail) => {
+    await seeText(page, 'この端末にスタッフを追加');
+    await page.fill('input[type=email]', mail);
+    await clickText(page, '確認コードを送る');
+    await seeText(page, '6桁のコードを入れてください');
+    await page.fill('input[inputmode=numeric]', CODE);
+    await clickText(page, '確認する');
+    await seeText(page, 'この端末はどちらですか');
+    await clickText(page, '自分専用');
+    await seeText(page, 'この端末に登録しました');
+    await clickText(page, 'はじめる');
+    await page.waitForTimeout(1500);
+  };
+  const hasBtn = (page, title) => page.evaluate(t => !!document.querySelector('button[title="' + t + '"]'), title);
+
+  // 一般スタッフ（見取大介）
+  await run(true, async (page, errs) => {
+    await regAs(page, 'daisuke@example.com');
+    t('一般：スケジュール画面に入れる', await seeText(page, '見取大介', 8000));
+    t('一般：人マーク（スタッフ管理）が出ない', !(await hasBtn(page, 'スタッフ管理')));
+    t('一般：休業日設定が出ない', !(await hasBtn(page, '休業日設定')));
+    t('一般：復旧が出ない', !(await hasBtn(page, 'データ復旧（バックアップから戻す）')));
+    t('一般：JSエラーなし', errs.length === 0, errs.slice(0, 2));
+  });
+
+  // 管理者（江川京志）
+  await run(true, async (page, errs) => {
+    await regAs(page, 'kyoshi@example.com');
+    t('管理者：スケジュール画面に入れる', await seeText(page, '江川京志', 8000));
+    t('管理者：人マーク（スタッフ管理）が出る', await hasBtn(page, 'スタッフ管理'));
+    t('管理者：休業日設定が出る', await hasBtn(page, '休業日設定'));
+    t('管理者：復旧が出る', await hasBtn(page, 'データ復旧（バックアップから戻す）'));
+    const cert = await page.evaluate(() => JSON.parse(localStorage.getItem('hub-v8-dev-auth-mine')||'[]')[0]);
+    t('管理者：利用証に印が残る', !!cert && cert.isAdmin === true, cert);
+    t('管理者：JSエラーなし', errs.length === 0, errs.slice(0, 2));
+  });
+
+  // 共有端末では、管理者でも管理者の操作を出さない
+  await run(true, async (page, errs) => {
+    await seeText(page, 'この端末にスタッフを追加');
+    await page.fill('input[type=email]', 'pc1@midori-m.com');
+    await clickText(page, '確認コードを送る');
+    await seeText(page, '6桁のコードを入れてください');
+    await page.fill('input[inputmode=numeric]', CODE);
+    await clickText(page, '確認する');
+    await seeText(page, 'この端末に登録しました');
+    await clickText(page, 'はじめる');
+    await seeText(page, '担当者を選択してください');
+    await clickText(page, '江川京志');
+    await clickText(page, 'でログイン');
+    await page.waitForTimeout(1500);
+    t('共有端末：管理者の名前でも人マークが出ない', !(await hasBtn(page, 'スタッフ管理')));
+    t('共有端末：休業日設定も出ない', !(await hasBtn(page, '休業日設定')));
+    t('共有端末：JSエラーなし', errs.length === 0, errs.slice(0, 2));
   });
 
   // ── ④ 管理者側：メール登録・招待・端末の取り消し ──────────────────
