@@ -26,6 +26,15 @@ var AUTH_CODE_TTL_SEC    = 86400; // 6桁コードの有効時間（24時間）
                                   //   Becky!の受信間隔でメールの到着が遅れることもある。
                                   //   総当たりは試行回数の上限(AUTH_MAX_TRY)で止める。
 var AUTH_MAX_SEND_PER_HR = 5;     // 同じアドレスへの送信上限（メール枠の保護）
+
+// メールの件名の頭。受け取った人が「何のメールか」「テスト版か本番か」を件名だけで分かるように。
+//   DEV: みどりモーターススケジュールシステムテスト版【Hub a Nice Day /DEV】…
+//   本番: みどりモータース スケジュールシステム【Hub a Nice Day】…   （ユーザー指示・2026-09-12）
+function authMailHead_(prefix) {
+  return (String(prefix || '').indexOf('dev') >= 0)
+    ? 'みどりモーターススケジュールシステムテスト版【Hub a Nice Day /DEV】'
+    : 'みどりモータース スケジュールシステム【Hub a Nice Day】';
+}
 var AUTH_APP_URL = {              // 招待メールに載せる各環境の入口
   'hub-v8-':     'https://midorimotor-inc.github.io/hub-a-nice-day/',
   'hub-v8-dev-': 'https://midorimotor-inc.github.io/hub-a-nice-day-dev/'
@@ -450,10 +459,9 @@ function authRequest_(email, prefix, resend) {
 
     var code = authIssueCode_(prefix, email);
 
-    var env = (String(prefix).indexOf('dev') >= 0) ? '【DEV】' : '';
     MailApp.sendEmail(
       email,
-      env + '【Hub a Nice Day】' + (staff.admin ? '管理者ログインの確認コード'
+      authMailHead_(prefix) + (staff.admin ? '管理者ログインの確認コード'
             : staff.device ? ('共有端末「' + staff.label + '」の確認コード') : 'ログイン確認コード'),
       staff.name + ' さん\n\n' +
       'ログイン画面に次の6桁を入力してください。\n\n' +
@@ -493,7 +501,6 @@ function authInvite_(email, prefix) {
     if (cnt >= AUTH_MAX_SEND_PER_HR) return makeResponse(JSON.stringify({ ok: false, err: 'too_many' }));
     cache.put(cntKey, String(cnt + 1), 3600);
 
-    var env = (String(prefix).indexOf('dev') >= 0) ? '【DEV】' : '';
     var url = AUTH_APP_URL[String(prefix)] || AUTH_APP_URL['hub-v8-'];
     // メールは1通で済ませる。招待に6桁を入れておき、受け取った端末で
     // そのまま入力できるようにする（2通に分けると必ず取り違える）。
@@ -503,7 +510,7 @@ function authInvite_(email, prefix) {
     if (devv) {
       MailApp.sendEmail(
         email,
-        env + '【Hub a Nice Day】共有端末「' + devv.name + '」の登録のご案内',
+        authMailHead_(prefix) + '共有端末「' + devv.name + '」の登録のご案内',
         '共有端末「' + devv.name + '」の登録手順です。\n\n' +
         'この端末の前で、次のとおり操作してください。\n\n' +
         '▼ 確認コード（24時間有効）\n' +
@@ -525,7 +532,7 @@ function authInvite_(email, prefix) {
 
     MailApp.sendEmail(
       email,
-      env + '【Hub a Nice Day】ログインの登録をお願いします',
+      authMailHead_(prefix) + 'ログインの登録をお願いします',
       staff.name + ' さん\n\n' +
       'Hub a Nice Day のログイン用アドレスとして、\n' +
       'このアドレス（' + email + '）が登録されました。\n\n' +

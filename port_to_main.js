@@ -28,9 +28,7 @@ const INDEX_RULES = [
   ["<header ref={headerRef} style={{background:'#EA580C',", "<header ref={headerRef} style={{background:'linear-gradient(135deg,#1e3a8a,#1d4ed8)',", 1],
   // ヘッダーロゴ文字色
   ["gap:7,fontSize:16,fontWeight:800,color:'#9a3412'", "gap:7,fontSize:16,fontWeight:800,color:'white'", 1],
-  // 戻るボタン（DEVグレー→本番グリーン）
-  ["const BACK_S   ={display:'flex',alignItems:'center',gap:4,padding:'5px 11px',background:'#f3f4f6',border:'none',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:12,color:'#374151'};",
-   "const BACK_S   ={display:'flex',alignItems:'center',gap:4,padding:'5px 11px',background:'#16a34a',border:'none',borderRadius:6,cursor:'pointer',fontWeight:700,fontSize:12,color:'white'};", 1],
+  // 戻るボタン（DEVグレー→本番グリーン）※代車管理の BACK_S は2026-09-12からDEVも緑なので変換しない
   ["<button onClick={onClose} style={{padding:'11px 14px',background:'#f3f4f6',border:'none',borderRadius:9,fontWeight:600,cursor:'pointer',fontSize:12}}>戻る</button>",
    "<button onClick={onClose} style={{padding:'11px 14px',background:'#16a34a',border:'none',borderRadius:9,fontWeight:700,cursor:'pointer',fontSize:12,color:'white'}}>戻る</button>", 2],
 ];

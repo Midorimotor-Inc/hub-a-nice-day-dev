@@ -108,7 +108,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.23';
+const APP_VERSION = '2.24';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -6815,7 +6815,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
     <div>
       {/* ヘッダー */}
       <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:6,flexWrap:'wrap',flexShrink:0}}>
-        <button onClick={onBack} style={BACK_S}><ChevronLeft size={16}/>{pickMode?'予約カードに戻る':'カレンダーへ'}</button>
+        <button onClick={onBack} style={BACK_S}><ChevronLeft size={16}/>{pickMode?'予約カードに戻る':'スケジュールに戻る'}</button>
         <h2 style={{fontSize:18,fontWeight:800,color:'#7c2d12',margin:0}}>
           🚗 代車管理
           {!pickMode&&<span style={{fontSize:12,color:'#6b7280',marginLeft:8,fontWeight:500}}>（閲覧専用）</span>}
@@ -9901,7 +9901,12 @@ function AppInner() {
 
   const handleLoanerBack=useCallback(()=>{
     if(pickMode){setPickMode(false);setModalData(savedModalData||(modalType==='insp'?blankInsp():blankSched()));if(selDate)setView('schedule');else setView('calendar');setModalOpen(true);}
-    else setView('calendar');
+    else{
+      // 「スケジュールに戻る」は文字どおりスケジュール画面へ（以前はカレンダーに戻っていた・2026-09-12）。
+      // 日付が未選択なら今日を選ぶ（顧客リストから戻るときと同じ扱い）。
+      setSelDate(d=>{if(d)return d;const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate());});
+      setView('schedule');
+    }
   },[pickMode,savedModalData,modalType,selDate]);
 
   // スタッフ登録・更新ハンドラ
@@ -11478,7 +11483,7 @@ function App(){return <ErrorBoundary><GasDownBanner/><AppInner/></ErrorBoundary>
 
 // - スタイル定数 -
 const NAV_S    ={background:'#c2410c',color:'white',border:'none',borderRadius:7,padding:7,cursor:'pointer',display:'flex',alignItems:'center'};
-const BACK_S   ={display:'flex',alignItems:'center',gap:4,padding:'5px 11px',background:'#f3f4f6',border:'none',borderRadius:6,cursor:'pointer',fontWeight:600,fontSize:12,color:'#374151'};
+const BACK_S   ={display:'flex',alignItems:'center',gap:4,padding:'5px 11px',background:'#16a34a',border:'none',borderRadius:6,cursor:'pointer',fontWeight:700,fontSize:12,color:'white'}; // 代車管理の戻るボタン。DEVも本番と同じ緑（ユーザー指示・2026-09-12）
 const TBL      ={width:'100%',borderCollapse:'collapse',border:'1px solid #e5e7eb',borderRadius:8,overflow:'hidden',tableLayout:'auto'};
 const TD       ={padding:'7px 9px',borderBottom:'1px solid #f3f4f6',borderRight:'1px solid #f3f4f6'};
 const LBL      ={display:'block',fontSize:13,fontWeight:700,color:'#374151',marginBottom:5};
