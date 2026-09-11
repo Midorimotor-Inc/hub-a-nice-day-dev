@@ -131,13 +131,15 @@ const dump = async (page, root) => page.evaluate(r => {
 }, root || null);
 
 (async () => {
-  const src = fs.readFileSync(path.join(DIR, 'index_dev.html'), 'utf8');
-  if (src.indexOf('const AUTH_REQUIRED = false;') < 0) {
+  // 本体の AUTH_REQUIRED が true でも false でも、テストは両方の状態を作れるようにする
+  const src0 = fs.readFileSync(path.join(DIR, 'index_dev.html'), 'utf8');
+  if (!/const AUTH_REQUIRED = (true|false);/.test(src0)) {
     console.error('X AUTH_REQUIRED の宣言が見つかりません'); process.exit(1);
   }
+  const src = src0.replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = false;');
   const browser = await chromium.launch({ headless: true });
 
-  const mobSrc = fs.readFileSync(path.join(DIR, 'mobile.html'), 'utf8');
+  const mobSrc = fs.readFileSync(path.join(DIR, 'mobile.html'), 'utf8').replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = false;');
   if (mobSrc.indexOf('const AUTH_REQUIRED = false;') < 0) {
     console.error('X mobile.html に AUTH_REQUIRED がありません'); process.exit(1);
   }

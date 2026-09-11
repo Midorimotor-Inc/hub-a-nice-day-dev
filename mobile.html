@@ -82,7 +82,7 @@ const MOBILE_VERSION='2.20';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
-const AUTH_REQUIRED = false;
+const AUTH_REQUIRED = true;
 const GAS_URL='https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 // ★利用者認証（v14以降・Kyoshi承認のBLOCK-B変更・2026-09-03）
 //   apiKey は「本来のキー|利用証」の形で送る。GAS側は '|' の前だけを本来のキーとして
