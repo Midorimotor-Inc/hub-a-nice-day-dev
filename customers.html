@@ -168,7 +168,7 @@ const hubRenew = async name => {
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.21'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.22'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -644,6 +644,12 @@ const calcTokuten=(expiry,bookDate)=>{
   return'-';
 };
 
+// 特典欄の掃除：Excelの「特典」列に日付が入っていると（入庫日を隣の列に打った等）
+//   Dateがそのまま文字になって「Sun Nov 08 2026 00:00:00 GMT+0900」のように表示されてしまう。
+//   特典は「-」「①」「②」しか無いので、日付らしいものは「-」として扱う（2026-09-11）。
+const isDateLike=v=>v instanceof Date||/GMT[+-]\d|^\d{4}-\d{1,2}-\d{1,2}|^\d{1,2}\/\d{1,2}(\/\d{2,4})?$/.test(String(v==null?'':v).trim());
+const cleanTokuten=t=>{if(t==null||isDateLike(t))return'-';const x=String(t).trim();return x||'-';};
+
 // 受注日のDM列判定
 const calcDMCol=(dm1Date,dm2Date,bookDate)=>{
   if(!bookDate)return null;
@@ -787,7 +793,7 @@ const parseExcelFile=async(file)=>{
           const dm2Date=parseExcelDate(row[cDm2D>=0?cDm2D:null]);
           const dm2Book=parseExcelDate(row[cBook2f>=0?cBook2f:null]);
           const entryDate=parseExcelDate(row[cEntry>=0?cEntry:null]);
-          const tokRaw =String(row[cTok>=0?cTok:null]||'').trim();
+          const tokRaw =(()=>{const v=row[cTok>=0?cTok:null];return isDateLike(v)?'':String(v||'').trim();})(); // 日付が紛れていたら特典なし
           const courseRaw=(cCourse>=0?String(row[cCourse]||''):'').trim();
           const storeRaw=String(row[cStore>=0?cStore:null]||'').trim();
           const staff  =String(row[cStaff>=0?cStaff:null]||'').trim();
@@ -1236,7 +1242,7 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
   const userStore=currentUser?.store?.id||currentUser?.store||'honten';
   const defaultStore=customer.store?normStore(customer.store):userStore;
   const defaultTokuten=(()=>{
-    if(customer.tokuten&&customer.tokuten!=='-')return customer.tokuten;
+    {const ct=cleanTokuten(customer.tokuten);if(ct!=='-')return ct;}  // 日付などの紛れ物は使わない
     if(customer.expiry){const today=new Date().toISOString().slice(0,10);return calcTokuten(customer.expiry,today);}
     return'-';
   })();
@@ -1682,9 +1688,9 @@ const CustomerRow=memo(({customer,onBook,onRevive,pending,flash})=>{
         )}
       </td>
       <td style={{padding:'7px 6px',verticalAlign:'middle',textAlign:'center'}}>
-        {customer.tokuten&&customer.tokuten!=='-'&&(
+        {cleanTokuten(customer.tokuten)!=='-'&&(
           <span style={{padding:'2px 7px',background:'#ede9fe',color:'#7c3aed',borderRadius:10,fontSize:11,fontWeight:700}}>
-            {customer.tokuten}
+            {cleanTokuten(customer.tokuten)}
           </span>
         )}
       </td>
@@ -1726,6 +1732,11 @@ const App=()=>{
   const [filterStatus,setFilterStatus]=useState('all');
   const [gasOk,setGasOk]=useState(null);
   const [gasLoading,setGasLoading]=useState(true);
+  // サーバーから本体をまだ読み終えていない顧客ファイルの数。0になるまで「読み込み中」を出し続ける。
+  // （以前は一覧(cf-index)を受け取った時点で案内を消していたため、ファイルが並ぶ前に
+  //   「インポートしてください」と出てしまい、読み込み済みなのに取り込み直す誤解を招いた）
+  const [cfPending,setCfPending]=useState(0);
+  const [cfIndexCount,setCfIndexCount]=useState(0);  // 一覧(cf-index)に載っているファイル数
   // 全画面表示（index_dev.htmlと同一の仕組み。sessionStorageのSTOR+'fs-restore'で
   // ページ間の全画面状態を引き継ぎ、遷移直後の最初のクリックで自動復帰する）
   const [isFullscreen,setIsFullscreen]=useState(false);
@@ -1918,9 +1929,12 @@ const App=()=>{
         if(Array.isArray(fileIndex)&&fileIndex.length>0){
           __lastCfIndex=fileIndex;
           localStorage.setItem(STOR+'cf-index',JSON.stringify(fileIndex));
+          setCfIndexCount(fileIndex.length);
+          let nPend=0;
           for(const fi of fileIndex){
             if(__saveCount>0)continue; // 書き込み中はGASからの上書きをスキップ
-            loadFileChunked(fi.name).then(f=>{
+            nPend++;
+            loadFileChunked(fi.name).finally(()=>setCfPending(n=>Math.max(0,n-1))).then(f=>{
               // ★一覧(cf-index)には載っているのに実体が読めない＝取り込み時にGASへ書けていない。
               //   黙って消えたように見えるのが一番まずいので、画面に出して再取り込みを促す。
               if(!f||f._complete===false){
@@ -1931,6 +1945,7 @@ const App=()=>{
               applyServerFile(f);
             });
           }
+          setCfPending(nPend);  // 読み終えるたびに1ずつ減る（上のfinally）
         }
         setGasLoading(false);
         setGasOk(true);
@@ -2954,7 +2969,13 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
             opacity:importing?0.6:1}}>
           {importing?(importMsg||'読み込み中...'):'+ Excelインポート'}
         </button>
-        {bgSyncing&&(
+        {cfPending>0&&(
+          <span style={{display:'inline-flex',alignItems:'center',gap:5,marginLeft:8,marginBottom:3,
+            fontSize:11,color:'#b45309',fontWeight:800,flexShrink:0,whiteSpace:'nowrap'}}>
+            <span className="spinner-sm" style={{borderTopColor:'#d97706'}}/>読み込み中（あと{cfPending}ファイル）
+          </span>
+        )}
+        {bgSyncing&&cfPending===0&&(
           <span style={{display:'inline-flex',alignItems:'center',gap:5,marginLeft:8,marginBottom:3,
             fontSize:11,color:'#64748b',fontWeight:700,flexShrink:0,whiteSpace:'nowrap'}}>
             <span className="spinner-sm"/>同期中…
@@ -2986,13 +3007,23 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
       )}
 
       {/* ファイルがない場合 */}
-      {gasLoading&&(
+      {(gasLoading||(files.length===0&&cfPending>0))&&(
         <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:14,color:'#94a3b8'}}>
           <div className="spinner"/>
-          <div style={{fontSize:14,fontWeight:600}}>顧客ファイルを読み込んでいます...</div>
+          <div style={{fontSize:14,fontWeight:600}}>顧客ファイルを読み込んでいます...{cfPending>0?`（あと${cfPending}ファイル）`:''}</div>
+          <div style={{fontSize:12}}>すべて表示されるまでお待ちください（Excelインポートは不要です）</div>
         </div>
       )}
-      {!gasLoading&&files.length===0&&(
+      {/* キャッシュで一部だけ並んでいる間の帯。全ファイルが並んだら（残りは裏の更新だけ）出さない */}
+      {files.length>0&&cfPending>0&&files.length<cfIndexCount&&(
+        <div style={{flexShrink:0,margin:'6px 14px 0',padding:'7px 12px',borderRadius:8,
+          background:'#fffbeb',border:'1px solid #fcd34d',color:'#92400e',fontSize:12,fontWeight:700,
+          display:'flex',alignItems:'center',gap:8}}>
+          <span className="spinner-sm" style={{borderTopColor:'#d97706'}}/>
+          顧客ファイルを読み込んでいます（あと{cfPending}ファイル）。すべて表示されるまでお待ちください。Excelインポートは不要です。
+        </div>
+      )}
+      {!gasLoading&&files.length===0&&cfPending===0&&(
         <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:16,color:'#94a3b8'}}>
           <div style={{fontSize:48}}>📂</div>
           <div style={{fontSize:16,fontWeight:600}}>Excelファイルをインポートしてください</div>
