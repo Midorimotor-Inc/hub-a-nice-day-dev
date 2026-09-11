@@ -72,8 +72,17 @@ const serve = () => http.createServer((req, res) => {
   });
 });
 
+// 読み取りの故障の模擬（2026-09-12に実測した挙動）：
+//   readBroken … JSONでなくGoogleのHTMLエラーページが返る／readDelayMs … 返事が遅い
+let readBroken = false, readDelayMs = 0, readCount = 0;
 const gasRoute = async (route) => {
   const u = new URL(route.request().url()), q = u.searchParams;
+  if (route.request().method() === 'GET' && q.get('key')) {
+    readCount++;
+    if (readDelayMs) await new Promise(r => setTimeout(r, readDelayMs));
+    if (readBroken) return route.fulfill({ status:200, contentType:'text/html',
+      headers:{'Access-Control-Allow-Origin':'*'}, body:'<!DOCTYPE html><html lang="ja"><head><title>エラー</title></head><body>サーバーが混み合っています</body></html>' });
+  }
   const body = o => route.fulfill({ status:200, contentType:'text/plain',
     headers:{'Access-Control-Allow-Origin':'*'}, body: JSON.stringify(o) });
   const text = s => route.fulfill({ status:200, contentType:'text/plain',
@@ -495,6 +504,24 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     // ⑫ 開き直しても入れる（利用証が端末に残っている）
     await page.reload({ waitUntil: 'domcontentloaded' });
     t('開き直すとログインを求められない', await see(page, '本人認証の進み具合', 8000), await dump(page));
+
+    // ⑬ サーバーがHTMLのエラーページを返す（混雑時に実際に起きた）→ 空の一覧を出さず、知らせて再読み込みできる
+    //    以前は「読み込んでいます…」のまま固まる／黙って0人になる、のどちらかだった。
+    readBroken = true; readCount = 0;
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    t('読めない時は「読み込めませんでした」と知らせる', await see(page, 'サーバーから読み込めませんでした', 30000), await dump(page));
+    t('読めない時に「0人」の一覧を出さない', !(await page.evaluate(() => document.body.innerText.includes('登録済み'))) || !(await page.evaluate(() => /0s*登録済み/.test(document.body.innerText))));
+    t('読み取りを送り直している（1キーにつき3回）', readCount >= 12, readCount);
+    readBroken = false;
+    await click(page, 'もう一度読み込む');
+    t('「もう一度読み込む」で復帰する', await see(page, '江川京志', 10000), await dump(page));
+
+    // ⑭ 返事が遅い → 15秒たったら「待っています」と知らせる（固まったと思わせない）
+    readDelayMs = 17000;
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    t('遅い時は「サーバーの返事を待っています」と出る', await see(page, 'サーバーの返事を待っています', 20000), await dump(page));
+    t('遅くても最後には並ぶ', await see(page, '江川京志', 25000), await dump(page));
+    readDelayMs = 0;
 
     t('JSエラーなし', errs.length === 0, errs.slice(0, 3));
   } catch (e) {

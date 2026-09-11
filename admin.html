@@ -199,7 +199,7 @@ td.act{text-align:right;white-space:nowrap}
 //  この画面を開けるのは、管理者として発行された利用証を持つ人だけ。
 //  判定はGAS側（authAdminGate_）で行う。画面の申告は信用しない。
 // =====================================================================
-var APP_VERSION = '2.20';
+var APP_VERSION = '2.25';
 var GAS_URL     = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 var STOR        = 'hub-v8-dev-';
 var IS_DEV      = STOR.indexOf('dev') >= 0;
@@ -224,17 +224,37 @@ function hubKind(){ try{ return localStorage.getItem(HUB_KIND_KEY) || ''; }catch
 function gasGet(params){
   var q = new URLSearchParams(params);
   q.set('apiKey', GAS_API_KEY);
-  return fetch(GAS_URL + '?' + q.toString(), {cache:'no-store'})
+  return fetchT(GAS_URL + '?' + q.toString(), {cache:'no-store'}, 40000)
     .then(function(r){ return r.text(); })
     .then(function(t){ try { return JSON.parse(t); } catch(e){ return {ok:false, err:'bad_response', raw:String(t).slice(0,120)}; } })
     .catch(function(){ return {ok:false, err:'offline'}; });
 }
+// 1回の通信を ms で区切る。GASは混雑時に35〜60秒返ってこないことがある（2026-09-12に実測）。
+function fetchT(url, opts, ms){
+  var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var o = opts || {}; if (ctl) o.signal = ctl.signal;
+  var timer = ctl ? setTimeout(function(){ ctl.abort(); }, ms) : null;
+  return fetch(url, o).then(function(r){ if (timer) clearTimeout(timer); return r; },
+                            function(e){ if (timer) clearTimeout(timer); throw e; });
+}
+// 読めなかった印。「値が無い(null)」と区別して、失敗を画面に出せるようにする。
+var GAS_FAIL = {gasFail:true};
 function gasRead(key){
-  return fetch(GAS_URL + '?key=' + encodeURIComponent(key) + '&apiKey=' + encodeURIComponent(GAS_API_KEY), {cache:'no-store'})
-    .then(function(r){ return r.text(); })
-    .then(function(t){ if(!t || t === 'null' || t.indexOf('error:') === 0) return null;
-      try { return JSON.parse(t); } catch(e){ return null; } })
-    .catch(function(){ return null; });
+  var once = function(){
+    return fetchT(GAS_URL + '?key=' + encodeURIComponent(key) + '&apiKey=' + encodeURIComponent(GAS_API_KEY), {cache:'no-store'}, 40000)
+      .then(function(r){ return r.text(); })
+      .then(function(t){
+        if (!t || t === 'null' || t.indexOf('error:') === 0) return null;
+        // JSONでない（Googleのエラーページ等）は失敗として送り直す
+        try { return JSON.parse(t); } catch(e){ return GAS_FAIL; }
+      })
+      .catch(function(){ return GAS_FAIL; });
+  };
+  // 3回まで。間を少し空ける（混雑が収まるのを待つ）
+  return once().then(function(v){ if (v !== GAS_FAIL) return v;
+    return new Promise(function(r){ setTimeout(r, 2000); }).then(once); })
+  .then(function(v){ if (v !== GAS_FAIL) return v;
+    return new Promise(function(r){ setTimeout(r, 4000); }).then(once); });
 }
 // 書き込みは応答を必ず読む。'ok' が返るまでは書けたと見なさない。
 // GASは書き込みを25秒ロックで直列化する。続けて2回書くと2回目がロックに
@@ -282,7 +302,8 @@ function badMail(v){
 var S = {
   view:'gate', step:'mail', mail:'', typed:'', err:'', busy:false,
   me:null, tab:'staff', dialog:null, toast:null, loading:false,
-  staffH:[], staffS:[], devices:{}, admins:[], devnames:[]
+  staffH:[], staffS:[], devices:{}, admins:[], devnames:[],
+  loadSlow:false, loadError:false   // 読み込みが長引いている／読めなかった
 };
 var toastTimer = null;
 var DAY = 86400000;
@@ -577,8 +598,14 @@ function viewAdmins(){
 
 function viewConsole(){
   var body = S.loading
-    ? '<div class="panelbox"><div class="empty">読み込んでいます…</div></div>'
-    : (S.tab === 'devices' ? viewDevices() : S.tab === 'admins' ? viewAdmins() : viewStaff());
+    ? '<div class="panelbox"><div class="empty">読み込んでいます…'
+      + (S.loadSlow ? '<br><span style="font-size:12px;color:#b45309">サーバーの返事を待っています。混み合っている時は1分ほどかかることがあります。</span>' : '')
+      + '</div></div>'
+    : (S.loadError
+      ? '<div class="panelbox"><div class="empty" style="color:#991b1b">サーバーから読み込めませんでした。<br>'
+        + '<span style="font-size:12px">回線が混み合っているか、サーバーが一時的に応答していません。少し待ってからもう一度お試しください。</span><br><br>'
+        + '<button class="btn" id="reload-retry">もう一度読み込む</button></div></div>'
+      : (S.tab === 'devices' ? viewDevices() : S.tab === 'admins' ? viewAdmins() : viewStaff()));
   return '<header class="top">'
     + '<span class="brand">Hub 管理者コンソール</span>'
     + '<span class="env mono">' + (IS_DEV ? 'DEV' : '本番') + ' v' + APP_VERSION + '</span>'
@@ -608,8 +635,12 @@ function render(){
 }
 
 // ── データの読み込み ─────────────────────────────
+var slowTimer = null;
 function loadAll(){
-  S.loading = true; render();
+  S.loading = true; S.loadSlow = false; S.loadError = false; render();
+  // 15秒たっても返らなければ「待っています」と知らせる（固まったと思われないように）
+  if (slowTimer) clearTimeout(slowTimer);
+  slowTimer = setTimeout(function(){ if (S.loading) { S.loadSlow = true; render(); } }, 15000);
   return Promise.all([
     gasRead(STOR + 'honten-staff-v2'),
     gasRead(STOR + 'sanda-staff-v2'),
@@ -617,12 +648,19 @@ function loadAll(){
     gasGet({action:'authAdminList', prefix:STOR}),
     gasRead(STOR + 'auth-devnames')
   ]).then(function(r){
+    if (slowTimer) { clearTimeout(slowTimer); slowTimer = null; }
+    // どれか1つでも読めなかったら、空の一覧を出さずに知らせる（黙って0人にしない）
+    var failed = r[0] === GAS_FAIL || r[1] === GAS_FAIL || r[2] === GAS_FAIL || r[4] === GAS_FAIL
+              || !(r[3] && (r[3].ok || r[3].err === 'not_admin'));
     S.staffH = (r[0] instanceof Array) ? r[0] : [];
     S.staffS = (r[1] instanceof Array) ? r[1] : [];
     S.devices = (r[2] && typeof r[2] === 'object' && !(r[2] instanceof Array)) ? r[2] : {};
     S.admins = (r[3] && r[3].ok && r[3].admins) ? r[3].admins : [];
     S.devnames = (r[4] instanceof Array) ? r[4].filter(function(x){ return x && x.name; }) : [];
-    S.loading = false; render();
+    S.loading = false; S.loadSlow = false; S.loadError = failed; render();
+  }, function(){
+    if (slowTimer) { clearTimeout(slowTimer); slowTimer = null; }
+    S.loading = false; S.loadSlow = false; S.loadError = true; render();
   });
 }
 
@@ -709,6 +747,7 @@ function bind(){
   // --- タブ ---
   each('[data-tab]', function(b){ b.onclick = function(){ S.tab = b.dataset.tab; render(); }; });
   if ($('reload')) $('reload').onclick = function(){ loadAll(); };
+  if ($('reload-retry')) $('reload-retry').onclick = function(){ loadAll(); };
   if ($('reloadstaff')) $('reloadstaff').onclick = function(){
     loadAll().then(function(){ toast('読み直しました', '新しいスタッフが出てこない場合は、スタッフ設定での登録が保存されているか確かめてください。'); });
   };
@@ -739,6 +778,7 @@ function bind(){
   function saveNewStaff(store, rec){
     var key = STOR + (store === 'sanda' ? 'sanda' : 'honten') + '-staff-v2';
     return gasRead(key).then(function(latest){
+      if (latest === GAS_FAIL) return { ok:false, why:'サーバーから一覧を読めませんでした。少し待ってからもう一度お試しください' };
       var base = (latest instanceof Array) ? latest : [];
       if (base.some(function(x){ return x && Number(x.myNumber) === Number(rec.myNumber); })) {
         return { ok:false, why:'その番号はすでに使われています' };
@@ -878,6 +918,7 @@ function bind(){
         }
         S.dialog = null; render();
         gasRead(STOR + 'auth-devnames').then(function(latest){
+          if (latest === GAS_FAIL) { toast('保存できませんでした', 'サーバーから一覧を読めていません。少し待ってからもう一度お試しください。'); render(); return; }
           var base = (latest instanceof Array) ? latest.filter(function(x){ return x && x.name; }) : [];
           if (base.some(function(d){ return d.name === nm; })) {
             S.devnames = base; render(); toast('追加しませんでした', 'その名前はすでにあります。'); return;
@@ -1127,6 +1168,7 @@ function bind(){
       i.disabled = true;
       // 端末の名簿はサーバー最新を土台にして、対象の1件だけ直す
       gasRead(STOR + 'auth-devnames').then(function(latest){
+          if (latest === GAS_FAIL) { toast('保存できませんでした', 'サーバーから一覧を読めていません。少し待ってからもう一度お試しください。'); render(); return; }
         var base = (latest instanceof Array) ? latest.filter(function(x){ return x && x.name; }) : null;
         if (!base) { i.disabled = false; toast('保存できませんでした', 'サーバーから一覧を読めていません。'); return; }
         var name = (S.devnames[idx] || {}).name;
@@ -1206,6 +1248,7 @@ function bind(){
       }
       S.dialog = null; render();
       gasRead(STOR + 'auth-devnames').then(function(latest){
+          if (latest === GAS_FAIL) { toast('保存できませんでした', 'サーバーから一覧を読めていません。少し待ってからもう一度お試しください。'); render(); return; }
         var base = (latest instanceof Array) ? latest.filter(function(x){ return x && x.name; }) : [];
         if (base.some(function(d){ return d.name === nm; })) {
           S.devnames = base; render();
@@ -1232,6 +1275,7 @@ function bind(){
                   + '端末を使えなくするには、下の一覧から「取り消し」を押してください。</p>' : ''),
         onOk: function(){
           gasRead(STOR + 'auth-devnames').then(function(latest){
+          if (latest === GAS_FAIL) { toast('保存できませんでした', 'サーバーから一覧を読めていません。少し待ってからもう一度お試しください。'); render(); return; }
             var base = (latest instanceof Array) ? latest.filter(function(x){ return x && x.name; }) : [];
             saveDevNames(base.filter(function(x){ return x.name !== d.name; })).then(function(okw){
               render();
