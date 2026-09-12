@@ -12,9 +12,14 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1788443278888';
+  window.__APP_BUILD='build-1789196491478';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
+    function runningVer(){
+      try{ var s=document.querySelectorAll('script');   /* モバイルは変換結果を別scriptに入れ直すので、種類を問わず全部見る */
+        for(var i=0;i<s.length;i++){ var mm=s[i].textContent.match(/(?:APP_VERSION|MOBILE_VERSION)\s*=\s*'([^']+)'/); if(mm)return mm[1]; } }catch(e){}
+      return '';
+    }
     function banner(){
       if(shown||!document.body)return; shown=true;
       var b=document.createElement('div');
@@ -49,13 +54,15 @@
         if(res&&res.ok){
           var t=await res.text();
           var m=t.match(/__APP_BUILD='(build-\d+)'/);
-          if(m&&m[1]!==RUNNING)banner();
+          // ★ビルド識別子だけでなく、バージョン番号の違いでも出す（識別子の更新忘れ対策・2026-09-12）。
+          var mv=t.match(/(?:APP_VERSION|MOBILE_VERSION)\s*=\s*'([^']+)'/), rv=runningVer();
+          if((m&&m[1]!==RUNNING)||(mv&&rv&&mv[1]!==rv))banner();
         }
       }catch(e){}
       checking=false;
     }
     document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')check();});
-    setTimeout(check,30000);
+    setTimeout(check,8000);   // 開いてすぐ（8秒）に1回。古い画面のまま使い始めないように
     setInterval(check,15*60*1000);
   })();
 </script>
@@ -78,7 +85,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.26';
+const MOBILE_VERSION='2.27';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。

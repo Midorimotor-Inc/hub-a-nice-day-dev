@@ -15,9 +15,14 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1788443278888';
+  window.__APP_BUILD='build-1789196491478';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
+    function runningVer(){
+      try{ var s=document.querySelectorAll('script');   /* モバイルは変換結果を別scriptに入れ直すので、種類を問わず全部見る */
+        for(var i=0;i<s.length;i++){ var mm=s[i].textContent.match(/(?:APP_VERSION|MOBILE_VERSION)\s*=\s*'([^']+)'/); if(mm)return mm[1]; } }catch(e){}
+      return '';
+    }
     function banner(){
       if(shown||!document.body)return; shown=true;
       var b=document.createElement('div');
@@ -48,13 +53,15 @@
         if(res&&res.ok){
           var t=await res.text();
           var m=t.match(/__APP_BUILD='(build-\d+)'/);
-          if(m&&m[1]!==RUNNING)banner();
+          // ★ビルド識別子だけでなく、バージョン番号の違いでも出す（識別子の更新忘れ対策・2026-09-12）。
+          var mv=t.match(/(?:APP_VERSION|MOBILE_VERSION)\s*=\s*'([^']+)'/), rv=runningVer();
+          if((m&&m[1]!==RUNNING)||(mv&&rv&&mv[1]!==rv))banner();
         }
       }catch(e){}
       checking=false;
     }
     document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')check();});
-    setTimeout(check,30000);
+    setTimeout(check,8000);   // 開いてすぐ（8秒）に1回。古い画面のまま使い始めないように
     setInterval(check,15*60*1000);
   })();
 </script>
@@ -168,7 +175,7 @@ const hubRenew = async name => {
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.26'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.27'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -1760,7 +1767,11 @@ const App=()=>{
     let restore=null;
     const RESTORE_EVENTS=['pointerdown','touchstart','keydown','wheel'];
     try{
-      if(!IS_EMBED&&sessionStorage.getItem(STOR+'fs-restore')==='1'&&!(document.fullscreenElement||document.webkitFullscreenElement)){
+      // ★既定は全画面（index_dev.html と同じ規則・2026-09-12）。「元に戻す」を押した端末(fs-pref='off')だけ外す。
+      const _fsSess=sessionStorage.getItem(STOR+'fs-restore');
+      let _fsPref='on'; try{_fsPref=localStorage.getItem(STOR+'fs-pref')||'on';}catch(e){}
+      const _wantFs=_fsSess==='1'||(_fsSess===null&&_fsPref!=='off');
+      if(!IS_EMBED&&_wantFs&&!(document.fullscreenElement||document.webkitFullscreenElement)){
         restore=()=>{
           RESTORE_EVENTS.forEach(ev=>document.removeEventListener(ev,restore,true));restore=null;
           const el=document.documentElement;
@@ -1782,9 +1793,11 @@ const App=()=>{
       let fsDoc=document,fsEl=document.documentElement;
       try{ if(IS_EMBED&&window.parent&&window.parent!==window){fsDoc=window.parent.document;fsEl=window.parent.document.documentElement;} }catch(e){}
       if(fsDoc.fullscreenElement||fsDoc.webkitFullscreenElement){
+        try{localStorage.setItem(STOR+'fs-pref','off');}catch(e){}   // 自分で「元に戻す」を押した端末は、次からも全画面にしない
         const ex=fsDoc.exitFullscreen||fsDoc.webkitExitFullscreen;
         if(ex)Promise.resolve(ex.call(fsDoc)).catch(()=>{});
       }else{
+        try{localStorage.setItem(STOR+'fs-pref','on');}catch(e){}
         const req=fsEl.requestFullscreen||fsEl.webkitRequestFullscreen;
         if(req)Promise.resolve(req.call(fsEl)).catch(()=>{});
       }

@@ -17,9 +17,14 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1788443278888';
+    window.__APP_BUILD='build-1789196491478';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
+      function runningVer(){
+        try{ var s=document.querySelectorAll('script');   /* モバイルは変換結果を別scriptに入れ直すので、種類を問わず全部見る */
+          for(var i=0;i<s.length;i++){ var mm=s[i].textContent.match(/(?:APP_VERSION|MOBILE_VERSION)\s*=\s*'([^']+)'/); if(mm)return mm[1]; } }catch(e){}
+        return '';
+      }
       function banner(){
         if(shown||!document.body)return; shown=true;
         var b=document.createElement('div');
@@ -49,13 +54,16 @@
           if(res&&res.ok){
             var t=await res.text();
             var m=t.match(/__APP_BUILD='(build-\d+)'/);
-            if(m&&m[1]!==RUNNING)banner();
+            // ★ビルド識別子だけでなく、バージョン番号（APP_VERSION / MOBILE_VERSION）の違いでも出す。
+            //   識別子の更新を忘れると帯が出ず、スタッフが古い画面を使い続けていた（2026-09-12）。
+            var mv=t.match(/(?:APP_VERSION|MOBILE_VERSION)\s*=\s*'([^']+)'/), rv=runningVer();
+            if((m&&m[1]!==RUNNING)||(mv&&rv&&mv[1]!==rv))banner();
           }
         }catch(e){}
         checking=false;
       }
       document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')check();});
-      setTimeout(check,30000);
+      setTimeout(check,8000);   // 開いてすぐ（8秒）に1回。古い画面のまま使い始めないように
       setInterval(check,15*60*1000);
     })();
   </script>
@@ -108,7 +116,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.26';
+const APP_VERSION = '2.27';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -7846,7 +7854,13 @@ function AppInner() {
     let restore=null;
     const RESTORE_EVENTS=['pointerdown','touchstart','keydown','wheel'];
     try{
-      if(sessionStorage.getItem(STOR+'fs-restore')==='1'&&!(document.fullscreenElement||document.webkitFullscreenElement)){
+      // ★既定は全画面（ユーザー指示・2026-09-12）。初めて開いたタブ（fs-restore 未設定）でも、
+      //   「元に戻す」を押して全画面をやめた記録（fs-pref='off'）が無ければ最初の操作で全画面にする。
+      //   Escで抜けた場合はこのタブの間だけ復帰しない（fs-restore='0'）。次に開けばまた全画面。
+      const _fsSess=sessionStorage.getItem(STOR+'fs-restore');
+      let _fsPref='on'; try{_fsPref=localStorage.getItem(STOR+'fs-pref')||'on';}catch(e){}
+      const _wantFs=_fsSess==='1'||(_fsSess===null&&_fsPref!=='off');
+      if(_wantFs&&!(document.fullscreenElement||document.webkitFullscreenElement)){
         restore=()=>{
           RESTORE_EVENTS.forEach(ev=>document.removeEventListener(ev,restore,true));restore=null;
           const el=document.documentElement;
@@ -7866,9 +7880,11 @@ function AppInner() {
   const toggleFullscreen=useCallback(()=>{
     try{
       if(document.fullscreenElement||document.webkitFullscreenElement){
+        try{localStorage.setItem(STOR+'fs-pref','off');}catch(e){}   // 自分で「元に戻す」を押した端末は、次からも全画面にしない
         const ex=document.exitFullscreen||document.webkitExitFullscreen;
         if(ex)Promise.resolve(ex.call(document)).catch(()=>{});
       }else{
+        try{localStorage.setItem(STOR+'fs-pref','on');}catch(e){}
         const el=document.documentElement;
         const req=el.requestFullscreen||el.webkitRequestFullscreen;
         if(req)Promise.resolve(req.call(el)).catch(()=>{});
