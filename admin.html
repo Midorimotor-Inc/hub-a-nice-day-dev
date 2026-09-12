@@ -199,7 +199,7 @@ td.act{text-align:right;white-space:nowrap}
 //  この画面を開けるのは、管理者として発行された利用証を持つ人だけ。
 //  判定はGAS側（authAdminGate_）で行う。画面の申告は信用しない。
 // =====================================================================
-var APP_VERSION = '2.25';
+var APP_VERSION = '2.26';
 var GAS_URL     = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 var STOR        = 'hub-v8-dev-';
 var IS_DEV      = STOR.indexOf('dev') >= 0;
@@ -718,13 +718,22 @@ function bind(){
     var v = ($('c').value || '').trim();
     if (v.length !== 6) { S.err = '6桁を入力してください。'; render(); return; }
     S.err = ''; S.busy = true; S.typed = v; render();
-    gasGet({action:'authVerify', prefix:STOR, email:S.mail, code:v, ua:navigator.userAgent||''}).then(function(r){
+    var ask = function(){ return gasGet({action:'authVerify', prefix:STOR, email:S.mail, code:v, ua:navigator.userAgent||''}); };
+    ask().then(function(r){
+      // 返事が届かなかった時は3秒おいて自動でもう一度（サーバーは成功の返事を15分覚えている）
+      if (!r || r.err === 'offline' || r.err === 'bad_response') {
+        S.err = 'サーバーの返事を待っています。もう一度確かめます…'; render();
+        return new Promise(function(res){ setTimeout(res, 3000); }).then(ask);
+      }
+      return r;
+    }).then(function(r){
       S.busy = false;
       if (!r || !r.ok) {
         S.err = (r && r.err === 'bad_code') ? 'コードが違います。もう一度お試しください。'
-          : (r && r.err === 'expired') ? 'コードの有効時間（24時間）が過ぎました。送り直してください。'
+          : (r && r.err === 'expired') ? 'このコードは期限切れか、すでに使われています。「アドレスを入れ直す」から新しいコードを受け取ってください。'
           : (r && r.err === 'too_many_tries') ? '入力の失敗が続いたため止めました。送り直してください。'
-          : '確認できませんでした。通信の状態をご確認ください。';
+          : (r && r.err === 'busy') ? 'サーバーが混み合っています。少し待ってから、もう一度「確認する」を押してください。'
+          : 'サーバーの返事を受け取れませんでした。少し待ってから、同じコードでもう一度「確認する」を押してください。';
         render(); return;
       }
       if (!r.admin) { S.err = 'このアドレスは管理者ではありません。'; render(); return; }

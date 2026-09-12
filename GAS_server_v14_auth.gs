@@ -1069,6 +1069,7 @@ function testSnapshotDev() {
 var AUTH_TTL_DAYS        = 90;    // 利用証の有効期間（「最後に使った日から」90日）
 var AUTH_RENEW_AFTER_DAYS = 15;   // 前回の延長から何日たったら延長し直すか
 var AUTH_CODE_TTL_SEC    = 86400; // 6桁コードの有効時間（24時間）
+var AUTH_REPLAY_SEC      = 900;   // 確認成功の返事を覚えておく時間（15分）。返事が届かず同じコードでやり直した時に同じ利用証を返す
                                   //   現場は全員バラバラに動く。押してすぐ席を離れることも、
                                   //   Becky!の受信間隔でメールの到着が遅れることもある。
                                   //   総当たりは試行回数の上限(AUTH_MAX_TRY)で止める。
@@ -1613,9 +1614,18 @@ function authVerify_(email, code, prefix, ua) {
     if (SNAP_ENV_PREFIXES.indexOf(String(prefix || '')) < 0) {
       return makeResponse(JSON.stringify({ ok: false, err: 'bad_prefix' }));
     }
+    // ★成功した返事の控え。混雑で返事（利用証）が届かないことがあり（2026-09-12に実測・竹林さん）、
+    //   その直後に同じコードでやり直すと、コードは消えているので「期限切れ」と言われていた。
+    //   しかも端末は登録済みなので、管理者コンソールでは「登録完了」に見える。
+    //   同じ人が同じコードで15分以内に来たら、同じ返事（同じ利用証）を返す。登録は二重にしない。
+    var replayKey = 'authok:' + String(prefix) + ':' + authCodeHash_(email, code);
+    var cache = CacheService.getScriptCache();
     var codes = authLoadCodes_(prefix);
     var rec = codes[email];
     if (!rec || !rec.x || rec.x <= Date.now()) {
+      var replay = null;
+      try { replay = cache.get(replayKey); } catch (ce) {}
+      if (replay) return makeResponse(replay);
       return makeResponse(JSON.stringify({ ok: false, err: 'expired' }));
     }
     var tries = Number(rec.t || 0);
@@ -1655,13 +1665,15 @@ function authVerify_(email, code, prefix, ua) {
       authSaveDevices_(prefix, devices);
     } finally { if (locked) lock.releaseLock(); }
 
-    return makeResponse(JSON.stringify({
+    var out = JSON.stringify({
       ok: true,
       token: authMakeToken_(staff.name, staff.myNumber, staff.store, jti, staff.admin, staff.device),
       name: staff.name, myNumber: staff.myNumber, store: staff.store,
       uid: staff.uid || '', exp: exp, admin: !!staff.admin,
       device: !!staff.device, label: staff.label || ''
-    }));
+    });
+    try { cache.put(replayKey, out, AUTH_REPLAY_SEC); } catch (ce) {}
+    return makeResponse(out);
   } catch (err) {
     return makeResponse(JSON.stringify({ ok: false, err: 'verify_failed' }));
   }

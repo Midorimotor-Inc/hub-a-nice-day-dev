@@ -78,7 +78,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.25';
+const MOBILE_VERSION='2.26';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -489,13 +489,21 @@ const AuthAddScreen=({onDone,onCancel})=>{
   },[step,devNames]);
   const verify=async()=>{
     setErr('');setBusy(true);
-    const r=await hubAuthCall('authVerify',{email:email.trim(),code:code.trim(),ua:navigator.userAgent||''});
+    let r=await hubAuthCall('authVerify',{email:email.trim(),code:code.trim(),ua:navigator.userAgent||''});
+    // ★返事が届かなかった（回線・サーバーの混雑）時は、3秒おいて自動でもう一度確かめる。
+    //   サーバーは成功の返事を15分覚えているので、登録が済んでいれば同じ利用証が返る（二重登録にならない）。
+    if(!r||r.err==='offline'||r.err==='bad_response'){
+      setErr('サーバーの返事を待っています。もう一度確かめます…');
+      await new Promise(res=>setTimeout(res,3000));
+      r=await hubAuthCall('authVerify',{email:email.trim(),code:code.trim(),ua:navigator.userAgent||''});
+    }
     setBusy(false);
     if(!r||!r.ok){
       setErr(r&&r.err==='bad_code'?'コードが違います。もう一度お試しください。'
-        :r&&r.err==='expired'?'コードの有効時間（24時間）が過ぎました。送り直してください。'
-        :r&&r.err==='too_many'?'入力の失敗が続いたため止めました。送り直してください。'
-        :'確認できませんでした。通信の状態をご確認ください。');
+        :r&&r.err==='expired'?'このコードは期限切れか、すでに使われています。「コードを送り直す」で新しいコードを受け取ってください。'
+        :r&&(r.err==='too_many'||r.err==='too_many_tries')?'入力の失敗が続いたため止めました。送り直してください。'
+        :r&&r.err==='busy'?'サーバーが混み合っています。少し待ってから、もう一度「確認する」を押してください。'
+        :'サーバーの返事を受け取れませんでした。少し待ってから、同じコードでもう一度「確認する」を押してください。');
       return;
     }
     // ★共有端末そのもののアドレスで認証した場合。人ではないので、

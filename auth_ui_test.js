@@ -28,6 +28,8 @@ let staffH = [
 ];
 const baseStaffH = staffH.map(x => ({ ...x }));   // 各テストの開始時に戻すための控え
 let devices = {};          // 端末台帳
+let verifyLostOnce = false; // 1回目の authVerify の返事を「HTMLのエラーページ」にする（混雑の模擬）
+let verifyCalls = 0;
 const ADMIN_NAMES = ['江川京志'];   // 管理者コンソールの名簿（模擬）。見取大介は一般スタッフ
 let labels = [];           // authLabel で届いた種類と名前
 // 管理者が先に決めておいた共有端末の名前
@@ -71,6 +73,9 @@ const gasRoute = async (route) => {
       return body(s ? { ok: true } : { ok: false, err: 'not_registered' });
     }
     case 'authVerify': {
+      verifyCalls++;
+      if (verifyLostOnce) { verifyLostOnce = false;
+        return route.fulfill({ status: 200, contentType: 'text/html', body: '<!DOCTYPE html><html><body>混み合っています</body></html>' }); }
       const m = String(q.get('email') || '').trim().toLowerCase();
       // 共有端末そのもののアドレス。人ではなく端末として認証する。
       const dv = devnames.find(d => (d.mail || '').toLowerCase() === m);
@@ -449,6 +454,15 @@ const dump = async (page, root) => page.evaluate(r => {
     await page.waitForTimeout(1500);
   };
   const hasBtn = (page, title) => page.evaluate(t => !!document.querySelector('button[title="' + t + '"]'), title);
+
+  // 返事が届かなかった直後の自動やり直し（2026-09-12・竹林さん）
+  await run(true, async (page, errs) => {
+    verifyLostOnce = true; verifyCalls = 0;
+    await regAs(page, 'daisuke@example.com');
+    t('返事が届かなくても自動でもう一度確かめて登録が済む', await seeText(page, '見取大介', 8000));
+    t('確認は2回送られた（自動のやり直し）', verifyCalls === 2, verifyCalls);
+    t('自動やり直し：JSエラーなし', errs.length === 0, errs.slice(0, 2));
+  });
 
   // 一般スタッフ（見取大介）
   await run(true, async (page, errs) => {

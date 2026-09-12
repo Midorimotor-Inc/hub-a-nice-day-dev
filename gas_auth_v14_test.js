@@ -18,8 +18,9 @@ const PropertiesService={getScriptProperties:()=>({
   getProperty:k=>(k in props?props[k]:null), setProperty:(k,v)=>{props[k]=v;},
 })};
 const CacheService={getScriptCache:()=>({
-  get:k=>(k in cacheStore?cacheStore[k]:null),
-  put:(k,v)=>{cacheStore[k]=v;}, remove:k=>{delete cacheStore[k];},
+  // 有効時間(秒)も本物どおりに効かせる（控えの期限を確かめるため）
+  get:k=>{const e=cacheStore[k]; if(!e)return null; if(e.x&&e.x<=Date.now()){delete cacheStore[k];return null;} return e.v;},
+  put:(k,v,sec)=>{cacheStore[k]={v,x:sec?Date.now()+sec*1000:0};}, remove:k=>{delete cacheStore[k];},
 })};
 const MailApp={sendEmail:(to,sub,body)=>{sentMail.push({to,sub,body});}};
 const LockService={getScriptLock:()=>({waitLock:()=>{},releaseLock:()=>{}})};
@@ -83,6 +84,20 @@ t('誤ったコードは弾く', r.ok===false&&r.err==='bad_code',r);
 r=body(T.authVerify_('daisuke@example.com',code,PFX,'test-ua'));
 t('正しいコードで利用証が出る', r.ok===true&&!!r.token&&r.name==='見取大介'&&r.myNumber===1,r);
 const token=r.token;
+// 3') 返事が届かず、同じコードでやり直した（2026-09-12・竹林さん）→ 同じ利用証が返り、二重登録しない
+{
+  const nDev=Object.keys(T.authLoadDevices_(PFX)).length;
+  const r2=body(T.authVerify_('daisuke@example.com',code,PFX,'test-ua'));
+  t('返事を取りこぼした直後の同じコードは「期限切れ」にしない', r2.ok===true, r2);
+  t('その時は同じ利用証が返る', r2.token===token);
+  t('端末台帳は二重登録にならない', Object.keys(T.authLoadDevices_(PFX)).length===nDev);
+  const r3=body(T.authVerify_('daisuke@example.com','000000',PFX,'test-ua'));
+  t('違うコードでは通らない', r3.ok===false, r3);
+  const realNow0=Date.now; Date.now=()=>realNow0()+16*60*1000;   // 16分後
+  const r4=body(T.authVerify_('daisuke@example.com',code,PFX,'test-ua'));
+  Date.now=realNow0;
+  t('15分を過ぎたら同じコードでも通らない（控えの期限）', r4.ok===false&&r4.err==='expired', r4);
+}
 
 // 4) 氏名・ナンバーはサーバーが決める（本人の自己申告ではない）
 const payload=T.authReadToken_(token);
