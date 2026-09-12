@@ -47,7 +47,7 @@ const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } });
     await ctx.route('https://script.google.com/**', r => r.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: 'null' }));
     const page = await ctx.newPage();
-    const errs = []; page.on('pageerror', e => errs.push(String(e)));
+    const errs = []; page.on('pageerror', e => errs.push(String(e))); if (process.env.DBG) { page.on('console', m => console.log('  [console]', m.text().slice(0,100))); page.on('request', r => { if (r.url().includes('_v=')) console.log('  [req]', r.url()); }); }
     if (opts && opts.before) { await page.goto(`http://localhost:${PORT}/blank.txt`).catch(() => {}); await page.evaluate(opts.before); }
     await page.goto(`http://localhost:${PORT}/${file}`, { waitUntil: 'domcontentloaded' });
     return { ctx, page, errs };
@@ -85,7 +85,7 @@ const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction
   }
   {
     // 「元に戻す」を押した端末（fs-pref='off'）は、次から入らない
-    const { ctx, page } = await open('index_dev.html', { before: () => { try { localStorage.setItem('hub-v8-dev-fs-pref', 'off'); } catch (e) {} } });
+    const { ctx, page } = await open('index_dev.html', { before: () => { try { localStorage.setItem('hub-v8-dev-fs-pref2', 'off'); } catch (e) {} } });
     await page.evaluate(spy);
     await seeText(page, '担当者を選択してください');
     await page.mouse.click(700, 500);
@@ -125,11 +125,32 @@ const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction
     await seeText(page, '担当者を選択してください');
     await page.mouse.click(700, 500);
     await page.waitForTimeout(300);
-    await page.evaluate(async () => { localStorage.setItem('hub-v8-dev-fs-pref', 'off'); if (document.fullscreenElement) await document.exitFullscreen(); else document.dispatchEvent(new Event('fullscreenchange')); });
+    await page.evaluate(async () => { localStorage.setItem('hub-v8-dev-fs-pref2', 'off'); if (document.fullscreenElement) await document.exitFullscreen(); else document.dispatchEvent(new Event('fullscreenchange')); });
     await page.waitForTimeout(300);
     await page.mouse.click(700, 500);
     await page.waitForTimeout(300);
     t('「元に戻す」で外した後は次の操作でも入らない', (await page.evaluate(() => window.__fsCalls)) === 1, await page.evaluate(() => window.__fsCalls));
+    await ctx.close();
+  }
+  {
+    // 「全画面」ボタンを押した時：復帰処理が横取りせず、ボタンで入る。'off' を書いてしまわない
+    const { ctx, page } = await open('index_dev.html');
+    await page.evaluate(spy);
+    await seeText(page, '担当者を選択してください');
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => x.innerText.includes('でログイン') ); });
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => x.innerText.includes('江川京志')); if (b) b.click(); });
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => x.innerText.includes('でログイン')); if (b) b.click(); });
+    await page.waitForTimeout(1500);
+    // ここまでのクリックで入っていたら、いったん外す（本物の全画面が入る環境向け）
+    await page.evaluate(async () => { if (document.fullscreenElement) await document.exitFullscreen(); });
+    await page.waitForTimeout(300);
+    const before = await page.evaluate(() => window.__fsCalls);
+    const btn = await page.$('button[data-fs-toggle]');
+    t('「全画面」ボタンがある', !!btn);
+    if (btn) { await btn.click(); await page.waitForTimeout(600); }
+    const after = await page.evaluate(() => window.__fsCalls);
+    t('「全画面」ボタンで全画面に入ろうとする（1回だけ）', after === before + 1, { before, after });
+    t('「全画面」ボタンを押しても off を書かない', (await page.evaluate(() => localStorage.getItem('hub-v8-dev-fs-pref2'))) !== 'off');
     await ctx.close();
   }
   await browser.close(); server.close();
