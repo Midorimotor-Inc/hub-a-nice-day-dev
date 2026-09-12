@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789196491478';
+    window.__APP_BUILD='build-1789201581711';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -116,7 +116,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.27';
+const APP_VERSION = '2.28';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -7845,6 +7845,9 @@ function AppInner() {
       const fs=!!(document.fullscreenElement||document.webkitFullscreenElement);
       setIsFullscreen(fs);
       if(!unloading){try{sessionStorage.setItem(STOR+'fs-restore',fs?'1':'0');}catch(e){}}
+      // 外れた（Esc など）。「元に戻す」で外したのでなければ、次の操作でまた全画面に入れるようにする。
+      //   ページを閉じる途中（unloading）は何もしない。
+      if(!fs&&!unloading){ try{ setTimeout(arm,0); }catch(e){} }
     };
     document.addEventListener('fullscreenchange',h);
     document.addEventListener('webkitfullscreenchange',h);
@@ -7853,23 +7856,25 @@ function AppInner() {
     // そこで最初の操作すべて（クリック・タッチ・スクロール・キー）で復帰させ、実質ワンアクションで全画面に戻す。
     let restore=null;
     const RESTORE_EVENTS=['pointerdown','touchstart','keydown','wheel'];
-    try{
-      // ★既定は全画面（ユーザー指示・2026-09-12）。初めて開いたタブ（fs-restore 未設定）でも、
-      //   「元に戻す」を押して全画面をやめた記録（fs-pref='off'）が無ければ最初の操作で全画面にする。
-      //   Escで抜けた場合はこのタブの間だけ復帰しない（fs-restore='0'）。次に開けばまた全画面。
-      const _fsSess=sessionStorage.getItem(STOR+'fs-restore');
-      let _fsPref='on'; try{_fsPref=localStorage.getItem(STOR+'fs-pref')||'on';}catch(e){}
-      const _wantFs=_fsSess==='1'||(_fsSess===null&&_fsPref!=='off');
-      if(_wantFs&&!(document.fullscreenElement||document.webkitFullscreenElement)){
-        restore=()=>{
-          RESTORE_EVENTS.forEach(ev=>document.removeEventListener(ev,restore,true));restore=null;
-          const el=document.documentElement;
-          const req=el.requestFullscreen||el.webkitRequestFullscreen;
-          if(req)Promise.resolve(req.call(el)).catch(()=>{});
-        };
-        RESTORE_EVENTS.forEach(ev=>document.addEventListener(ev,restore,true));
-      }
-    }catch(e){}
+    // ★既定は全画面（ユーザー指示・2026-09-12）。「元に戻す」を押して全画面をやめた記録
+    //   （localStorage fs-pref='off'）が無ければ、次の操作（クリック・タッチ・キー・スクロール）で全画面に入る。
+    //   判定は fs-pref だけ。sessionStorage の fs-restore は見ない（Esc や閉じる時にも '0' が書かれ、
+    //   再読み込み・タブ復元で残るため、それを見ていると2回目以降に入らなかった＝2026-09-12 ユーザー報告）。
+    //   Esc などで外れた時も、「元に戻す」を押したのでなければ次の操作でまた入る（下の h から arm を呼ぶ）。
+    const fsWanted=()=>{ try{ return (localStorage.getItem(STOR+'fs-pref')||'on')!=='off'; }catch(e){ return true; } };
+    const arm=()=>{
+      if(restore)return;
+      if(document.fullscreenElement||document.webkitFullscreenElement)return;
+      if(!fsWanted())return;
+      restore=()=>{
+        RESTORE_EVENTS.forEach(ev=>document.removeEventListener(ev,restore,true));restore=null;
+        const el=document.documentElement;
+        const req=el.requestFullscreen||el.webkitRequestFullscreen;
+        if(req)Promise.resolve(req.call(el)).catch(()=>{});
+      };
+      RESTORE_EVENTS.forEach(ev=>document.addEventListener(ev,restore,true));
+    };
+    try{ arm(); }catch(e){}
     return()=>{
       document.removeEventListener('fullscreenchange',h);
       document.removeEventListener('webkitfullscreenchange',h);

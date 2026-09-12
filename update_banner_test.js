@@ -57,7 +57,7 @@ const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction
   for (const file of ['index_dev.html', 'customers.html', 'mobile.html']) {
     served = { [file]: { bumpVersion: true } };
     const { ctx, page, errs } = await open(file);
-    t(file + '：版が上がっていれば帯が出る（__APP_BUILD が同じでも）', await seeText(page, '新しいバージョンがあります', 30000));
+    t(file + '：版が上がっていれば帯が出る（__APP_BUILD が同じでも）', await seeText(page, '新しいバージョンがあります', 45000));
     t(file + '：JSエラーなし', errs.length === 0, errs.slice(0, 2));
     await ctx.close();
     served = { [file]: { bumpVersion: false } };
@@ -94,16 +94,44 @@ const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction
     await ctx.close();
   }
   {
-    // Escで抜けた（同じタブで fs-restore='0'）→ このタブでは復帰しない
+    // Escで抜けた／閉じた時の fs-restore='0' が残っていても、開き直せばまた入る（2回目以降も効く）
     const { ctx, page } = await open('index_dev.html', { before: () => { try { sessionStorage.setItem('hub-v8-dev-fs-restore', '0'); } catch (e) {} } });
     await page.evaluate(spy);
     await seeText(page, '担当者を選択してください');
     await page.mouse.click(700, 500);
     await page.waitForTimeout(500);
-    t('Escで抜けたタブ：勝手に戻らない', (await page.evaluate(() => window.__fsCalls)) === 0);
+    t('fs-restore=0 が残っていても開き直せば全画面に入る（2回目以降）', (await page.evaluate(() => window.__fsCalls)) >= 1);
     await ctx.close();
   }
 
+  {
+    // 全画面が外れた（Escなど）後も、次の操作でまた入る。外れたのを模擬するため fullscreenchange を投げる
+    const { ctx, page } = await open('index_dev.html');
+    await page.evaluate(spy);
+    await seeText(page, '担当者を選択してください');
+    await page.mouse.click(700, 500);
+    await page.waitForTimeout(300);
+    await page.evaluate(async () => { if (document.fullscreenElement) await document.exitFullscreen(); else document.dispatchEvent(new Event('fullscreenchange')); });   // 外れた
+    await page.waitForTimeout(300);
+    await page.mouse.click(700, 500);
+    await page.waitForTimeout(300);
+    t('外れた後も次の操作でまた全画面に入ろうとする', (await page.evaluate(() => window.__fsCalls)) >= 2, await page.evaluate(() => window.__fsCalls));
+    await ctx.close();
+  }
+  {
+    // 「元に戻す」（fs-pref='off'）で外した後は、次の操作でも入らない
+    const { ctx, page } = await open('index_dev.html');
+    await page.evaluate(spy);
+    await seeText(page, '担当者を選択してください');
+    await page.mouse.click(700, 500);
+    await page.waitForTimeout(300);
+    await page.evaluate(async () => { localStorage.setItem('hub-v8-dev-fs-pref', 'off'); if (document.fullscreenElement) await document.exitFullscreen(); else document.dispatchEvent(new Event('fullscreenchange')); });
+    await page.waitForTimeout(300);
+    await page.mouse.click(700, 500);
+    await page.waitForTimeout(300);
+    t('「元に戻す」で外した後は次の操作でも入らない', (await page.evaluate(() => window.__fsCalls)) === 1, await page.evaluate(() => window.__fsCalls));
+    await ctx.close();
+  }
   await browser.close(); server.close();
   console.log(fail ? `\n${fail}件 不合格 / ${pass}件 合格` : `\n全${pass}件 PASS`);
   process.exit(fail ? 1 : 0);

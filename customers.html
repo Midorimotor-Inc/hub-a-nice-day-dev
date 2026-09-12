@@ -15,7 +15,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1789196491478';
+  window.__APP_BUILD='build-1789201581711';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -175,7 +175,7 @@ const hubRenew = async name => {
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.27'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.28'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -1757,6 +1757,7 @@ const App=()=>{
       const fs=!!(fsDoc.fullscreenElement||fsDoc.webkitFullscreenElement);
       setIsFullscreen(fs);
       if(!IS_EMBED&&!unloading){try{sessionStorage.setItem(STOR+'fs-restore',fs?'1':'0');}catch(e){}}
+      if(!fs&&!unloading){ try{ setTimeout(arm,0); }catch(e){} }   // 外れたら次の操作でまた入る（「元に戻す」なら arm が何もしない）
     };
     fsDoc.addEventListener('fullscreenchange',h);
     fsDoc.addEventListener('webkitfullscreenchange',h);
@@ -1766,21 +1767,23 @@ const App=()=>{
     // そこで最初の操作すべて（クリック・タッチ・スクロール・キー）で復帰させ、実質ワンアクションで全画面に戻す。
     let restore=null;
     const RESTORE_EVENTS=['pointerdown','touchstart','keydown','wheel'];
-    try{
-      // ★既定は全画面（index_dev.html と同じ規則・2026-09-12）。「元に戻す」を押した端末(fs-pref='off')だけ外す。
-      const _fsSess=sessionStorage.getItem(STOR+'fs-restore');
-      let _fsPref='on'; try{_fsPref=localStorage.getItem(STOR+'fs-pref')||'on';}catch(e){}
-      const _wantFs=_fsSess==='1'||(_fsSess===null&&_fsPref!=='off');
-      if(!IS_EMBED&&_wantFs&&!(document.fullscreenElement||document.webkitFullscreenElement)){
-        restore=()=>{
-          RESTORE_EVENTS.forEach(ev=>document.removeEventListener(ev,restore,true));restore=null;
-          const el=document.documentElement;
-          const req=el.requestFullscreen||el.webkitRequestFullscreen;
-          if(req)Promise.resolve(req.call(el)).catch(()=>{});
-        };
-        RESTORE_EVENTS.forEach(ev=>document.addEventListener(ev,restore,true));
-      }
-    }catch(e){}
+    // ★既定は全画面（index_dev.html と同じ規則・2026-09-12）。「元に戻す」を押した端末(fs-pref='off')だけ外す。
+    //   判定は fs-pref だけ（sessionStorage の fs-restore は見ない）。外れた時も次の操作でまた入る。
+    //   埋め込み（IS_EMBED）の時は親が全画面を持つので触らない。
+    const fsWanted=()=>{ try{ return (localStorage.getItem(STOR+'fs-pref')||'on')!=='off'; }catch(e){ return true; } };
+    const arm=()=>{
+      if(IS_EMBED||restore)return;
+      if(document.fullscreenElement||document.webkitFullscreenElement)return;
+      if(!fsWanted())return;
+      restore=()=>{
+        RESTORE_EVENTS.forEach(ev=>document.removeEventListener(ev,restore,true));restore=null;
+        const el=document.documentElement;
+        const req=el.requestFullscreen||el.webkitRequestFullscreen;
+        if(req)Promise.resolve(req.call(el)).catch(()=>{});
+      };
+      RESTORE_EVENTS.forEach(ev=>document.addEventListener(ev,restore,true));
+    };
+    try{ arm(); }catch(e){}
     return()=>{
       fsDoc.removeEventListener('fullscreenchange',h);
       fsDoc.removeEventListener('webkitfullscreenchange',h);
