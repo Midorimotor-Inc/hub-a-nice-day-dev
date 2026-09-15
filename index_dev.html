@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789447491255';
+    window.__APP_BUILD='build-1789462915946';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -116,7 +116,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.32';
+const APP_VERSION = '2.33';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -2455,14 +2455,13 @@ const staffregLockClear = (user) => { if(_staffregLockHolder===user) _staffregLo
 const StaffRegisterModal=memo(({isOpen,onClose,staffListH,staffListS,onSave})=>{
   const [name,setName]=useState('');
   const [badge,setBadge]=useState('mechanic');
-  const [myNumber,setMyNumber]=useState(null);
   const [store,setStore]=useState('honten');
   const [lockedBy,setLockedBy]=useState(null);
   const lockPollRef=useRef(null);
 
   useEffect(()=>{
     if(!isOpen)return;
-    setName('');setBadge('mechanic');setMyNumber(null);setStore('honten');
+    setName('');setBadge('mechanic');setStore('honten');
     const holder = staffregLockGet();
     if(holder && holder!=='新規登録'){
       setLockedBy(holder);
@@ -2479,16 +2478,15 @@ const StaffRegisterModal=memo(({isOpen,onClose,staffListH,staffListS,onSave})=>{
 
   const allStaff=[...(staffListH||[]),...(staffListS||[])];
   const currentList=store==='honten'?staffListH:staffListS;
-  const usedNumbers=allStaff.map(s=>s.myNumber);
-  const isNumUsed=n=>usedNumbers.includes(n);
   const storeObj=STORES.find(s=>s.id===store);
 
+  // 番号（myNumber）は画面に出さない。本人確認はメール＋利用証で行うので、番号は
+  // 並び順や社長判定に使う裏方の値になった（2026-09-15）。空いている最小の番号を自動で振る。
+  const nextNumber=()=>{const used=new Set(allStaff.map(s=>Number(s.myNumber)));let i=1;while(used.has(i))i++;return i;};
   const handleSave=()=>{
     if(!name.trim()){alert('名前を入力してください');return;}
-    if(myNumber===null){alert('マイナンバーを選択してください');return;}
-    if(isNumUsed(myNumber)){alert('そのマイナンバーはすでに使用されています');return;}
     const uid=`${store[0]}${Date.now()}`;
-    onSave({uid,name:name.trim(),badge,myNumber,store});
+    onSave({uid,name:name.trim(),badge,myNumber:nextNumber(),store});
     // onClose は親(handleRegisterStaff)側で制御するため呼ばない
   };
 
@@ -2556,33 +2554,11 @@ const StaffRegisterModal=memo(({isOpen,onClose,staffListH,staffListS,onSave})=>{
               </div>
             </div>
 
-            {/* マイナンバー選択 */}
-            <div>
-              <div style={{fontWeight:700,fontSize:13,color:'#374151',marginBottom:4}}>🔢 マイナンバー（0〜99）</div>
-              <div style={{fontSize:11,color:'#9ca3af',marginBottom:8}}>担当者入力時に使う個人識別番号。スポーツのゼッケンのようなもの。</div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(10,1fr)',gap:4,maxHeight:160,overflowY:'auto',padding:2}}>
-                {Array.from({length:100},(_,i)=>{
-                  const used=isNumUsed(i);
-                  const sel=myNumber===i;
-                  return(
-                    <button key={i} onClick={()=>!used&&setMyNumber(i)}
-                      disabled={used}
-                      style={{padding:'5px 0',borderRadius:6,border:`2px solid ${sel?storeObj.color:used?'#f3f4f6':'#e5e7eb'}`,background:sel?storeObj.color:used?'#f9fafb':'white',color:sel?'white':used?'#d1d5db':'#374151',fontWeight:sel?800:500,fontSize:12,cursor:used?'not-allowed':'pointer',opacity:used?0.5:1,transition:'all 0.08s'}}>
-                      {i}
-                    </button>
-                  );
-                })}
-              </div>
-              {myNumber!==null&&<div style={{marginTop:6,padding:'5px 10px',background:storeObj.bg,border:`1px solid ${storeObj.color}44`,borderRadius:6,fontSize:12,color:storeObj.color,fontWeight:700,display:'inline-flex',alignItems:'center',gap:5}}>
-                選択中：<span style={{fontSize:16,fontWeight:900}}>#{myNumber}</span>
-              </div>}
-            </div>
-
             {/* 保存ボタン */}
             <div style={{display:'flex',gap:8,paddingBottom:8}}>
               <button onClick={handleSave}
-                disabled={!name.trim()||myNumber===null}
-                style={{flex:1,padding:'13px 0',background:name.trim()&&myNumber!==null?`linear-gradient(135deg,${storeObj.color},${storeObj.accent})`:'#e5e7eb',color:name.trim()&&myNumber!==null?'white':'#9ca3af',border:'none',borderRadius:10,fontWeight:800,fontSize:15,cursor:name.trim()&&myNumber!==null?'pointer':'default',transition:'all 0.15s'}}>
+                disabled={!name.trim()}
+                style={{flex:1,padding:'13px 0',background:name.trim()?`linear-gradient(135deg,${storeObj.color},${storeObj.accent})`:'#e5e7eb',color:name.trim()?'white':'#9ca3af',border:'none',borderRadius:10,fontWeight:800,fontSize:15,cursor:name.trim()?'pointer':'default',transition:'all 0.15s'}}>
                 ✓ 登録する
               </button>
               <button onClick={onClose} style={{padding:'13px 18px',background:'#f3f4f6',border:'none',borderRadius:10,fontWeight:600,cursor:'pointer',color:'#374151'}}>キャンセル</button>
@@ -2601,7 +2577,6 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
   const [selUid,setSelUid]=useState(null);
   const [editName,setEditName]=useState('');
   const [editBadge,setEditBadge]=useState('mechanic');
-  const [editNumber,setEditNumber]=useState(null);
   const [editCaps,setEditCaps]=useState({}); // capabilities
   const [editStore,setEditStore]=useState('honten');
   const [confirmDel,setConfirmDel]=useState(false);
@@ -2646,7 +2621,7 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
   const storeObj=STORES.find(s=>s.id===tab);
 
   const selectStaff=(s)=>{
-    setSelUid(s.uid);setEditName(s.name);setEditBadge(s.badge||'mechanic');setEditNumber(s.myNumber);setConfirmDel(false);
+    setSelUid(s.uid);setEditName(s.name);setEditBadge(s.badge||'mechanic');setConfirmDel(false);
     setEditEmail(s.loginEmail||'');setInviteMsg('');
     setEditCaps(s.capabilities||getDefaultCapabilities(s.badge||'mechanic'));
     setEditStore(s.store||'honten');
@@ -2656,9 +2631,8 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
     if(!editName.trim())return;
     const target=allStaff.find(s=>s.uid===selUid);
     if(!target)return;
-    // 番号重複チェック（自分以外）
-    if(allStaff.some(s=>s.uid!==selUid&&s.myNumber===editNumber)){alert('そのマイナンバーはすでに使用されています');return;}
-    onUpdate({...target,name:editName.trim(),badge:editBadge,myNumber:editNumber,capabilities:editCaps,store:editStore,
+    // 番号（myNumber）は画面から外した。既存の値をそのまま引き継ぐ（並び順・社長判定の裏方の値）
+    onUpdate({...target,name:editName.trim(),badge:editBadge,capabilities:editCaps,store:editStore,
       loginEmail:editEmail.trim().toLowerCase()||undefined});
     setSelUid(null);
   };
@@ -2670,7 +2644,6 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
     setSelUid(null);setConfirmDel(false);
   };
 
-  const usedNumbers=allStaff.filter(s=>s.uid!==selUid).map(s=>s.myNumber);
   const selectedStaff=allStaff.find(s=>s.uid===selUid);
 
   return(
@@ -2769,7 +2742,7 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
                     <button key={s.uid} onClick={()=>selectStaff(s)}
                       style={{width:'100%',display:'flex',alignItems:'center',gap:8,padding:'9px 12px',border:'none',borderBottom:'1px solid #f3f4f6',background:selUid===s.uid?storeObj.bg:'white',cursor:'pointer',textAlign:'left',transition:'background 0.1s'}}>
                       <span style={{width:24,height:24,borderRadius:'50%',background:selUid===s.uid?storeObj.color:'#e5e7eb',color:selUid===s.uid?'white':'#6b7280',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:11,flexShrink:0}}>
-                        {s.myNumber}
+                        {String(s.name||'').charAt(0)}
                       </span>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontWeight:selUid===s.uid?800:600,fontSize:12,color:selUid===s.uid?storeObj.color:'#374151',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</div>
@@ -3006,24 +2979,6 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
                           {editBadge===b.id&&<span style={{marginLeft:'auto',color:b.color,fontWeight:800,fontSize:12}}>✓</span>}
                         </button>
                       ))}
-                    </div>
-                  </div>
-
-                  {/* マイナンバー */}
-                  <div>
-                    <div style={{fontWeight:700,fontSize:12,color:'#374151',marginBottom:4}}>🔢 マイナンバー（0〜99）</div>
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(10,1fr)',gap:3,padding:2}}>
-                      {Array.from({length:100},(_,i)=>{
-                        const used=usedNumbers.includes(i);
-                        const sel=editNumber===i;
-                        return(
-                          <button key={i} onClick={()=>!used&&setEditNumber(i)}
-                            disabled={used}
-                            style={{padding:'4px 0',borderRadius:5,border:`2px solid ${sel?storeObj.color:used?'#f3f4f6':'#e5e7eb'}`,background:sel?storeObj.color:used?'#f9fafb':'white',color:sel?'white':used?'#d1d5db':'#374151',fontWeight:sel?800:500,fontSize:11,cursor:used?'not-allowed':'pointer',opacity:used?0.4:1}}>
-                            {i}
-                          </button>
-                        );
-                      })}
                     </div>
                   </div>
 
@@ -3406,9 +3361,6 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
             return(
               <button key={s.uid} onClick={()=>setSel({staff:s,store})}
                 style={{padding:'8px 12px',borderRadius:9,border:`2px solid ${isS?store.color:'#e5e7eb'}`,background:isS?store.color:'white',color:isS?'white':'#374151',fontWeight:isS?800:500,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',gap:8,textAlign:'left',transition:'all 0.12s'}}>
-                <span style={{width:26,height:26,borderRadius:'50%',background:isS?'rgba(255,255,255,0.25)':store.bg,color:isS?'white':store.color,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:11,flexShrink:0,border:`2px solid ${isS?'rgba(255,255,255,0.4)':store.color+'44'}`}}>
-                  {s.myNumber}
-                </span>
                 <span style={{flex:1}}>{s.name}</span>
                 <BadgeIcon badge={s.badge} size={18}/>
               </button>
@@ -3440,9 +3392,6 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
               return(
                 <button key={s.uid} onClick={()=>setSel({staff:s,store})}
                   style={{padding:'10px 14px',borderRadius:10,border:`2px solid ${isS?store.color:'#e5e7eb'}`,background:isS?store.color:'white',color:isS?'white':'#374151',fontWeight:isS?800:500,fontSize:14,cursor:'pointer',display:'flex',alignItems:'center',gap:10,transition:'all 0.12s'}}>
-                  <span style={{width:28,height:28,borderRadius:'50%',background:isS?'rgba(255,255,255,0.25)':store.bg,color:isS?'white':store.color,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:12,flexShrink:0,border:`2px solid ${isS?'rgba(255,255,255,0.4)':store.color+'44'}`}}>
-                    {s.myNumber}
-                  </span>
                   <span style={{flex:1}}>{s.name}</span>
                   <BadgeIcon badge={s.badge} size={18}/>
                 </button>
@@ -3511,9 +3460,6 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
               </div>
               <button onClick={()=>setSel({staff:president,store:presStore})}
                 style={{width:'100%',padding:'8px 12px',borderRadius:9,border:`2px solid ${isS?presStore.color:'#e5e7eb'}`,background:isS?presStore.color:'white',color:isS?'white':'#374151',fontWeight:isS?800:500,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',gap:8,textAlign:'left',transition:'all 0.12s'}}>
-                <span style={{width:26,height:26,borderRadius:'50%',background:isS?'rgba(255,255,255,0.25)':presStore.bg,color:isS?'white':presStore.color,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:11,flexShrink:0,border:`2px solid ${isS?'rgba(255,255,255,0.4)':presStore.color+'44'}`}}>
-                  {president.myNumber}
-                </span>
                 <span style={{flex:1}}>{president.name}</span>
                 <BadgeIcon badge={president.badge} size={18}/>
               </button>
@@ -10187,7 +10133,7 @@ function AppInner() {
                   {isFullscreen?<Shrink size={14}/>:<Expand size={14}/>}{isFullscreen?'元に戻す':'全画面'}
                 </button>
                 <div style={{display:'flex',alignItems:'center',gap:5,padding:'3px 10px',background:userStore.bg,borderRadius:8,border:`2px solid ${userStore.color}33`}}>
-                  <span style={{width:22,height:22,borderRadius:'50%',background:userStore.color,color:'white',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:11}}>{currentUser?.myNumber??currentUser?.id}</span>
+                  <span style={{width:22,height:22,borderRadius:'50%',background:userStore.color,color:'white',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:11}}>{String(currentUser?.name||'').charAt(0)}</span>
                   <span style={{fontWeight:700,color:userStore.accent,fontSize:12}}>{currentUser?.name}</span>
                   {currentUser?.badge&&<BadgeIcon badge={currentUser.badge} size={18}/>}
                   {canRestore(currentUser)&&(

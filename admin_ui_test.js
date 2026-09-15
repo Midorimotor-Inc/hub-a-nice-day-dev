@@ -321,13 +321,14 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('氏名を入力する欄が出る', await page.evaluate(() =>
       !!document.getElementById('newstaffwrap') && !document.getElementById('newstaffwrap').hidden));
     await page.fill('#nsname', '新人テスト');
-    await page.fill('#nsno', '21');
+    t('番号の欄は出ない（裏で自動採番）', !(await page.$('#nsno')));
     await page.fill('#newmail', 'shinjin@midori-m.com');
     await click(page, '追加する', '.dialog');
     await page.waitForTimeout(1600);
-    t('新しいスタッフがスタッフ表に入る',
-      staffH.some(function(x){ return x.name === '新人テスト' && Number(x.myNumber) === 21; }),
-      staffH.map(function(x){ return x.name; }));
+    t('新しいスタッフがスタッフ表に入る（番号は空いている最小値が自動で付く）',
+      staffH.some(function(x){ return x.name === '新人テスト' && Number(x.myNumber) > 0
+        && staffH.concat(staffS).filter(function(y){ return Number(y.myNumber) === Number(x.myNumber); }).length === 1; }),
+      staffH.map(function(x){ return x.name + ':' + x.myNumber; }));
     t('ログイン用メールも一緒に入る', (function(){
       var x = staffH.find(function(y){ return y.name === '新人テスト'; }) || {};
       return x.loginEmail === 'shinjin@midori-m.com'; })(),
@@ -335,18 +336,7 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('使う端末も記録される', (function(){
       var x = staffH.find(function(y){ return y.name === '新人テスト'; }) || {};
       return (x.devPlan||[]).indexOf('own') >= 0; })());
-    t('番号が重なると断る', await (async function(){
-      await click(page, '＋ 追加');
-      await see(page, '何を追加しますか');
-      await page.selectOption('#newuid', '__new__');
-      await page.fill('#nsname', 'もう一人');
-      await page.fill('#nsno', '21');
-      await click(page, '追加する', '.dialog');
-      await page.waitForTimeout(700);
-      return await see(page, 'すでに使われています');
-    })());
-    await page.evaluate(()=>{const e=document.querySelector('.scrim'); if(e) e.click();});
-    await page.waitForTimeout(400);
+    t('一覧に No. 列が無い', !(await page.evaluate(() => document.body.innerText.includes('No.'))));
 
     // 既存の人の用途は、行の「設定」から決める
     await page.evaluate(() => { const b = document.querySelector('[data-edit="s10"]'); if (b) b.click(); });

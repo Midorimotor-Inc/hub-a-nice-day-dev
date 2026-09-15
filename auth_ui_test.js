@@ -184,6 +184,7 @@ const dump = async (page, root) => page.evaluate(r => {
   await run(false, async (page, errs) => {
     await seeText(page, '担当者を選択してください');
     t('移行期間：従来どおり全員が並ぶ', await seeText(page, '岡上秀一'));
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-pc-login.png' });   // 画面確認用
     t('移行期間：登録の入口がある', await seeText(page, 'スタッフを追加'));
     t('移行期間：JSエラーなし', errs.length === 0, errs.slice(0, 2));
 
@@ -580,13 +581,14 @@ const dump = async (page, root) => page.evaluate(r => {
     t('管理者側でJSエラーなし', errs.length === 0, errs.slice(0, 2));
   });
 
-  // ── ⑤ スマホ：移行期間は従来どおり番号で入れる ─────────────────
+  // ── ⑤ スマホ：移行期間は名前を選ぶだけで入れる（番号入力は廃止 2026-09-15） ──
   await run(false, async (page, errs) => {
-    t('スマホ：ログイン画面が出る', await seeText(page, 'LOGIN CODE'));
+    t('スマホ：ログイン画面が出る', await seeText(page, '誰が操作しますか'));
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-mobile-login.png' });   // 画面確認用
+    t('スマホ：番号の入力欄が無い', !(await page.$('input[type=tel]')));
     t('スマホ：登録の入口がある', await seeText(page, 'スタッフを追加'));
-    await page.fill('input[type=tel]', '2');
-    await clickText(page, 'SIGN IN');
-    t('スマホ：移行期間は番号で入れる', await seeText(page, '岡上秀一', 8000));
+    await clickText(page, '岡上秀一');
+    t('スマホ：移行期間は名前を押せば入れる', await seeText(page, 'AUTHENTICATED', 8000));
     t('スマホ：移行期間にJSエラーなし', errs.length === 0, errs.slice(0, 2));
   }, 'mobile.html');
 
@@ -605,15 +607,11 @@ const dump = async (page, root) => page.evaluate(r => {
     await clickText(page, '共有PC1');
     await seeText(page, 'この端末に登録しました');
     await clickText(page, 'はじめる');
-    t('スマホ：共有ならログイン画面に戻る', await seeText(page, 'LOGIN CODE'));
-    // 登録していない岡上さん(No.2)では入れない
-    await page.fill('input[type=tel]', '2');
-    await clickText(page, 'SIGN IN');
-    t('スマホ：登録していない番号は弾く', await seeText(page, 'コードが正しくありません') || await seeText(page, '登録されていません'));
-    // 登録済みの見取さん(No.1)は入れる
-    await page.fill('input[type=tel]', '1');
-    await clickText(page, 'SIGN IN');
-    t('スマホ：登録した人は入れる', await seeText(page, '見取大介', 9000));
+    t('スマホ：共有ならログイン画面に戻る', await seeText(page, '誰が操作しますか'));
+    // 人として登録した共有端末：この端末で本人確認を済ませた人だけ並ぶ（登録していない岡上さんは出ない）
+    t('スマホ：登録していない人は並ばない', !(await seeText(page, '岡上秀一', 1500)));
+    await clickText(page, '見取大介');
+    t('スマホ：名前を押せば入れる', await seeText(page, 'AUTHENTICATED', 9000));
     t('スマホ：必須モードでJSエラーなし', errs.length === 0, errs.slice(0, 2));
   }, 'mobile.html');
 
@@ -629,9 +627,9 @@ const dump = async (page, root) => page.evaluate(r => {
     await clickText(page, '自分専用');
     await seeText(page, 'この端末に登録しました');
     await clickText(page, 'はじめる');
-    t('スマホ：自分専用は番号を聞かれない', !(await seeText(page, 'LOGIN CODE', 3000)));
+    t('スマホ：自分専用は名前選択を聞かれない', !(await seeText(page, '誰が操作しますか', 3000)));
     await page.reload({ waitUntil: 'domcontentloaded' });
-    t('スマホ：開き直しても素通しで入れる', !(await seeText(page, 'LOGIN CODE', 4000)));
+    t('スマホ：開き直しても素通しで入れる', !(await seeText(page, '誰が操作しますか', 4000)));
     t('スマホ：自分専用でJSエラーなし', errs.length === 0, errs.slice(0, 2));
   }, 'mobile.html');
 

@@ -12,7 +12,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789447491255';
+  window.__APP_BUILD='build-1789462915946';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -85,7 +85,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.32';
+const MOBILE_VERSION='2.33';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -662,7 +662,6 @@ const AuthAddScreen=({onDone,onCancel})=>{
 };
 
 const LoginScreen=({onLogin,onAddAuth})=>{
-  const [code,setCode]=useState('');
   const [err,setErr]=useState('');
   const [success,setSuccess]=useState(null);
   const [staffList,setStaffList]=useState(DEFAULT_STAFF);
@@ -671,7 +670,7 @@ const LoginScreen=({onLogin,onAddAuth})=>{
     (async()=>{
       try{
         const [h,s]=await Promise.all([sGet(STOR+'honten-staff-v2'),sGet(STOR+'sanda-staff-v2')]);
-        let all=[...(h||[]).map(st=>({...st,store:'honten'})),...(s||[]).map(st=>({...st,store:'sanda'}))].filter(st=>st.name&&st.myNumber!=null);
+        let all=[...(h||[]).map(st=>({...st,store:'honten'})),...(s||[]).map(st=>({...st,store:'sanda'}))].filter(st=>st.name);
         // 本人認証が必須の間は、この端末で本人確認を済ませた人だけを出す
         if(AUTH_REQUIRED){
           if(hubIsDevice()){
@@ -686,13 +685,13 @@ const LoginScreen=({onLogin,onAddAuth})=>{
       setStaffLoading(false);
     })();
   },[]);
-  const doLogin=()=>{
-    const n=parseInt(code,10);
-    const s=staffList.find(s=>s.myNumber===n);
-    if(!s){setErr('コードが正しくありません');setCode('');return;}
+  // 番号を打つ方式はやめ、名前を選ぶ（2026-09-15）。本人確認はメール＋利用証で済んでいるので、
+  // 番号は「本人の証明」ではなくなった。共有端末で「誰が操作するか」を選ぶだけ。
+  const doLogin=(s)=>{
+    if(!s){setErr('名前を選んでください');return;}
     // 本人認証が必須の間は、この端末で本人確認を済ませた人しか入れない
     if(AUTH_REQUIRED&&!hubIsDevice()&&!hubLive(hubLoadMine()).some(m=>m.name===s.name)){
-      setErr('この端末では登録されていません。下から登録してください。');setCode('');return;
+      setErr('この端末では登録されていません。下から登録してください。');return;
     }
     setErr('');
     setSuccess(s);
@@ -742,16 +741,26 @@ const LoginScreen=({onLogin,onAddAuth})=>{
         <div style={{color:'rgba(255,255,255,.35)',fontSize:10,marginTop:6,fontWeight:700}}>v{MOBILE_VERSION}</div>
       </div>
       <div style={{width:'100%',maxWidth:300,background:'rgba(255,255,255,.07)',borderRadius:20,padding:28,border:'1px solid rgba(255,255,255,.15)',backdropFilter:'blur(10px)'}}>
-        <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',marginBottom:14,textAlign:'center',letterSpacing:2}}> LOGIN CODE </div>
+        <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,.5)',marginBottom:12,textAlign:'center',letterSpacing:2}}>誰が操作しますか</div>
         {staffLoading&&<div style={{textAlign:'center',color:'rgba(255,255,255,.4)',fontSize:10,marginBottom:8}}>⏳ 読込中...</div>}
-        <input type="tel" inputMode="numeric" pattern="[0-9]*" value={code}
-          onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,''))}
-          onKeyDown={e=>e.key==='Enter'&&doLogin()}
-          placeholder="" autoFocus
-          style={{width:'100%',padding:'16px 0',fontSize:32,border:'none',borderBottom:`2px solid ${err?'#ef4444':'rgba(255,255,255,.3)'}`,outline:'none',textAlign:'center',fontWeight:800,letterSpacing:10,background:'transparent',color:'white',caretColor:'white',WebkitAppearance:'none',MozAppearance:'textfield'}}/>
-        {err&&<div style={{color:'#f87171',fontSize:11,marginTop:8,textAlign:'center',letterSpacing:1}}>{err}</div>}
-        <button onClick={doLogin}
-          style={{width:'100%',marginTop:24,padding:'14px 0',background:'linear-gradient(135deg,#4338ca,#6d28d9)',color:'white',border:'none',borderRadius:12,fontSize:14,fontWeight:800,letterSpacing:2,boxShadow:'0 4px 20px rgba(99,102,241,.4)'}}> SIGN IN </button>
+        {!staffLoading&&staffList.length===0&&(
+          <div style={{textAlign:'center',color:'rgba(255,255,255,.55)',fontSize:11.5,lineHeight:1.8,padding:'6px 0'}}>
+            この端末に登録された人はまだいません。<br/>下の「＋ スタッフを追加」から登録してください。
+          </div>
+        )}
+        <div style={{display:'flex',flexDirection:'column',gap:7,maxHeight:'46vh',overflowY:'auto',WebkitOverflowScrolling:'touch'}}>
+          {staffList.filter(s=>s.badge!=='president'&&s.myNumber!==0).map(s=>(
+            <button key={s.uid||s.name} onClick={()=>doLogin(s)}
+              style={{display:'flex',alignItems:'center',gap:10,padding:'12px 13px',borderRadius:11,
+                background:'rgba(255,255,255,.10)',border:'1.5px solid rgba(255,255,255,.18)',color:'white',
+                fontSize:15,fontWeight:700,textAlign:'left',WebkitTapHighlightColor:'transparent'}}>
+              <span style={{width:8,height:8,borderRadius:'50%',flexShrink:0,background:s.store==='sanda'?'#f87171':'#60a5fa'}}/>
+              <span style={{flex:1}}>{s.name}</span>
+              <span style={{fontSize:10,opacity:.6,fontWeight:700}}>{s.store==='sanda'?'三田店':'本店'}</span>
+            </button>
+          ))}
+        </div>
+        {err&&<div style={{color:'#f87171',fontSize:11,marginTop:10,textAlign:'center',letterSpacing:1}}>{err}</div>}
         {onAddAuth&&(
           <div style={{marginTop:18,paddingTop:16,borderTop:'1px solid rgba(255,255,255,.15)'}}>
             <div style={{color:'rgba(255,255,255,.6)',fontSize:11,lineHeight:1.8,marginBottom:9,textAlign:'center'}}>
