@@ -30,6 +30,20 @@
   --focus:#2c5850;
   --shadow:0 1px 2px rgba(27,33,41,.05), 0 10px 28px rgba(27,33,41,.07);
 }
+/* 本番（?env=prod）は青。DEVの緑と取り違えないように、ヘッダー・帯・地色をまとめて変える */
+html[data-env="prod"]{
+  --ground:#eaf0fa;
+  --panel-2:#f3f6fc;
+  --rule:#d5dceb;
+  --pine:#1e3a8a;
+  --pine-2:#1d4ed8;
+  --pine-soft:#e3eafb;
+  --focus:#1d4ed8;
+}
+html[data-env="prod"] .note-bar{background:#1e3a8a;color:#fff}
+html[data-env="prod"] .note-bar .tag{background:#fff;color:#1e3a8a}
+.top .envswitch{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45)}
+.top .envswitch:hover{background:rgba(255,255,255,.28)}
 *{box-sizing:border-box}
 html,body{background:var(--ground)}
 body{margin:0;color:var(--ink);
@@ -182,7 +196,7 @@ td.act{text-align:right;white-space:nowrap}
 </style>
 </head>
 <body>
-<div class="note-bar">
+<div class="note-bar" id="notebar">
   <span class="tag">DEV</span>
   <span>テスト環境の管理者コンソールです。<b>本番のデータには触れません</b>。</span>
 </div>
@@ -199,10 +213,24 @@ td.act{text-align:right;white-space:nowrap}
 //  この画面を開けるのは、管理者として発行された利用証を持つ人だけ。
 //  判定はGAS側（authAdminGate_）で行う。画面の申告は信用しない。
 // =====================================================================
-var APP_VERSION = '2.33';
+var APP_VERSION = '2.34';
 var GAS_URL     = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
-var STOR        = 'hub-v8-dev-';
-var IS_DEV      = STOR.indexOf('dev') >= 0;
+// 環境の切り替え（2026-09-15）。この1ファイルで本番とDEVの両方を扱う。
+//   既定はDEV（安全側）。URLに ?env=prod が付いている時だけ本番のデータを扱う。
+//   記憶はしない＝開き直せば必ずDEVに戻る。本番は毎回ボタンで入る。
+//   本番の時は見た目を青にして、どちらを触っているか一目で分かるようにする。
+var ENV_PROD    = (function(){ try { return new URLSearchParams(location.search).get('env') === 'prod'; } catch (e) { return false; } })();
+var STOR        = ENV_PROD ? 'hub-v8-' : 'hub-v8-dev-';
+var IS_DEV      = !ENV_PROD;
+var APP_URL_OF  = { 'hub-v8-': 'https://midorimotor-inc.github.io/hub-a-nice-day/',
+                    'hub-v8-dev-': 'https://midorimotor-inc.github.io/hub-a-nice-day-dev/' };
+document.documentElement.setAttribute('data-env', ENV_PROD ? 'prod' : 'dev');
+// 切り替えボタン。本番へ入る時は一言たしかめる（押し間違いで本番のスタッフに招待が飛ぶのを防ぐ）
+function switchEnv(toProd){
+  if (toProd && !window.confirm('本番のデータを扱います。\n\nここで送る招待メールは実際のスタッフに届き、\n取り消しは本番の端末に効きます。よろしいですか？')) return;
+  var u = location.pathname + (toProd ? '?env=prod' : '');
+  location.href = u;
+}
 
 // ── 利用証（3ファイルと同じ保管場所を使う。ここで登録すればスケジュール側にも入れる）──
 var HUB_BASE_KEY = 'hub2026co-f466kt5vs3vnDQDPuwWeS6XM';
@@ -327,6 +355,16 @@ var S = {
 var toastTimer = null;
 var DAY = 86400000;
 
+// 帯を環境に合わせる（本番は青・注意書きを変える）
+(function(){
+  var nb = document.getElementById('notebar');
+  if (!nb) return;
+  if (ENV_PROD) {
+    nb.innerHTML = '<span class="tag">本番</span>'
+      + '<span><b>本番環境</b>です。招待メールは実際のスタッフに届き、取り消しは本番の端末に効きます。</span>';
+  }
+})();
+
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 function ymd(ms){ var d = new Date(ms); return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate(); }
@@ -386,8 +424,11 @@ function viewGate(){
   }
   return '<div class="gate"><div class="gate-card">'
     + '<div class="crest"><div class="mark">🔑</div>'
-    + '<h1>Hub 管理者コンソール</h1><p class="mono">MIDORI MOTORS' + (IS_DEV ? ' / DEV' : '') + '</p></div>'
-    + body + '</div></div>';
+    + '<h1>Hub 管理者コンソール</h1><p class="mono">MIDORI MOTORS' + (IS_DEV ? ' / DEV' : ' / 本番') + '</p></div>'
+    + body
+    + '<button class="btn ghost w envswitch" id="envswitch" type="button" style="margin-top:14px">'
+    + (IS_DEV ? '本番に切り替える' : 'DEVに戻る') + '</button>'
+    + '</div></div>';
 }
 
 // ── 進み具合 ─────────────────────────────────────
@@ -627,9 +668,10 @@ function viewConsole(){
   return '<header class="top">'
     + '<span class="brand">Hub 管理者コンソール</span>'
     + '<span class="env mono">' + (IS_DEV ? 'DEV' : '本番') + ' v' + APP_VERSION + '</span>'
+    + '<button class="btn sm envswitch" id="envswitch" type="button">' + (IS_DEV ? '本番に切り替える' : 'DEVに戻る') + '</button>'
     + '<span class="me"><span class="avatar">' + esc(String(S.me.name).slice(0,1)) + '</span>'
     + '<span><b>' + esc(S.me.name) + '</b> でログイン中</span>'
-    + '<a class="btn ghost sm" href="index.html" style="color:#fff;border-color:rgba(255,255,255,.4);text-decoration:none">スケジュールへ</a>'
+    + '<a class="btn ghost sm" href="' + (APP_URL_OF[STOR] || 'index.html') + '" style="color:#fff;border-color:rgba(255,255,255,.4);text-decoration:none">スケジュールへ</a>'
     + '</span></header>'
     + '<div class="wrap">' + viewProgress() + viewTabs() + body + '</div>';
 }
@@ -773,6 +815,9 @@ function bind(){
     });
   };
   if ($('back')) $('back').onclick = function(){ S.step = 'mail'; S.err = ''; S.typed = ''; render(); };
+
+  // --- 環境の切り替え ---
+  each('#envswitch', function(b){ b.onclick = function(){ switchEnv(IS_DEV); }; });
 
   // --- タブ ---
   each('[data-tab]', function(b){ b.onclick = function(){ S.tab = b.dataset.tab; render(); }; });

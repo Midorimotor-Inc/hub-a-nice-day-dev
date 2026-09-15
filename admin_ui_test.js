@@ -528,6 +528,32 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
       await page.evaluate(() => !JSON.parse(localStorage.getItem('hub-v8-dev-auth-mine') || '[]').some(x => x.name === '江川京志')));
     writeUnauthorized = false;
 
+    // ⑯ 本番／DEVの切り替え（1ファイルで両方。既定はDEV、?env=prod で本番・青の見た目）
+    await page.goto(`http://localhost:${PORT}/admin.html`, { waitUntil: 'domcontentloaded' });
+    t('既定はDEV（緑）', (await page.getAttribute('html', 'data-env')) === 'dev');
+    t('DEVの帯は「本番のデータには触れません」', await see(page, '本番のデータには触れません'));
+    t('ログイン画面に「本番に切り替える」がある', await see(page, '本番に切り替える'));
+    // 本番へ入る時は一言たしかめる。ここでは「キャンセル」してDEVに留まる
+    let asked = '';
+    page.once('dialog', async d => { asked = d.message(); await d.dismiss(); });
+    await click(page, '本番に切り替える');
+    await page.waitForTimeout(500);
+    t('本番へ入る前に確認が出る', /本番のデータを扱います/.test(asked), asked);
+    t('キャンセルするとDEVのまま', !/env=prod/.test(page.url()) && (await page.getAttribute('html', 'data-env')) === 'dev');
+    // 承諾すると ?env=prod に移り、青の見た目・帯の文言が本番になる
+    page.once('dialog', async d => { await d.accept(); });
+    await click(page, '本番に切り替える');
+    await page.waitForURL(/env=prod/, { timeout: 5000 }).catch(()=>{});
+    await page.waitForTimeout(600);
+    t('承諾すると ?env=prod に移る', /env=prod/.test(page.url()), page.url());
+    t('本番は青（data-env=prod）', (await page.getAttribute('html', 'data-env')) === 'prod');
+    t('本番の帯は「実際のスタッフに届き」', await see(page, '実際のスタッフに届き'), await dump(page));
+    t('本番では「DEVに戻る」が出る', await see(page, 'DEVに戻る'));
+    t('本番のログイン画面は「/ 本番」', await see(page, '/ 本番'));
+    await click(page, 'DEVに戻る');
+    await page.waitForTimeout(600);
+    t('「DEVに戻る」で ?env=prod が外れる', !/env=prod/.test(page.url()) && (await page.getAttribute('html', 'data-env')) === 'dev', page.url());
+
     t('JSエラーなし', errs.length === 0, errs.slice(0, 3));
   } catch (e) {
     t('（途中で止まった）', false, String(e).split('\n')[0]);
