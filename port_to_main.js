@@ -20,6 +20,9 @@ const MAIN_DIR = path.resolve(__dirname, '..', 'hub-a-nice-day');
 const INDEX_RULES = [
   // 接続先データの分離（最重要）
   ["const STOR = 'hub-v8-dev-';", "const STOR = 'hub-v8-';", 1],
+  // 本人認証の必須化: DEVは true で試験中。本番は全員の登録が済むまで false（移行期間）。
+  //   本番を true にする時はこのルールを外す（index と mobile の両方）。2026-09-15
+  ["const AUTH_REQUIRED = true;", "const AUTH_REQUIRED = false;", 1],
   // タイトル
   ['<title>Hub a Nice Day v1.0 [DEV]</title>', '<title>Hub a Nice Day v1.0</title>', 1],
   // 環境識別の配色: 全体背景・ログイン画面（オレンジ→青）
@@ -50,6 +53,7 @@ const CUST_REGEX_RULES = [
 // mobile.html の環境固有差分は STOR のみ（タイトル[DEV]なし・バッジなし・配色差分なし。2026-07-04時点）
 const MOBILE_RULES = [
   ["const STOR='hub-v8-dev-';", "const STOR='hub-v8-';", 1],
+  ["const AUTH_REQUIRED = true;", "const AUTH_REQUIRED = false;", 1],   // 本番は移行期間（index と同じ値に）
 ];
 const MOBILE_REGEX_RULES = [
   // 自動アップデート検知のビルド識別子をデプロイ毎に更新（旧タブ/旧PWAが新版を検知してバナー表示）
