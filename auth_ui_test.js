@@ -36,6 +36,7 @@ let labels = [];           // authLabel で届いた種類と名前
 let devnames = [{ name:'共有PC1', store:'honten', mail:'pc1@midori-m.com' },
                 { name:'三田店タブレット', store:'sanda' }];
 let sentInvites = [];      // 送った招待
+let INVITES = {};
 const CODE = '424242';
 
 const serve = (html, name) => http.createServer((req, res) => {
@@ -67,7 +68,9 @@ const gasRoute = async (route) => {
   }
   switch (q.get('action')) {
     case 'authRequest': {
-      const m = String(q.get('email') || '').trim().toLowerCase();
+      if (!q.get('email') && q.get('inv') && !INVITES[q.get('inv')]) return body({ ok: false, err: 'bad_invite' });
+      const m = String(q.get('email') || INVITES[q.get('inv')] || '').trim().toLowerCase();
+      if (!q.get('resend') && q.get('inv')) return body({ ok: true, existing: true });
       if (devnames.some(d => (d.mail || '').toLowerCase() === m)) return body({ ok: true });
       const s = staffH.find(x => (x.loginEmail || '').toLowerCase() === m);
       return body(s ? { ok: true } : { ok: false, err: 'not_registered' });
@@ -76,7 +79,8 @@ const gasRoute = async (route) => {
       verifyCalls++;
       if (verifyLostOnce) { verifyLostOnce = false;
         return route.fulfill({ status: 200, contentType: 'text/html', body: '<!DOCTYPE html><html><body>混み合っています</body></html>' }); }
-      const m = String(q.get('email') || '').trim().toLowerCase();
+      if (!q.get('email') && q.get('inv') && !INVITES[q.get('inv')]) return body({ ok: false, err: 'bad_invite' });
+      const m = String(q.get('email') || INVITES[q.get('inv')] || '').trim().toLowerCase();
       // 共有端末そのもののアドレス。人ではなく端末として認証する。
       const dv = devnames.find(d => (d.mail || '').toLowerCase() === m);
       if (dv) {
@@ -151,7 +155,9 @@ const dump = async (page, root) => page.evaluate(r => {
   if (mobSrc.indexOf('const AUTH_REQUIRED = false;') < 0) {
     console.error('X mobile.html に AUTH_REQUIRED がありません'); process.exit(1);
   }
-  const run = async (required, fn, file) => {
+  // 招待リンクの印 → アドレス（模擬）
+  INVITES = { 'a1b2c3d4e5f60718293a4b5c6d7e8f90': 'daisuke@example.com' };
+  const run = async (required, fn, file, query) => {
     devices = {}; sentInvites = []; labels = [];
     staffH = baseStaffH.map(x => ({ ...x }));   // 前のテストの変更を持ち越さない
     const name = file || 'index_dev.html';
@@ -166,7 +172,7 @@ const dump = async (page, root) => page.evaluate(r => {
     page.on('pageerror', e => errs.push(String(e)));
     // Babelの「500KBを超えたので整形をやめた」という注意はエラーではない
     page.on('console', m => { if (m.type() === 'error' && m.text().indexOf('[BABEL]') < 0) errs.push(m.text()); });
-    await page.goto(`http://localhost:${PORT}/` + name, { waitUntil: 'domcontentloaded' });
+    await page.goto(`http://localhost:${PORT}/` + name + (query || ''), { waitUntil: 'domcontentloaded' });
     try { await fn(page, errs); }
     catch (e) { t('（途中で止まった）', false, String(e).split('\n')[0]); }
     finally {
@@ -628,6 +634,43 @@ const dump = async (page, root) => page.evaluate(r => {
     t('スマホ：開き直しても素通しで入れる', !(await seeText(page, 'LOGIN CODE', 4000)));
     t('スマホ：自分専用でJSエラーなし', errs.length === 0, errs.slice(0, 2));
   }, 'mobile.html');
+
+  // ── ⑧ 招待リンク（?inv=）から開くと、アドレスを打たずに6桁から始まる ──────
+  //    「メールから入ったのに、もう一度メールを確認？」という戸惑いを無くす（ユーザー指摘 2026-09-15）。
+  for (const file of ['index_dev.html', 'mobile.html']) {
+    const tag = file === 'mobile.html' ? 'スマホ：' : '';
+    await run(false, async (page, errs) => {
+      t(tag + '招待リンクから開くと登録画面が最初から出る', await seeText(page, '招待メールに書かれた6桁'), await dump(page));
+      if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-invite-' + file.replace(/\W/g,'_') + '.png' });   // 画面確認用
+      t(tag + '招待リンクではアドレス欄が出ない', !(await page.$('input[type=email]')));
+      t(tag + '6桁の欄はハイフン6つの薄字', (await page.getAttribute('input[inputmode=numeric]', 'placeholder')) === '------');
+      await page.fill('input[inputmode=numeric]', '000000');
+      await clickText(page, '確認する');
+      t(tag + '違う6桁は断られる', await seeText(page, 'コードが違います'));
+      await page.fill('input[inputmode=numeric]', CODE);
+      await clickText(page, '確認する');
+      await seeText(page, 'この端末はどちらですか');
+      await clickText(page, '自分専用');
+      t(tag + '印＋6桁だけで登録できる', await seeText(page, 'この端末に登録しました'), await dump(page));
+      t(tag + '登録が済むとURLから印が消える', !(await page.evaluate(() => location.search.indexOf('inv=') >= 0)), await page.url());
+      t(tag + '招待リンクでJSエラーなし', errs.length === 0, errs.slice(0, 2));
+    }, file, '?inv=a1b2c3d4e5f60718293a4b5c6d7e8f90');
+
+    // 期限切れ・でたらめな印 → アドレス入力に戻して知らせる（袋小路にしない）
+    await run(false, async (page, errs) => {
+      await seeText(page, '招待メールに書かれた6桁');
+      await page.fill('input[inputmode=numeric]', CODE);
+      await clickText(page, '確認する');
+      t(tag + '無効な印はアドレス入力に戻す', await seeText(page, 'この招待リンクは期限切れです'), await dump(page));
+      t(tag + '戻った先にアドレス欄がある', !!(await page.$('input[type=email]')));
+      await page.fill('input[type=email]', 'daisuke@example.com');
+      await clickText(page, '次へ');
+      await seeText(page, '6桁のコードを入れてください');
+      await page.fill('input[inputmode=numeric]', CODE);
+      await clickText(page, '確認する');
+      t(tag + '無効な印でもアドレスからなら登録できる', await seeText(page, 'この端末はどちらですか'), await dump(page));
+    }, file, '?inv=ffffffffffffffffffffffffffffffff');
+  }
 
   await browser.close();
 

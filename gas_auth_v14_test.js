@@ -43,7 +43,7 @@ vm.runInContext(src+`
 this.T={authMakeToken_,authReadToken_,authValid_,authGate_,authBaseKey_,authPrefixOf_,
         authRequest_,authInvite_,authVerify_,authRenew_,authLoadDevices_,authSaveDevices_,authFindStaffByEmail_,
         authAdmins_,authAdminSave_,authAdminOf_,authAdminGate_,authResolve_,authFindStaffByUid_,
-        authAdminList_,authAdminSet_,authFindDeviceByEmail_,authAdminNames_,authWriteGate_,authIsAdminOnlyKey_,authSaveCodes_,authLoadCodes_,authCodeHash_};`,ctx);
+        authAdminList_,authAdminSet_,authFindDeviceByEmail_,authAdminNames_,authWriteGate_,authIsAdminOnlyKey_,authSaveCodes_,authLoadCodes_,authCodeHash_,authInviteEmail_};`,ctx);
 const T=ctx.T;
 
 const ok=[],ng=[];
@@ -184,6 +184,55 @@ t('別環境の台帳を見ると未登録扱いになる',
   sentMail=[]; let sent=0;
   for(let i=0;i<8;i++){ if(body(T.authInvite_('daisuke@example.com',PFX)).ok) sent++; }
   t('招待の連打は上限で止まる', sent<=5&&sentMail.length<=5, {送れた:sent});
+}
+
+// 13.9) 招待リンクの印（?inv=）。リンクを開くだけで本人が伝わり、アドレスを打たずに6桁から始められる。
+{
+  const DAY = 86400000;
+  delete cacheStore['authinv:daisuke@example.com']; sentMail=[];
+  let r=body(T.authInvite_('daisuke@example.com',PFX));
+  const m=sentMail[0];
+  const link=(m.body.match(/https:\/\/\S+\?inv=([0-9a-f]{32})/)||[]);
+  t('招待のリンクに印（?inv=32桁）が付く', !!link[1], m.body.slice(0,300));
+  const inv=link[1];
+  const code=lastCode();
+  t('招待の本文に「リンクを開く→6桁」の手順', /このリンクを開く/.test(m.body) && /上の6桁を入れれば完了/.test(m.body));
+  t('リンクが開けない端末向けの手順も残す', /スタッフを追加/.test(m.body) && /このアドレス/.test(m.body));
+  t('印からアドレスを引ける', T.authInviteEmail_(PFX,inv)==='daisuke@example.com');
+  t('でたらめな印は引けない', T.authInviteEmail_(PFX,'0'.repeat(32))==='' && T.authInviteEmail_(PFX,'abc')==='');
+  // 印＋6桁だけで登録できる（アドレス無し）
+  r=body(T.authVerify_('', '000000', PFX, 'test', inv));
+  t('印＋違う6桁は bad_code', r.err==='bad_code', r);
+  r=body(T.authVerify_('', code, PFX, 'test', inv));
+  t('印＋正しい6桁で利用証が出る', r.ok===true && r.name==='見取大介', r);
+  // 6桁を使い切っても、印は30日生きている → 同じリンクから送り直せる
+  delete cacheStore['authcnt:daisuke@example.com']; sentMail=[];
+  r=body(T.authRequest_('', PFX, '1', inv));
+  t('印だけで送り直せる', r.ok===true && sentMail.length===1 && sentMail[0].to==='daisuke@example.com', r);
+  r=body(T.authVerify_('', lastCode(), PFX, 'test', inv));
+  t('送り直した6桁も印で通る', r.ok===true, r);
+  // 印が無効（30日過ぎ・でたらめ）なら bad_invite。アドレスがあればそちらを優先
+  r=body(T.authVerify_('', '123456', PFX, 'test', 'f'.repeat(32)));
+  t('無効な印は bad_invite', r.err==='bad_invite', r);
+  r=body(T.authRequest_('', PFX, '', 'f'.repeat(32)));
+  t('無効な印では送れない', r.err==='bad_invite', r);
+  const codes=JSON.parse(sheetStore[PFX+'auth-codes']);
+  const k=Object.keys(codes).find(x=>x==='inv:'+inv);
+  t('印の期限は約30日', !!k && Math.abs(codes[k].x-Date.now()-30*DAY)<60000, k&&codes[k]);
+  // 期限切れの印は掃除される
+  codes['inv:'+inv].x=Date.now()-1; sheetStore[PFX+'auth-codes']=JSON.stringify(codes);
+  t('期限切れの印は引けない', T.authInviteEmail_(PFX,inv)==='');
+  T.authSaveCodes_(PFX, T.authLoadCodes_(PFX));
+  t('期限切れの印は保存時に捨てられる', !JSON.parse(sheetStore[PFX+'auth-codes'])['inv:'+inv]);
+  // 共有端末あての招待にも印が付く
+  sheetStore[PFX+'auth-devnames']=JSON.stringify([{name:'共有PC1',store:'honten',mail:'pc1@example.com'}]);
+  sentMail=[];
+  r=body(T.authInvite_('pc1@example.com',PFX));
+  const dl=(sentMail[0].body.match(/\?inv=([0-9a-f]{32})/)||[]);
+  t('共有端末の招待にも印が付く', r.device===true && !!dl[1], sentMail[0].body.slice(0,200));
+  r=body(T.authVerify_('', lastCode(), PFX, 'test', dl[1]));
+  t('共有端末も印＋6桁で登録できる', r.ok===true && r.device===true, r);
+  delete sheetStore[PFX+'auth-devnames'];
 }
 
 // 13.8) 6桁コードは24時間有効。ただし総当たりは試行上限で止める。

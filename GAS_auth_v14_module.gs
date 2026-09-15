@@ -27,6 +27,7 @@ var AUTH_REPLAY_SEC      = 900;   // 確認成功の返事を覚えておく時�
                                   //   Becky!の受信間隔でメールの到着が遅れることもある。
                                   //   総当たりは試行回数の上限(AUTH_MAX_TRY)で止める。
 var AUTH_MAX_SEND_PER_HR = 5;     // 同じアドレスへの送信上限（メール枠の保護）
+var AUTH_INVITE_TTL_DAYS = 30;    // 招待リンク（?inv=）が本人を指し続ける日数。6桁より長い＝切れても同じリンクから送り直せる
 
 // メールの件名の頭。受け取った人が「何のメールか」「テスト版か本番か」を件名だけで分かるように。
 //   DEV: みどりモーターススケジュールシステムテスト版【Hub a Nice Day /DEV】…
@@ -419,25 +420,56 @@ function authCodeAlive_(prefix, email) {
   } catch (e) { return false; }
 }
 
-// 新しい6桁を作って保管する
-function authIssueCode_(prefix, email) {
+// 新しい6桁を作って保管する。
+//   inv を渡すと、招待リンクの印（?inv=…）→ アドレスの対応も同じ保管場所に入れる。
+//   キーは 'inv:' で始めてアドレスと区別する（アドレスに ':' は含まれない）。
+function authIssueCode_(prefix, email, inv) {
   var code = String(Math.floor(100000 + Math.random() * 900000));
   var codes = authLoadCodes_(prefix);
   codes[email] = { h: authCodeHash_(email, code), t: 0, x: Date.now() + AUTH_CODE_TTL_SEC * 1000 };
+  if (inv) codes['inv:' + inv] = { e: email, x: Date.now() + AUTH_INVITE_TTL_DAYS * 86400000 };
   authSaveCodes_(prefix, codes);
   return code;
+}
+
+// ── 招待リンクの印 ─────────────────────────────────────────────────
+//   招待メールのURLに ?inv=印 を付ける。受け取った人はリンクを開くだけで
+//   「誰の登録か」が伝わり、アドレスを打たずに6桁の入力から始められる
+//   （アドレスを打つ段があると「もう一度メール確認？」と戸惑う。ユーザー指摘 2026-09-15）。
+//   印は推測できない長さの乱数で、メールを受け取った本人しか知らない。
+//   印から分かるのはアドレスだけで、6桁が無ければ登録はできない。
+function authNewInviteId_() {
+  return String(Utilities.getUuid()).replace(/-/g, '');
+}
+// 印 → アドレス。無い・期限切れなら ''
+function authInviteEmail_(prefix, inv) {
+  try {
+    var v = String(inv || '').trim();
+    if (!/^[0-9a-f]{32}$/.test(v)) return '';
+    var c = authLoadCodes_(prefix)['inv:' + v];
+    return (c && c.e && c.x && Date.now() < c.x) ? String(c.e) : '';
+  } catch (e) { return ''; }
+}
+// アドレスが無く印だけ来た要求を、アドレスに直す。印が無効なら null
+function authEmailOrInvite_(prefix, email, inv) {
+  var m = String(email || '').trim().toLowerCase();
+  if (m) return m;
+  if (!inv) return '';
+  var byInv = authInviteEmail_(prefix, inv);
+  return byInv ? byInv : null;
 }
 
 //   GET ?action=authRequest&email=...&resend=1&prefix=...
 //   resend が無いときは、生きているコードがあれば送り直さない
 //   （招待メールに書いた6桁をそのまま使ってもらう）。
-function authRequest_(email, prefix, resend) {
+function authRequest_(email, prefix, resend, inv) {
   try {
-    email = String(email || '').trim().toLowerCase();
-    if (email.indexOf('@') <= 0) return makeResponse(JSON.stringify({ ok: false, err: 'bad_email' }));
     if (SNAP_ENV_PREFIXES.indexOf(String(prefix || '')) < 0) {
       return makeResponse(JSON.stringify({ ok: false, err: 'bad_prefix' }));
     }
+    email = authEmailOrInvite_(prefix, email, inv);
+    if (email === null) return makeResponse(JSON.stringify({ ok: false, err: 'bad_invite' }));
+    if (email.indexOf('@') <= 0) return makeResponse(JSON.stringify({ ok: false, err: 'bad_email' }));
 
     // スタッフ表の loginEmail か、管理者名簿にあるアドレスなら送る
     var staff = authResolve_(prefix, email);
@@ -505,7 +537,10 @@ function authInvite_(email, prefix) {
     var url = AUTH_APP_URL[String(prefix)] || AUTH_APP_URL['hub-v8-'];
     // メールは1通で済ませる。招待に6桁を入れておき、受け取った端末で
     // そのまま入力できるようにする（2通に分けると必ず取り違える）。
-    var code = authIssueCode_(prefix, email);
+    // リンクには印を付ける。開くだけで誰の登録か伝わり、アドレスを打つ段を飛ばせる。
+    var inv = authNewInviteId_();
+    var link = url + '?inv=' + inv;
+    var code = authIssueCode_(prefix, email, inv);
 
     // 共有端末あての招待。人ではないので文面を分ける。
     if (devv) {
@@ -517,11 +552,11 @@ function authInvite_(email, prefix) {
         '▼ 確認コード（24時間有効）\n' +
         '    ' + code + '\n\n' +
         '▼ 手順\n' +
-        '1. その端末で Hub を開く\n' +
-        '   ' + url + '\n' +
-        '2.「＋ スタッフを追加」を押す\n' +
-        '3. このアドレス（' + email + '）を入れる\n' +
-        '4. 上の6桁を入れる\n\n' +
+        '1. その端末で、このリンクを開く\n' +
+        '   ' + link + '\n' +
+        '2. 上の6桁を入れる\n\n' +
+        '※ リンクをその端末で開けない時は、' + url + ' を開いて\n' +
+        '  「＋ スタッフを追加」→ このアドレス（' + email + '）→ 上の6桁 の順で入れてください。\n\n' +
         '登録が済むと、その端末では担当者を選ぶだけで使えるようになります。\n' +
         '※ 登録は端末ごとに1回だけです。\n' +
         '※ この登録はその端末を使う全員で共有します。個人のスマホには使わないでください。\n\n' +
@@ -540,11 +575,11 @@ function authInvite_(email, prefix) {
       '▼ 確認コード（24時間有効）\n' +
       '    ' + code + '\n\n' +
       '▼ 使いはじめる手順\n' +
-      '1. 使いたい端末で Hub を開く\n' +
-      '   ' + url + '\n' +
-      '2.「＋ スタッフを追加」を押す\n' +
-      '3. このアドレスを入れる\n' +
-      '4. 上の6桁を入れれば完了です\n\n' +
+      '1. 使いたい端末で、このリンクを開く\n' +
+      '   ' + link + '\n' +
+      '2. 上の6桁を入れれば完了です\n\n' +
+      '※ リンクをその端末で開けない時（店のPCなど）は、' + url + ' を開いて\n' +
+      '  「＋ スタッフを追加」→ このアドレス → 上の6桁 の順で入れてください。\n' +
       '※ 自分のスマホと店の共有PC、両方で登録できます。\n' +
       '   端末ごとに1回ずつお願いします。\n' +
       '※ 使っているうちは登録が切れることはありません。\n' +
@@ -560,13 +595,15 @@ function authInvite_(email, prefix) {
 
 // ── ② コードの照合と利用証の発行 ─────────────────────────────────────
 //   GET ?action=authVerify&email=...&code=123456&prefix=...&ua=...&apiKey=...
-function authVerify_(email, code, prefix, ua) {
+function authVerify_(email, code, prefix, ua, inv) {
   try {
-    email = String(email || '').trim().toLowerCase();
     code = String(code || '').trim();
     if (SNAP_ENV_PREFIXES.indexOf(String(prefix || '')) < 0) {
       return makeResponse(JSON.stringify({ ok: false, err: 'bad_prefix' }));
     }
+    // 招待リンクから来た（アドレス無し・印だけ）なら、印からアドレスを引く
+    email = authEmailOrInvite_(prefix, email, inv);
+    if (email === null) return makeResponse(JSON.stringify({ ok: false, err: 'bad_invite' }));
     // ★成功した返事の控え。混雑で返事（利用証）が届かないことがあり（2026-09-12に実測・竹林さん）、
     //   その直後に同じコードでやり直すと、コードは消えているので「期限切れ」と言われていた。
     //   しかも端末は登録済みなので、管理者コンソールでは「登録完了」に見える。

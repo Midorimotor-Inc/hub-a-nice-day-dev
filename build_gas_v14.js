@@ -33,10 +33,10 @@ sub('doGet の入口',
   }
   // v14: 認証そのもの（コード送信・照合）は利用証を要求しない
   if (e.parameter.action === 'authRequest') {
-    return authRequest_(e.parameter.email, authPrefixOf_(e.parameter), e.parameter.resend);
+    return authRequest_(e.parameter.email, authPrefixOf_(e.parameter), e.parameter.resend, e.parameter.inv);
   }
   if (e.parameter.action === 'authVerify') {
-    return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua);
+    return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua, e.parameter.inv);
   }
   // v14: 管理者名簿の閲覧と変更。管理者として発行された利用証が無いと通らない。
   if (e.parameter.action === 'authAdminList') {
