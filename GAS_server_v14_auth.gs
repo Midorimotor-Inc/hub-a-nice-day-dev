@@ -232,7 +232,7 @@ function doGet(e) {
     return authRequest_(e.parameter.email, authPrefixOf_(e.parameter), e.parameter.resend, e.parameter.inv);
   }
   if (e.parameter.action === 'authVerify') {
-    return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua, e.parameter.inv);
+    return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua, e.parameter.inv, e.parameter.prev);
   }
   // v14: 管理者名簿の閲覧と変更。管理者として発行された利用証が無いと通らない。
   if (e.parameter.action === 'authAdminList') {
@@ -1146,7 +1146,8 @@ function authMakeToken_(name, myNumber, store, jti, isAdmin, isDevice) {
 }
 
 // 署名と期限だけを見る（端末の取り消し確認は authValid_ で行う）
-function authReadToken_(token) {
+//   ignoreExp: 期限切れでも中身を返す（「この端末の前の登録」を探すときだけ使う。署名は必ず確かめる）
+function authReadToken_(token, ignoreExp) {
   try {
     if (!token) return null;
     var parts = String(token).split('.');
@@ -1156,7 +1157,8 @@ function authReadToken_(token) {
     if (expect !== parts[1]) return null;   // 署名が違う＝偽造・改ざん
     var payload = JSON.parse(
       Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString());
-    if (!payload || !payload.x || Date.now() > payload.x) return null;  // 期限切れ
+    if (!payload || !payload.x) return null;
+    if (!ignoreExp && Date.now() > payload.x) return null;  // 期限切れ
     return payload;
   } catch (e) { return null; }
 }
@@ -1642,7 +1644,11 @@ function authInvite_(email, prefix) {
 
 // ── ② コードの照合と利用証の発行 ─────────────────────────────────────
 //   GET ?action=authVerify&email=...&code=123456&prefix=...&ua=...&apiKey=...
-function authVerify_(email, code, prefix, ua, inv) {
+//   prev: この端末がすでに持っている利用証（カンマ区切り・期限切れでも可）。
+//         同じ人の前の登録を置き換える＝同じPCで登録し直しても台帳に行が増えない。
+//         管理者コンソールでログインするたびに行が増え、スケジュール画面の登録と
+//         二重になっていた（2026-09-15 江川が2行になった件）。
+function authVerify_(email, code, prefix, ua, inv, prev) {
   try {
     code = String(code || '').trim();
     if (SNAP_ENV_PREFIXES.indexOf(String(prefix || '')) < 0) {
@@ -1690,6 +1696,14 @@ function authVerify_(email, code, prefix, ua, inv) {
     catch (le) { return makeResponse(JSON.stringify({ ok: false, err: 'busy' })); }
     try {
       var devices = authLoadDevices_(prefix);
+      // この端末の前の登録（同じ人のものだけ）を消して置き換える。
+      // 他人の行は、その利用証をこの端末が持っていても消さない（共有PCで別人を登録した場合）。
+      String(prev || '').split(',').slice(0, 6).forEach(function (tk) {
+        var old = authReadToken_(String(tk).trim(), true);
+        if (!old || !old.j || old.j === jti) return;
+        var row = devices[old.j];
+        if (row && String(row.e || '').toLowerCase() === email) delete devices[old.j];
+      });
       devices[jti] = {
         n: staff.name, m: staff.myNumber, s: staff.store, e: email,
         at: Date.now(), exp: exp, ua: String(ua || '').slice(0, 120)

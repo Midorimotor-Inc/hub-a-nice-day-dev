@@ -235,6 +235,37 @@ t('別環境の台帳を見ると未登録扱いになる',
   delete sheetStore[PFX+'auth-devnames'];
 }
 
+// 13.95) 同じ端末で登録し直しても台帳に行が増えない（prev＝この端末が持つ利用証で前の行を置き換える）
+{
+  const rows=()=>Object.entries(T.authLoadDevices_(PFX)).filter(([j,v])=>v.e==='daisuke@example.com');
+  const before=rows().length;
+  let c=freshCode('daisuke@example.com');
+  let r1=body(T.authVerify_('daisuke@example.com',c,PFX,'pc-A'));
+  t('1回目の登録で行が1つ増える', r1.ok===true && rows().length===before+1, rows().length);
+  c=freshCode('daisuke@example.com');
+  let r2=body(T.authVerify_('daisuke@example.com',c,PFX,'pc-A',null,r1.token));
+  t('前の利用証を添えて登録し直すと行が増えない', r2.ok===true && rows().length===before+1, rows().length);
+  t('前の行は消え、新しい行だけ残る', !T.authLoadDevices_(PFX)[JSON.parse(Buffer.from(r1.token.split('.')[0].replace(/-/g,'+').replace(/_/g,'/'),'base64')).j]);
+  // 期限切れの利用証でも「前の行」として置き換えられる
+  const pay=JSON.parse(Buffer.from(r2.token.split('.')[0].replace(/-/g,'+').replace(/_/g,'/'),'base64'));
+  const expired=T.authMakeToken_(pay.n,pay.m,pay.s,pay.j,false,false);
+  c=freshCode('daisuke@example.com');
+  const r3=body(T.authVerify_('daisuke@example.com',c,PFX,'pc-A',null,'garbage.token,'+r2.token));
+  t('でたらめな値が混ざっていても、正しい前の利用証だけ効く', r3.ok===true && rows().length===before+1, rows().length);
+  // 他人の利用証を添えても、その人の行は消えない（共有PCで別人を登録した場合）
+  const fc=freshCode('fujiwara@example.com');
+  const rf=body(T.authVerify_('fujiwara@example.com',fc,PFX,'pc-A'));
+  const fRows=()=>Object.values(T.authLoadDevices_(PFX)).filter(v=>v.e==='fujiwara@example.com').length;
+  const fBefore=fRows();
+  c=freshCode('daisuke@example.com');
+  const r4=body(T.authVerify_('daisuke@example.com',c,PFX,'pc-A',null,rf.token+','+r3.token));
+  t('他人の利用証を添えても他人の行は消えない', r4.ok===true && fRows()===fBefore && rows().length===before+1, {f:fRows(),d:rows().length});
+  // prev 無し（従来どおり）なら行は増える＝別の端末として扱う
+  c=freshCode('daisuke@example.com');
+  body(T.authVerify_('daisuke@example.com',c,PFX,'pc-B'));
+  t('prev が無ければ別の端末として行が増える', rows().length===before+2, rows().length);
+}
+
 // 13.8) 6桁コードは24時間有効。ただし総当たりは試行上限で止める。
 {
   const DAY = 86400000;
