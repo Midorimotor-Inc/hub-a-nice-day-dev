@@ -185,9 +185,11 @@ const dump = async (page, root) => page.evaluate(r => {
     //   「登録したのに何も変わらない」と、登録した意味が伝わらない。
     await clickText(page, 'スタッフを追加');
     await seeText(page, 'この端末にスタッフを追加');
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-email.png' });   // 画面確認用
     await page.fill('input[type=email]', 'daisuke@example.com');
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     await seeText(page, '6桁のコードを入れてください');
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-code.png' });
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
     await seeText(page, 'この端末はどちらですか');
@@ -208,12 +210,12 @@ const dump = async (page, root) => page.evaluate(r => {
 
     // 未登録アドレスは断る
     await page.fill('input[type=email]', 'stranger@example.com');
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     t('未登録アドレスは断られる', await seeText(page, '登録されていません'));
 
     // 登録済みアドレス → コード → 端末の種類
     await page.fill('input[type=email]', 'daisuke@example.com');
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     t('コード入力に進む', await seeText(page, '6桁のコードを入れてください'));
 
     await page.fill('input[inputmode=numeric]', '111111');
@@ -253,7 +255,7 @@ const dump = async (page, root) => page.evaluate(r => {
     await clickText(page, 'スタッフを追加');
     await seeText(page, 'この端末にスタッフを追加');
     await page.fill('input[type=email]', 'kyoshi@example.com');
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     t('2人目には端末の種類を聞かない', await seeText(page, '6桁のコードを入れてください'));
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
@@ -288,7 +290,7 @@ const dump = async (page, root) => page.evaluate(r => {
   await run(true, async (page, errs) => {
     await seeText(page, 'この端末にスタッフを追加');
     await page.fill('input[type=email]', 'daisuke@example.com');
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     await seeText(page, '6桁のコードを入れてください');
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
@@ -323,7 +325,7 @@ const dump = async (page, root) => page.evaluate(r => {
   await run(true, async (page, errs) => {
     await seeText(page, 'この端末にスタッフを追加');
     await page.fill('input[type=email]', 'daisuke@example.com');
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     await seeText(page, '6桁のコードを入れてください');
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
@@ -343,7 +345,7 @@ const dump = async (page, root) => page.evaluate(r => {
     await clickText(page, 'スタッフを追加');
     await seeText(page, 'この端末にスタッフを追加');
     await page.fill('input[type=email]', 'kyoshi@example.com');
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     await seeText(page, '6桁のコードを入れてください');
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
@@ -369,7 +371,7 @@ const dump = async (page, root) => page.evaluate(r => {
     staffH = staffH.map(x => x.uid === 'h1' ? {...x, devPlan:['共有PC1']} : x);
     await seeText(page, 'この端末にスタッフを追加');
     await page.fill('input[type=email]', 'daisuke@example.com');
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     await seeText(page, '6桁のコードを入れてください');
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
@@ -385,7 +387,7 @@ const dump = async (page, root) => page.evaluate(r => {
     await seeText(page, '担当者を選択してください');
     await clickText(page, 'スタッフを追加');
     await page.fill('input[type=email]', 'kyoshi@example.com');
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     await seeText(page, '6桁のコードを入れてください');
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
@@ -401,7 +403,7 @@ const dump = async (page, root) => page.evaluate(r => {
   await run(true, async (page, errs) => {
     t('まず登録画面が出る', await seeText(page, 'この端末にスタッフを追加'));
     await page.fill('input[type=email]', 'pc1@midori-m.com');   // 端末のアドレス
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     await seeText(page, '6桁のコードを入れてください');
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
@@ -443,7 +445,7 @@ const dump = async (page, root) => page.evaluate(r => {
   const regAs = async (page, mail) => {
     await seeText(page, 'この端末にスタッフを追加');
     await page.fill('input[type=email]', mail);
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     await seeText(page, '6桁のコードを入れてください');
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
@@ -490,7 +492,7 @@ const dump = async (page, root) => page.evaluate(r => {
   await run(true, async (page, errs) => {
     await seeText(page, 'この端末にスタッフを追加');
     await page.fill('input[type=email]', 'pc1@midori-m.com');
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     await seeText(page, '6桁のコードを入れてください');
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
@@ -586,7 +588,7 @@ const dump = async (page, root) => page.evaluate(r => {
   await run(true, async (page, errs) => {
     t('スマホ：まず登録画面が出る', await seeText(page, 'この端末にスタッフを追加'));
     await page.fill('input[type=email]', 'daisuke@example.com');
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     t('スマホ：コード入力に進む', await seeText(page, '6桁のコードを送りました') || await seeText(page, '確認する'));
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');
@@ -613,7 +615,7 @@ const dump = async (page, root) => page.evaluate(r => {
   await run(true, async (page, errs) => {
     await seeText(page, 'この端末にスタッフを追加');
     await page.fill('input[type=email]', 'daisuke@example.com');
-    await clickText(page, '確認コードを送る');
+    await clickText(page, '次へ');
     await seeText(page, '確認する');
     await page.fill('input[inputmode=numeric]', CODE);
     await clickText(page, '確認する');

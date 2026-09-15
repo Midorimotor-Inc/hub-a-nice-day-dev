@@ -75,6 +75,8 @@ const serve = () => http.createServer((req, res) => {
 // 読み取りの故障の模擬（2026-09-12に実測した挙動）：
 //   readBroken … JSONでなくGoogleのHTMLエラーページが返る／readDelayMs … 返事が遅い
 let readBroken = false, readDelayMs = 0, readCount = 0;
+// 書き込みの拒否の模擬：この端末の利用証が台帳から消えている（別の端末から取り消された等）
+let writeUnauthorized = false;
 const gasRoute = async (route) => {
   const u = new URL(route.request().url()), q = u.searchParams;
   if (route.request().method() === 'GET' && q.get('key')) {
@@ -93,6 +95,7 @@ const gasRoute = async (route) => {
     let v = null; try { v = JSON.parse(d.value); } catch (e) {}
     // GASは書き込みを25秒ロックで直列化する。埋まっている間の要求は lock_timeout。
     if (lockBusy) { lockHits++; return text('lock_timeout'); }
+    if (writeUnauthorized) return text('unauthorized: admin');
     if (lockOn) {
       lockBusy = true;
       await new Promise(r => setTimeout(r, 1800));  // GASの書き込みは実際2〜10秒かかる
@@ -522,6 +525,18 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('遅い時は「サーバーの返事を待っています」と出る', await see(page, 'サーバーの返事を待っています', 20000), await dump(page));
     t('遅くても最後には並ぶ', await see(page, '江川京志', 25000), await dump(page));
     readDelayMs = 0;
+
+    // ⑮ 利用証が無効になった端末（開いたままのタブ）で書き込む → 「失敗しました」で終わらせず、ログインに戻す
+    //    2026-09-15 テスト用スタッフの「登録解除」が何度押しても通らなかった件。
+    writeUnauthorized = true;
+    await page.waitForSelector('[data-release]', { timeout: 30000 });   // ⑭の遅い読み込みが終わるのを待つ
+    await page.evaluate(() => { const b = document.querySelector('[data-release]'); if (b) b.click(); });
+    await see(page, '登録解除します');
+    await click(page, '登録解除する', '.dialog');
+    t('無効な利用証で書けない時はログイン画面に戻す', await see(page, '管理者登録が無効', 15000), await dump(page));
+    t('無効になった利用証は端末から捨てる',
+      await page.evaluate(() => !JSON.parse(localStorage.getItem('hub-v8-dev-auth-mine') || '[]').some(x => x.name === '江川京志')));
+    writeUnauthorized = false;
 
     t('JSエラーなし', errs.length === 0, errs.slice(0, 3));
   } catch (e) {

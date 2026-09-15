@@ -12,7 +12,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789205246657';
+  window.__APP_BUILD='build-1789438724067';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -85,7 +85,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.29';
+const MOBILE_VERSION='2.30';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -545,22 +545,24 @@ const AuthAddScreen=({onDone,onCancel})=>{
       </div>
       {step==='email'&&(
         <div>
-          <div style={LBL}>管理者が登録した<b>ご自分のメールアドレス</b>を入れてください。名前や番号の入力は要りません。</div>
+          <div style={LBL}>招待メールが届いた<b>ご自分のメールアドレス</b>を入れてください。名前や番号の入力は要りません。</div>
           <input type="email" value={email} onChange={e=>setEmail(e.target.value)} style={IN}
-            placeholder="example@gmail.com" autoComplete="off" inputMode="email"/>
+            placeholder="ここにメールアドレスを入力" autoComplete="off" inputMode="email"/>
           {err&&<div style={{color:'#fecaca',fontWeight:700,fontSize:13,marginTop:8}}>{err}</div>}
           <button style={BTN(!busy&&!!email.trim())} disabled={busy||!email.trim()}
             onClick={()=>{if(email.trim().indexOf('@')<1){setErr('メールアドレスの形式が正しくありません。');return;}sendCode();}}>
-            {busy?'送信中…':'確認コードを送る'}
+            {busy?'確認中…':'次へ'}
           </button>
           {onCancel&&<button style={SUB} onClick={onCancel}>やめる</button>}
         </div>
       )}
       {step==='code'&&(
         <div>
+          <div style={{color:'white',fontWeight:800,fontSize:17,marginBottom:4}}>
+            {fromInvite?'招待メールに書かれた6桁を入れてください':'6桁のコードを入れてください'}</div>
           <div style={LBL}>{fromInvite
-            ? '届いている招待メールに書かれた6桁を入れてください。'
-            : (email.trim() + ' 宛に6桁のコードを送りました（24時間以内に入力してください）')}</div>
+            ? '届いている招待メールの「確認コード」の6桁です。'
+            : (email.trim() + ' 宛に新しい6桁を送りました（24時間以内に入力してください）')}</div>
           <input type="text" value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,'').slice(0,6))}
             style={{...IN,fontSize:30,letterSpacing:'0.35em',textAlign:'center',fontWeight:800}}
             placeholder="------" inputMode="numeric" autoComplete="one-time-code" autoFocus/>
@@ -1813,7 +1815,7 @@ const MailModal=({user,onClose,onSaveEmail})=>{
         {!loaded?<div style={{textAlign:'center',color:'#94a3b8',fontSize:12,padding:12}}>⏳ 読込中...</div>:(
           <React.Fragment>
             <input type="email" inputMode="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value.trim())}
-              placeholder="example@gmail.com"
+              placeholder="通知を受け取るアドレスを入力"
               style={{width:'100%',padding:'12px 14px',border:'2px solid #e2e8f0',borderRadius:10,outline:'none',fontSize:16,marginBottom:10}}/>
             {msg&&<div style={{padding:'8px 12px',borderRadius:10,fontSize:12,fontWeight:700,marginBottom:10,background:msg.ok?'#f0fdf4':'#fef2f2',border:`1.5px solid ${msg.ok?'#86efac':'#fca5a5'}`,color:msg.ok?'#15803d':'#dc2626'}}>{msg.text}</div>}
             <div style={{display:'flex',gap:8}}>
