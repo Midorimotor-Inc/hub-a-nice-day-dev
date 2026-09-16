@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789550244987';
+    window.__APP_BUILD='build-1789550767837';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -116,7 +116,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.38';
+const APP_VERSION = '2.39';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -3441,7 +3441,7 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
         <div style={{background:'white',borderRadius:20,padding:'28px 32px',maxWidth:480,width:'100%',boxShadow:'0 30px 80px rgba(0,0,0,0.4)'}}>
           <div style={{textAlign:'center',marginBottom:20}}>
             <div style={{fontSize:36,marginBottom:4}}>🖥️</div>
-            <div style={{fontWeight:800,fontSize:16,color:'white'}}>{deskSel.name}</div>
+            <div style={{fontWeight:800,fontSize:16,color:'#111827'}}>{deskSel.name}</div>
             <div style={{fontSize:12,color:'#6b7280',marginTop:2}}>操作するスタッフを選んでください</div>
           </div>
           <div style={{textAlign:'center',marginBottom:14}}>
@@ -5842,7 +5842,7 @@ const TireEditModal=memo(({isOpen,onClose,allCarsH,allCarsS,rentalCars,tireData,
                 return(
                   <div key={car.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',marginBottom:5,background:'#f8fafc',borderRadius:8,border:'1px solid #e5e7eb'}}>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontWeight:700,fontSize:13,color:'white'}}>{car.name}</div>
+                      <div style={{fontWeight:700,fontSize:13,color:'#111827'}}>{car.name}</div>
                       <div style={{fontSize:10,color:'#9ca3af'}}>{car.num||'—'}</div>
                     </div>
                     <div style={{display:'flex',gap:5,flexShrink:0}}>
@@ -6393,6 +6393,22 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
     setItems(p => p.map((c,idx)=>idx===i?{...c,name:editName.trim(),num:editNum.trim()}:c));
     setEditIdx(null);
   };
+  // ★入力途中の変更を一覧に反映して返す。「✓」を押さずに「保存」を押しても変更が効くように
+  //   （✓を押し忘れて保存すると元の名前のまま、という報告 2026-09-16）。
+  //   ・編集中の行 … 入力中の車両名・ナンバー（車両名が空なら元のまま）
+  //   ・追加フォーム … 車両名が入っていれば「追加」を押していなくても足す
+  const withPending = list => {
+    let out = list;
+    if (editIdx !== null && editName.trim() && out[editIdx]) {
+      out = out.map((c,idx)=>idx===editIdx?{...c,name:editName.trim(),num:editNum.trim()}:c);
+    }
+    if (addName.trim() && out.length < 20) {
+      const newId = isRental ? 'r' + Date.now() : (tab==='honten'?'h':'s') + Date.now();
+      out = [...out, isRental ? {id:newId, name:addName.trim(), num:addNum.trim()}
+                              : {id:newId, name:addName.trim(), num:addNum.trim(), store:tab}];
+    }
+    return out;
+  };
 
   // 追加
   const addCar = () => {
@@ -6407,9 +6423,9 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
     setAddName(''); setAddNum('');
   };
 
-  // 保存して閉じる
+  // 保存して閉じる（入力途中の変更も含める）
   const handleSave = () => {
-    const clean = items.map(({_key,...c})=>c);
+    const clean = withPending(items).map(({_key,...c})=>c);
     if (tab==='honten')  onSaveH(clean);
     else if (tab==='sanda')   onSaveS(clean);
     else                      onSaveRental(clean);
@@ -6434,7 +6450,7 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
         {/* ヘッダー */}
         <div style={{padding:'18px 22px 10px',borderBottom:'1px solid #e5e7eb',flexShrink:0}}>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
-            <h2 style={{margin:0,fontSize:16,fontWeight:800,color:'white'}}>⚙️ 代車・レンタカー設定</h2>
+            <h2 style={{margin:0,fontSize:16,fontWeight:800,color:'#7c2d12'}}>⚙️ 代車・レンタカー設定</h2>
             <button onClick={onClose} style={{background:'#f3f4f6',border:'none',borderRadius:'50%',width:30,height:30,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,color:'#6b7280'}}>×</button>
           </div>
           {/* タブ */}
@@ -6475,11 +6491,11 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
                 /* 編集モード */
                 <>
                   <input value={editName} onChange={e=>setEditName(e.target.value)}
-                    placeholder="車両名" autoFocus
-                    style={{flex:2,padding:'5px 8px',border:'2px solid #6366f1',borderRadius:6,fontSize:12,outline:'none',fontFamily:'inherit'}}/>
+                    placeholder="車両名" autoFocus onKeyDown={e=>{if(e.key==='Enter')saveEdit(i);}}
+                    style={{flex:2,padding:'5px 8px',border:'2px solid #6366f1',borderRadius:6,fontSize:12,outline:'none',fontFamily:'inherit',color:'#111827',background:'white'}}/>
                   <input value={editNum} onChange={e=>setEditNum(e.target.value)}
-                    placeholder="ナンバー"
-                    style={{flex:1,padding:'5px 8px',border:'2px solid #6366f1',borderRadius:6,fontSize:12,outline:'none',fontFamily:'inherit'}}/>
+                    placeholder="ナンバー" onKeyDown={e=>{if(e.key==='Enter')saveEdit(i);}}
+                    style={{flex:1,padding:'5px 8px',border:'2px solid #6366f1',borderRadius:6,fontSize:12,outline:'none',fontFamily:'inherit',color:'#111827',background:'white'}}/>
                   <button onClick={()=>saveEdit(i)}
                     style={{padding:'5px 10px',background:'#c2410c',color:'white',border:'none',borderRadius:6,fontWeight:700,fontSize:11,cursor:'pointer',flexShrink:0}}>✓</button>
                   <button onClick={()=>setEditIdx(null)}
@@ -6489,7 +6505,7 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
                 /* 表示モード */
                 <>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontWeight:700,fontSize:13,color:'white'}}>{car.name}</div>
+                    <div style={{fontWeight:700,fontSize:13,color:'#111827'}}>{car.name}</div>
                     <div style={{fontSize:10,color:'#9ca3af'}}>{car.num||'—'}</div>
                   </div>
                   <button onClick={()=>startEdit(i)}
