@@ -232,7 +232,7 @@ function doGet(e) {
     return authRequest_(e.parameter.email, authPrefixOf_(e.parameter), e.parameter.resend, e.parameter.inv);
   }
   if (e.parameter.action === 'authVerify') {
-    return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua, e.parameter.inv, e.parameter.prev);
+    return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua, e.parameter.inv, e.parameter.prev, e.parameter.envs);
   }
   // v14: 管理者名簿の閲覧と変更。管理者として発行された利用証が無いと通らない。
   if (e.parameter.action === 'authAdminList') {
@@ -1652,13 +1652,51 @@ function authInvite_(email, prefix) {
   }
 }
 
+// ── 端末を台帳に登録して利用証を作る ──────────────────────────────────
+//   台帳はシートへの書き込みなので、他の保存と同じく25秒ロックで直列化する
+//   （同時に複数人が認証しても台帳が壊れないようにする）。ロックが取れなければ null。
+function authRegisterDevice_(prefix, staff, email, ua, prev) {
+  var jti = Utilities.getUuid();
+  var exp = Date.now() + AUTH_TTL_DAYS * 86400000;
+  var lock = LockService.getScriptLock();
+  var locked = false;
+  try { lock.waitLock(25000); locked = true; }
+  catch (le) { return null; }
+  try {
+    var devices = authLoadDevices_(prefix);
+    // この端末の前の登録（同じ人のものだけ）を消して置き換える。
+    // 他人の行は、その利用証をこの端末が持っていても消さない（共有PCで別人を登録した場合）。
+    String(prev || '').split(',').slice(0, 12).forEach(function (tk) {
+      var old = authReadToken_(String(tk).trim(), true);
+      if (!old || !old.j || old.j === jti) return;
+      var row = devices[old.j];
+      if (row && String(row.e || '').toLowerCase() === String(email).toLowerCase()) delete devices[old.j];
+    });
+    devices[jti] = {
+      n: staff.name, m: staff.myNumber, s: staff.store, e: email,
+      at: Date.now(), exp: exp, ua: String(ua || '').slice(0, 120)
+    };
+    if (staff.device) {   // 共有端末そのものの登録
+      devices[jti].dev = 1;
+      devices[jti].k = 'shared';
+      devices[jti].l = staff.label;
+    }
+    authSaveDevices_(prefix, devices);
+  } finally { if (locked) lock.releaseLock(); }
+  return { token: authMakeToken_(staff.name, staff.myNumber, staff.store, jti, staff.admin, staff.device), exp: exp, jti: jti };
+}
+
 // ── ② コードの照合と利用証の発行 ─────────────────────────────────────
 //   GET ?action=authVerify&email=...&code=123456&prefix=...&ua=...&apiKey=...
 //   prev: この端末がすでに持っている利用証（カンマ区切り・期限切れでも可）。
 //         同じ人の前の登録を置き換える＝同じPCで登録し直しても台帳に行が増えない。
 //         管理者コンソールでログインするたびに行が増え、スケジュール画面の登録と
 //         二重になっていた（2026-09-15 江川が2行になった件）。
-function authVerify_(email, code, prefix, ua, inv, prev) {
+//   envs: 'all' を付けると、管理者に限り 本番とDEVの両方の台帳に登録し、両方の利用証を返す（tokens: {prefix: token}）。
+//         管理者コンソールは1つのページで本番とDEVを切り替えるので、片方でログインすれば両方に入れるようにする
+//         （切り替えるたびにメール→6桁を求められて面倒、というユーザー指摘 2026-09-16）。
+//         一般スタッフには効かない（環境ごとの登録は今までどおり）。
+function authVerify_(email, code, prefix, ua, inv, prev, envs) {
   try {
     code = String(code || '').trim();
     if (SNAP_ENV_PREFIXES.indexOf(String(prefix || '')) < 0) {
@@ -1696,41 +1734,28 @@ function authVerify_(email, code, prefix, ua, inv, prev) {
     if (!staff) return makeResponse(JSON.stringify({ ok: false, err: 'not_registered' }));
 
     // 端末を台帳に登録して利用証を発行。
-    // 台帳はシートへの書き込みなので、他の保存と同じく25秒ロックで直列化する
-    // （同時に複数人が認証しても台帳が壊れないようにする）。
-    var jti = Utilities.getUuid();
-    var exp = Date.now() + AUTH_TTL_DAYS * 86400000;
-    var lock = LockService.getScriptLock();
-    var locked = false;
-    try { lock.waitLock(25000); locked = true; }
-    catch (le) { return makeResponse(JSON.stringify({ ok: false, err: 'busy' })); }
-    try {
-      var devices = authLoadDevices_(prefix);
-      // この端末の前の登録（同じ人のものだけ）を消して置き換える。
-      // 他人の行は、その利用証をこの端末が持っていても消さない（共有PCで別人を登録した場合）。
-      String(prev || '').split(',').slice(0, 6).forEach(function (tk) {
-        var old = authReadToken_(String(tk).trim(), true);
-        if (!old || !old.j || old.j === jti) return;
-        var row = devices[old.j];
-        if (row && String(row.e || '').toLowerCase() === email) delete devices[old.j];
-      });
-      devices[jti] = {
-        n: staff.name, m: staff.myNumber, s: staff.store, e: email,
-        at: Date.now(), exp: exp, ua: String(ua || '').slice(0, 120)
-      };
-      if (staff.device) {   // 共有端末そのものの登録
-        devices[jti].dev = 1;
-        devices[jti].k = 'shared';
-        devices[jti].l = staff.label;
+    var reg = authRegisterDevice_(prefix, staff, email, ua, prev);
+    if (!reg) return makeResponse(JSON.stringify({ ok: false, err: 'busy' }));
+
+    // 管理者コンソール向け：もう一方の環境（本番⇄DEV）にも登録し、その利用証も返す。
+    // 管理者だけ。環境ごとに別の行ができる（取り消しも環境ごと）。
+    var tokens = {}; tokens[String(prefix)] = reg.token;
+    if (String(envs || '') === 'all' && staff.admin && !staff.device) {
+      for (var pi = 0; pi < SNAP_ENV_PREFIXES.length; pi++) {
+        var p2 = SNAP_ENV_PREFIXES[pi];
+        if (p2 === String(prefix)) continue;
+        var st2 = authResolve_(p2, email);          // その環境のスタッフ表で本人を確定（uidや店が違うことがある）
+        if (!st2 || !st2.admin) continue;
+        var reg2 = authRegisterDevice_(p2, st2, email, ua, prev);
+        if (reg2) tokens[p2] = reg2.token;
       }
-      authSaveDevices_(prefix, devices);
-    } finally { if (locked) lock.releaseLock(); }
+    }
 
     var out = JSON.stringify({
       ok: true,
-      token: authMakeToken_(staff.name, staff.myNumber, staff.store, jti, staff.admin, staff.device),
+      token: reg.token, tokens: tokens,
       name: staff.name, myNumber: staff.myNumber, store: staff.store,
-      uid: staff.uid || '', exp: exp, admin: !!staff.admin,
+      uid: staff.uid || '', exp: reg.exp, admin: !!staff.admin,
       device: !!staff.device, label: staff.label || ''
     });
     try { cache.put(replayKey, out, AUTH_REPLAY_SEC); } catch (ce) {}

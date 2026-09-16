@@ -294,6 +294,36 @@ t('別環境の台帳を見ると未登録扱いになる',
   t('引き継ぎを受ける側は利用証なしで通る（門番の例外）', T.authGate_('hub2026co-key','authHandoffTake',PFX)===null);
 }
 
+// 13.98) 管理者コンソール：envs=all で 本番とDEV の両方に登録し、両方の利用証を返す（管理者だけ）
+{
+  props.HUB_ADMIN_EMAILS='daisuke@example.com=h1';
+  sheetStore['hub-v8-honten-staff-v2']=JSON.stringify([{uid:'h1',name:'見取大介',myNumber:1,store:'honten',loginEmail:'daisuke@example.com'}]);
+  const nProd=()=>Object.keys(T.authLoadDevices_('hub-v8-')).length, nDev=()=>Object.keys(T.authLoadDevices_(PFX)).length;
+  const p0=nProd(), d0=nDev();
+  let c=freshCode('daisuke@example.com');
+  let r=body(T.authVerify_('daisuke@example.com',c,PFX,'pc',null,'', 'all'));
+  t('管理者は両方の環境の利用証をもらえる', r.ok===true && r.tokens && r.tokens[PFX]===r.token && !!r.tokens['hub-v8-'], r.tokens&&Object.keys(r.tokens));
+  t('両方の台帳に行ができる', nProd()===p0+1 && nDev()===d0+1, {p:nProd()-p0,d:nDev()-d0});
+  t('本番の利用証は本番の門番を通る', T.authGate_('hub2026co-key|'+r.tokens['hub-v8-'],'','hub-v8-')===null);
+  t('本番の利用証で本番の管理者操作ができる', !!T.authAdminGate_('hub2026co-key|'+r.tokens['hub-v8-'],'hub-v8-'));
+  // 登録し直しても増えない（prev に両方の利用証を添える）
+  c=freshCode('daisuke@example.com');
+  const r2=body(T.authVerify_('daisuke@example.com',c,PFX,'pc',null,r.tokens[PFX]+','+r.tokens['hub-v8-'],'all'));
+  t('両方の利用証を添えて登録し直すと、どちらの台帳も増えない', r2.ok===true && nProd()===p0+1 && nDev()===d0+1, {p:nProd()-p0,d:nDev()-d0});
+  // 一般スタッフには効かない
+  props.HUB_ADMIN_EMAILS='';
+  const pf=nProd();
+  c=freshCode('fujiwara@example.com');
+  const r3=body(T.authVerify_('fujiwara@example.com',c,PFX,'pc',null,'','all'));
+  t('一般スタッフは envs=all でも今の環境だけ', r3.ok===true && Object.keys(r3.tokens||{}).length===1 && nProd()===pf, r3.tokens);
+  // envs 無しは従来どおり
+  props.HUB_ADMIN_EMAILS='daisuke@example.com=h1';
+  const pf2=nProd();
+  c=freshCode('daisuke@example.com');
+  const r4=body(T.authVerify_('daisuke@example.com',c,PFX,'pc'));
+  t('envs を付けなければ管理者でも今の環境だけ', r4.ok===true && Object.keys(r4.tokens).length===1 && nProd()===pf2);
+}
+
 // 13.8) 6桁コードは24時間有効。ただし総当たりは試行上限で止める。
 {
   const DAY = 86400000;

@@ -213,7 +213,7 @@ td.act{text-align:right;white-space:nowrap}
 //  この画面を開けるのは、管理者として発行された利用証を持つ人だけ。
 //  判定はGAS側（authAdminGate_）で行う。画面の申告は信用しない。
 // =====================================================================
-var APP_VERSION = '2.36';
+var APP_VERSION = '2.37';
 var GAS_URL     = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 // 環境の切り替え（2026-09-15）。この1ファイルで本番とDEVの両方を扱う。
 //   既定はDEV（安全側）。URLに ?env=prod が付いている時だけ本番のデータを扱う。
@@ -227,7 +227,7 @@ var APP_URL_OF  = { 'hub-v8-': 'https://midorimotor-inc.github.io/hub-a-nice-day
 document.documentElement.setAttribute('data-env', ENV_PROD ? 'prod' : 'dev');
 // 切り替えボタン。本番へ入る時は一言たしかめる（押し間違いで本番のスタッフに招待が飛ぶのを防ぐ）
 function switchEnv(toProd){
-  if (toProd && !window.confirm('本番のデータを扱います。\n\nここで送る招待メールは実際のスタッフに届き、\n取り消しは本番の端末に効きます。よろしいですか？')) return;
+  if (toProd && !window.confirm('本番のデータを扱います。\n\nここで送る招待メールは実際のスタッフに届き、\n取り消しは本番の端末に効きます。よろしいですか？\n\n（ログインし直しは要りません。画面が青になります）')) return;
   var u = location.pathname + (toProd ? '?env=prod' : '');
   location.href = u;
 }
@@ -244,6 +244,14 @@ function hubLoadMine(){
   catch(e){ return []; }
 }
 function hubSaveMine(l){ try{ localStorage.setItem(HUB_MINE_KEY, JSON.stringify(l)); }catch(e){} }
+// 環境（本番／DEV）を指定して読む・書く。コンソールは1つで両方を扱うので、ログイン時に両方へ保存する
+function hubLoadMineOf(prefix){
+  try { var v = JSON.parse(localStorage.getItem(prefix + 'auth-mine'));
+    return (v instanceof Array) ? v.filter(function(x){ return x && x.token && x.name; }) : []; }
+  catch(e){ return []; }
+}
+function hubSaveMineOf(prefix, l){ try{ localStorage.setItem(prefix + 'auth-mine', JSON.stringify(l)); }catch(e){} }
+var ENV_PREFIXES = ['hub-v8-', 'hub-v8-dev-'];
 function hubLive(l){ return (l||[]).filter(function(x){ return !x.exp || x.exp > Date.now(); }); }
 function hubSetKind(k){ try{ localStorage.setItem(HUB_KIND_KEY, k); }catch(e){} }
 function hubKind(){ try{ return localStorage.getItem(HUB_KIND_KEY) || ''; }catch(e){ return ''; } }
@@ -780,8 +788,13 @@ function bind(){
     S.err = ''; S.busy = true; S.typed = v; render();
     // この端末が持っている利用証も送る＝同じ人の前の登録（スケジュール画面で登録した行や、
     // 前回のコンソールのログイン）を置き換える。台帳に同じ人の行を増やさない。
-    var prev = hubLoadMine().map(function(x){ return x && x.token; }).filter(Boolean).slice(0, 6).join(',');
-    var ask = function(){ return gasGet({action:'authVerify', prefix:STOR, email:S.mail, code:v, ua:navigator.userAgent||'', prev:prev}); };
+    // 本番とDEVの両方の保管場所にある利用証を添える（どちらの台帳でも、この端末の前の行を置き換える）
+    var prev = [];
+    ENV_PREFIXES.forEach(function(p){ hubLoadMineOf(p).forEach(function(x){ if (x && x.token) prev.push(x.token); }); });
+    prev = prev.slice(0, 12).join(',');
+    // envs=all：管理者は本番とDEVの両方に登録され、両方の利用証が返る。
+    // コンソールは1つのページで両方を切り替えるので、片方でログインすれば以後は切り替えても聞かれない。
+    var ask = function(){ return gasGet({action:'authVerify', prefix:STOR, email:S.mail, code:v, ua:navigator.userAgent||'', prev:prev, envs:'all'}); };
     ask().then(function(r){
       // 返事が届かなかった時は3秒おいて自動でもう一度（サーバーは成功の返事を15分覚えている）
       if (!r || r.err === 'offline' || r.err === 'bad_response') {
@@ -801,16 +814,23 @@ function bind(){
       }
       if (!r.admin) { S.err = 'このアドレスは管理者ではありません。'; render(); return; }
       // 利用証をこの端末に保存する。スケジュール画面にもそのまま入れる。
-      var list = hubLoadMine().filter(function(x){ return x.name !== r.name; });
-      list.push({uid:r.uid||'', name:r.name, myNumber:r.myNumber, store:r.store||'honten', token:r.token, exp:r.exp});
-      hubSaveMine(list);
+      var toks = (r.tokens && typeof r.tokens === 'object') ? r.tokens : {};
+      toks[STOR] = r.token;
+      Object.keys(toks).forEach(function(p){
+        var list = hubLoadMineOf(p).filter(function(x){ return x.name !== r.name; });
+        list.push({uid:r.uid||'', name:r.name, myNumber:r.myNumber, store:r.store||'honten', token:toks[p], exp:r.exp});
+        hubSaveMineOf(p, list);
+      });
+      var bothEnv = Object.keys(toks).length > 1;
       // 端末の種類（自分専用／共有）はここでは決めない。決めるのはスケジュール画面の登録時。
       // 以前ここで「共有」を入れていたため、その端末が自動ログインしなくなる不具合があった。
       hubApplyToken(r.token);
       S.me = {name:r.name, uid:r.uid, mail:S.mail};
       S.view = 'console'; S.tab = 'staff'; render();
       loadAll().then(function(){
-        toast('管理者としてログインしました', 'この端末は本人確認済みになりました。スケジュール画面にもそのまま入れます。');
+        toast('管理者としてログインしました', bothEnv
+          ? '本番とDEVの両方に入れます。切り替えてもログインは要りません。スケジュール画面にもそのまま入れます。'
+          : 'この端末は本人確認済みになりました。スケジュール画面にもそのまま入れます。');
       });
     });
   };

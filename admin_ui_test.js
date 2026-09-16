@@ -123,7 +123,9 @@ const gasRoute = async (route) => {
       const jti = 'd' + Object.keys(devices).length;
       devices[jti] = { n:s.name, m:s.myNumber, s:s.store, e:m, at:Date.now(),
                        exp:Date.now()+90*86400000, ua:'Test Browser' };
-      return body({ ok:true, token:tokenOf(s, m), exp:Date.now()+90*86400000,
+      var toks = {}; toks[STOR] = tokenOf(s, m);
+      if (q.get('envs') === 'all' && s.admin) toks['hub-v8-'] = tokenOf(s, m);   // 管理者は本番の利用証も
+      return body({ ok:true, token:tokenOf(s, m), tokens:toks, exp:Date.now()+90*86400000,
                     name:s.name, myNumber:s.myNumber, store:s.store, uid:s.uid||'', admin:!!s.admin });
     }
     case 'authInvite': {
@@ -530,6 +532,9 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
 
     // ⑯ 本番／DEVの切り替え（1ファイルで両方。既定はDEV、?env=prod で本番・青の見た目）
     await page.goto(`http://localhost:${PORT}/admin.html`, { waitUntil: 'domcontentloaded' });
+    // 両方の環境の利用証を消して、ログイン画面から始める（ログインは両方の環境に保存されるため）
+    await page.evaluate(() => { localStorage.removeItem('hub-v8-auth-mine'); localStorage.removeItem('hub-v8-dev-auth-mine'); });
+    await page.reload({ waitUntil: 'domcontentloaded' });
     t('既定はDEV（緑）', (await page.getAttribute('html', 'data-env')) === 'dev');
     t('DEVの帯は「本番のデータには触れません」', await see(page, '本番のデータには触れません'));
     t('ログイン画面に「本番に切り替える」がある', await see(page, '本番に切り替える'));
@@ -550,6 +555,32 @@ const dump = page => page.evaluate(() => document.body.innerText.replace(/\s+/g,
     t('本番の帯は「実際のスタッフに届き」', await see(page, '実際のスタッフに届き'), await dump(page));
     t('本番では「DEVに戻る」が出る', await see(page, 'DEVに戻る'));
     t('本番のログイン画面は「/ 本番」', await see(page, '/ 本番'));
+    // ここでDEVにログインしてから本番に切り替えると、ログインを求められない（1回のログインで両方）
+    await click(page, 'DEVに戻る');
+    await page.waitForTimeout(600);
+    await page.fill('#m', 'egawa@midori-m.com');
+    await click(page, '確認コードを送る');
+    await see(page, '6桁');
+    await page.fill('#c', CODE);
+    await click(page, '確認する');
+    t('ログイン後の通知が「本番とDEVの両方に入れます」', await see(page, '本番とDEVの両方に入れます', 10000), await dump(page));
+    t('本番の保管場所にも利用証が入る', await page.evaluate(() => { try { return JSON.parse(localStorage.getItem('hub-v8-auth-mine')||'[]').length === 1; } catch(e){ return false; } }));
+    page.once('dialog', async d => { await d.accept(); });
+    await click(page, '本番に切り替える');
+    await page.waitForURL(/env=prod/, { timeout: 5000 }).catch(()=>{});
+    t('本番に切り替えてもログインを求められない', await see(page, '本人認証の進み具合', 10000), await dump(page));
+    t('本番でも江川京志でログイン中', await see(page, '江川京志 でログイン中'));
+    await click(page, 'DEVに戻る');
+    await page.waitForTimeout(600);
+    t('DEVに戻ってもログイン不要', await see(page, '本人認証の進み具合', 10000));
+    // 後片付け：この後の検査（DEVに戻る）のために、いったんログイン画面へ（利用証を消す）
+    await page.evaluate(() => { localStorage.removeItem('hub-v8-auth-mine'); localStorage.removeItem('hub-v8-dev-auth-mine'); });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await see(page, 'Hub 管理者コンソール');
+    page.once('dialog', async d => { await d.accept(); });
+    await click(page, '本番に切り替える');
+    await page.waitForURL(/env=prod/, { timeout: 5000 }).catch(()=>{});
+    await page.waitForTimeout(600);
     await click(page, 'DEVに戻る');
     await page.waitForTimeout(600);
     t('「DEVに戻る」で ?env=prod が外れる', !/env=prod/.test(page.url()) && (await page.getAttribute('html', 'data-env')) === 'dev', page.url());

@@ -36,7 +36,7 @@ sub('doGet の入口',
     return authRequest_(e.parameter.email, authPrefixOf_(e.parameter), e.parameter.resend, e.parameter.inv);
   }
   if (e.parameter.action === 'authVerify') {
-    return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua, e.parameter.inv, e.parameter.prev);
+    return authVerify_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.ua, e.parameter.inv, e.parameter.prev, e.parameter.envs);
   }
   // v14: 管理者名簿の閲覧と変更。管理者として発行された利用証が無いと通らない。
   if (e.parameter.action === 'authAdminList') {
