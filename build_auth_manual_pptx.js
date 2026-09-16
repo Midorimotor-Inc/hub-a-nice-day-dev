@@ -302,27 +302,7 @@ async function build() {
     });
   }
 
-  // 12 管理者の方へ
-  {
-    const s = pres.addSlide(); s.background = { color: PAPER };
-    pageTitle(s, '管理者の方へ　— 招待の送り方', '管理者コンソール（admin.html）の「スタッフと招待」タブから', { t: '管理者', bg: NAVY });
-    const steps = [
-      ['ログイン用メールを入れる', 'スタッフの行の「ログイン用メール」欄に会社のアドレスを入力して保存。1人1つ。'],
-      ['「使う端末」を決める', '個人端末／共有PC1 など。決めておくと本人は端末の種類を聞かれません。'],
-      ['「招待を送る」', '送る前にアドレスの読み合わせが出ます。本人に印つきリンクと6桁が届きます。'],
-      ['「🔑 端末」タブで確認', '登録が済むと端末が並びます。同じ人が PC と スマホ で2行になるのは正常。紛失・退職は「取り消し」。'],
-    ];
-    steps.forEach((st, i) => {
-      const x = 0.55 + i * 3.1;
-      card(s, x, 1.5, 2.9, 2.6, { bg: SOFT });
-      numCircle(s, i + 1, x + 0.2, 1.7, 0.42, NAVY);
-      T(s, st[0], { x: x + 0.2, y: 2.25, w: 2.5, h: 0.6, fontSize: 13.5, bold: true });
-      T(s, st[1], { x: x + 0.2, y: 2.9, w: 2.5, h: 1.15, fontSize: 11, color: MUTED });
-    });
-    callout(s, 0.55, 4.35, 6.0, 1.3, '同じ人の行が増えたら', '同じPC・同じブラウザで登録し直した分は自動で置き換わります。増えるのは別ブラウザ（LINEの中など）で登録した時。使っていない行は取り消してOK。', '');
-    callout(s, 6.75, 4.35, 6.0, 1.3, '本番／DEV の切り替え', 'コンソール右上の「本番に切り替える」。本番は青、DEVは緑。開き直すと必ずDEVに戻ります。', 'hi');
-    T(s, 'このページは管理者だけに配ってください。', { x: 0.55, y: 5.9, w: 12, h: 0.35, fontSize: 11, color: RED, bold: true });
-  }
+  // ※ 管理者向けの内容は「管理者マニュアル」（build_manual_pptx.js の buildAdmin）にまとめる。この手順書には入れない（ユーザー指示 2026-09-16）。
 
   if (!fs.existsSync(OUTDIR)) fs.mkdirSync(OUTDIR, { recursive: true });
   await pres.writeFile({ fileName: OUT });
