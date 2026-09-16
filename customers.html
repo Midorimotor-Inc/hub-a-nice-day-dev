@@ -15,7 +15,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1789538159815';
+  window.__APP_BUILD='build-1789550244987';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -175,7 +175,7 @@ const hubRenew = async name => {
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.37'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.38'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -552,7 +552,8 @@ const trackSave=(p)=>{
 //   保存した代車がまだGASに届いていない間にタブ復帰が入った時に一瞬消えてしまう。
 //   ローカルにしか無いレコードは「作られたばかり(3分以内)」の間だけ残す。
 const SHARED_FRESH_MS=180000;
-const sharedRecTs=r=>(r&&typeof r==='object')?(Number(r.id)||Number(r.savedAt)||0):0;
+// ★id と savedAt の大きい方（index_dev.html と同じ規則。Kyoshi承認のBLOCK-B変更・2026-09-16）
+const sharedRecTs=r=>(r&&typeof r==='object')?Math.max(Number(r.id)||0,Number(r.savedAt)||0):0;
 const sharedRecFresh=(r,nowTs)=>{const t=sharedRecTs(r);return t?((nowTs-t)<SHARED_FRESH_MS):true;};
 const mergeSharedObjects=(local,server,nowTs)=>{
   const mg={...server};

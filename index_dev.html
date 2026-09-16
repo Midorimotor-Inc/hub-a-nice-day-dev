@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789538159815';
+    window.__APP_BUILD='build-1789550244987';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -116,7 +116,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.37';
+const APP_VERSION = '2.38';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -2224,9 +2224,15 @@ const syncCustStatus=async(custId,newStatus,extraFields={},matchName,matchNo)=>{
 //     （＝「代車が消えたり現れたりする」の正体。2026-08-25にユーザーが報告）。
 //   ★id も savedAt も持たないレコードは判断材料が無いので従来どおり残す（custbk等の保護）。
 const SHARED_FRESH_MS = 180000; // 3分。GASへの書き込みは実測2〜4秒なので十分な猶予
+// ★id と savedAt の「大きい方」を時刻にする（Kyoshi承認のBLOCK-B変更・2026-09-16）。
+//   従来は id があれば savedAt を見なかった。id は作成時刻なので、既存の予約の名前や期間を
+//   変えても時刻が変わらず「サーバーの方が正」と判定され、GASの60秒キャッシュが返す古い値に
+//   数秒で上書きされていた（代車・レンタカーの利用者名を変えても元に戻る、と報告）。
+//   編集時に savedAt を打ち直せば、3分間はローカルの編集が古いキャッシュに負けない。
+//   サーバーにも同じ savedAt が入るので、キャッシュが切れた後は両方同じ値になる。
 function sharedRecTs(r){
   if(!r||typeof r!=='object')return 0;
-  return Number(r.id)||Number(r.savedAt)||0;
+  return Math.max(Number(r.id)||0, Number(r.savedAt)||0);
 }
 function sharedRecFresh(r,nowTs){
   const t=sharedRecTs(r);
@@ -8136,7 +8142,8 @@ function AppInner() {
     [persistRes,updateLocalRres]);
   const addRentalRes    = useCallback((carId,rec) => persistRres(base=>putResRec(base,carId,String(rec.id),rec),back=>resHasRec(back,carId,rec.id),{verb:'登録',name:rec?.user}),[persistRres]);
   const deleteRentalRes = useCallback((carId,resId) => persistRres(base=>resHasRec(base,carId,resId)?removeResById(base,carId,resId):undefined,back=>!resHasRec(back,carId,resId),{verb:'削除'}),[persistRres]);
-  const replaceRentalRes = useCallback((carId,resId,newRec) => persistRres(base=>resHasRec(base,carId,resId)?patchResRec(base,carId,resId,newRec):undefined,back=>{const r=Object.values(_resObj(back)[carId]||{}).find(x=>x&&x.id===resId);return !!r&&Object.keys(newRec||{}).every(k=>JSON.stringify(r[k])===JSON.stringify(newRec[k]));},{verb:'期間の変更',name:newRec?.user}),[persistRres]);
+  // ★編集は savedAt を打ち直す（古いキャッシュに上書きされないため。sharedRecTs 参照）
+  const replaceRentalRes = useCallback((carId,resId,newRec0) => { const newRec={...(newRec0||{}),savedAt:Date.now()}; return persistRres(base=>resHasRec(base,carId,resId)?patchResRec(base,carId,resId,newRec):undefined,back=>{const r=Object.values(_resObj(back)[carId]||{}).find(x=>x&&x.id===resId);return !!r&&Object.keys(newRec||{}).every(k=>JSON.stringify(r[k])===JSON.stringify(newRec[k]));},{verb:'期間の変更',name:newRec?.user}); },[persistRres]);
   // ★「この端末がたった今登録した代車」を覚えておく。光らせる根拠はこれだけで、
   //   サーバーの応答も保存の完了も待たない＝代車管理を開いた瞬間に必ず光っている。
   //   保存に20秒かかっても、その間に画面を切り替えても、開いた時点から光り始める。
@@ -9817,7 +9824,8 @@ function AppInner() {
 
   // 代車予約の期間編集は1回のatomic更新で差し替える（delete+addの競合を防ぐ）。
   //   bookingKey / carName / carNum / locked などの既存フィールドはそのまま残るので紐付けが切れない。
-  const replaceLoanerRes=useCallback((cid,rid,patch)=>{
+  const replaceLoanerRes=useCallback((cid,rid,patch0)=>{
+    const patch={...(patch0||{}),savedAt:Date.now()};   // ★編集は savedAt を打ち直す（sharedRecTs 参照）
     setLoanerUndo(u=>[...u,{prevState:loanerRes}]);
     persistLres(
       base=>resHasRec(base,cid,rid)?patchResRec(base,cid,rid,patch):undefined,
@@ -9880,7 +9888,7 @@ function AppInner() {
     if(!cur)return;
     const next=!cur.locked;
     persistLres(
-      base=>resHasRec(base,cid,resId)?patchResRec(base,cid,resId,{locked:next}):undefined,
+      base=>resHasRec(base,cid,resId)?patchResRec(base,cid,resId,{locked:next,savedAt:Date.now()}):undefined,   // ★savedAt も打ち直す
       back=>{const r=Object.values(_resObj(back)[cid]||{}).find(x=>x&&x.id===resId);return !r||!!r.locked===next;},
       {verb:'固定の切り替え',name:cur.user}
     );

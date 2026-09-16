@@ -35,6 +35,15 @@ for(const [file,re] of targets){
   t('savedAtが古ければ消える',Object.keys(r[1]).length===0,r);
   r=merge({1:{'d':{savedAt:NEW,user:'新しいsavedAt'}}},{1:{}},NOW);
   t('savedAtが新しければ残す',r[1].d?.user==='新しいsavedAt',r);
+  // ★2026-09-16：既存の予約（idは古い）の名前を変えて savedAt を打ち直した → 古いキャッシュ（savedAt無し）に負けない
+  r=merge({1:{'d':{id:OLD,savedAt:NEW,user:'名前を変えた'}}},{1:{'d':{id:OLD,user:'変える前'}}},NOW);
+  t('編集して savedAt を打ち直したレコードは古いサーバー値に負けない',r[1].d.user==='名前を変えた',r);
+  r=merge({1:{'d':{id:OLD,savedAt:NEW,user:'名前を変えた'}}},{1:{'d':{id:OLD,savedAt:NEW,user:'名前を変えた'}}},NOW);
+  t('サーバーにも同じ savedAt が入れば同じ値（ずれない）',r[1].d.user==='名前を変えた'&&r[1].d.savedAt===NEW,r);
+  r=merge({1:{'d':{id:OLD,savedAt:NEW-1000,user:'自分の編集'}}},{1:{'d':{id:OLD,savedAt:NEW,user:'他PCの後の編集'}}},NOW);
+  t('他PCがあとから編集した方が新しければサーバーを採用',r[1].d.user==='他PCの後の編集',r);
+  r=merge({1:{'d':{id:OLD,savedAt:OLD,user:'古い編集'}}},{1:{'d':{id:OLD,user:'サーバー'}}},NOW);
+  t('3分過ぎた編集はサーバーに従う',r[1].d.user==='サーバー',r);
   r=merge({'2026-8-1':[{name:'ローカル'}]},{'2026-8-1':[{name:'サーバー'}]},NOW);
   t('配列はサーバー版をそのまま使う',Array.isArray(r['2026-8-1'])&&r['2026-8-1'][0].name==='サーバー',r);
   r=merge({1:{'a':{id:NEW,user:'自分'}}},{1:{},2:{'b':{id:OLD,user:'他車'}}},NOW);
