@@ -107,7 +107,7 @@ async function build() {
       s.addShape(pres.ShapeType.roundRect, { x: 0.9 + i * 3.2, y: 4.9, w: 3.0, h: 0.46, rectRadius: 0.2, fill: { color: '1E3A66' }, line: { color: '2F5590', width: 1 } });
       T(s, p, { x: 0.9 + i * 3.2, y: 4.9, w: 3.0, h: 0.46, fontSize: 12, color: 'C6D4E8', align: 'center', valign: 'middle' });
     });
-    T(s, '緑モータース　2026年9月版（v2.35）', { x: 0.9, y: 6.5, w: 11.5, h: 0.35, fontSize: 11, color: '7E92AE' });
+    T(s, '緑モータース　2026年9月版（v2.37）', { x: 0.9, y: 6.5, w: 11.5, h: 0.35, fontSize: 11, color: '7E92AE' });
   }
 
   // 2 考え方と全体の流れ
@@ -194,7 +194,7 @@ async function build() {
     const s = pres.addSlide(); s.background = { color: PAPER };
     pageTitle(s, 'PC　注意すること', '登録は「そのブラウザ」に入ります。別のブラウザ・別の窓では未登録扱いになります', TAG_PC);
     const notes = [
-      ['✅', 'いつも使う Edge で開く', 'メールのリンクは Edge で開くのが標準です。Chrome など別のブラウザで Hub を開くと、そちらは未登録なので登録画面が出ます。', 'ok'],
+      ['✅', 'いつも使う Edge で開く（別のブラウザでもOK）', 'メールのリンクは Edge で開くのが標準です。普段 Chrome などを使う人は、メールのリンクを右クリック →「リンクをコピー」→ そのブラウザのアドレス欄に貼り付けて開いてください。登録は「開いたブラウザ」に入るので、以後も同じブラウザで使います。', 'ok'],
       ['⛔', 'InPrivate（プライベート）窓は使わない', '閉じると登録が消えます。毎回登録し直しになります。', 'ng'],
       ['⛔', 'Edge のプロファイルを切り替えない', '右上のアイコンで「仕事用／個人用」を切り替えると、別の人のブラウザ扱いです。', 'ng'],
       ['⛔', '「終了時に閲覧データを削除」をオンにしない', 'Edge の設定でこれがオンだと、閉じるたびに登録が消えます。設定 → プライバシー → 閲覧データをクリア を確認。', 'ng'],
@@ -217,7 +217,8 @@ async function build() {
     pageTitle(s, 'iPhone　①メールのリンクを Safari で開く', 'iPhone は Safari で登録します（ホーム画面にアプリとして追加できるのは Safari だけ）', TAG_IP);
     stepsAndShot(s, [
       { t: 'メールのリンクをタップ', d: 'iPhone の標準設定なら Safari が開きます。右の画面（6桁の欄）が出ればOK。', color: INDIGO },
-      { t: 'LINE や Gmail アプリの中で開いてしまったら', d: '画面の右上または右下の「…」「⋮」→「Safariで開く」を選んでください。アプリの中のブラウザで登録すると、あとでもう一度登録が必要になります。', h: 1.0, color: INDIGO },
+      { t: 'スマホで招待メールが読めない場合', d: 'PCでメールのリンクを右クリック →「リンクをコピー」→ LINE・SMS・メールで自分のスマホに送り、スマホでそのリンクをタップ。6桁はPCのメールを見て打ちます。', h: 0.85, color: INDIGO },
+      { t: 'LINE や Gmail アプリの中で開いてしまったら', d: '右上または右下の「…」「⋮」→「Safariで開く」（Android は「Chromeで開く」）。アプリの中のブラウザで登録すると、あとでもう一度登録が必要になります。', h: 0.85, color: INDIGO },
       { t: 'メールの6桁を入れて「確認する」', d: '10〜30秒かかることがあります。', color: INDIGO },
     ], 'auth-ip-1-code.png', { textW: 6.2 });
   }

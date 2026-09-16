@@ -131,7 +131,8 @@ function scrub(v) {
     const key = 'hub-v8-dev-honten-staff-v2';
     const html = fs.readFileSync(path.join(MAIN_DIR, 'index_main.html'), 'utf8');
     const gas = (html.match(/GAS_URL = '([^']+)'/) || [])[1];
-    const k   = (html.match(/GAS_API_KEY = '([^']+)'/) || [])[1];
+    // v14 から GAS_API_KEY は HUB_BASE_KEY を指す変数になった。本来のキーは HUB_BASE_KEY を見る
+    const k   = (html.match(/HUB_BASE_KEY = '([^']+)'/) || html.match(/GAS_API_KEY = '([^']+)'/) || [])[1];
     for (const st of ['honten', 'sanda']) {
       const r = await fetch(`${gas}?key=hub-v8-dev-${st}-staff-v2&apiKey=${encodeURIComponent(k)}`);
       const t = await r.text();
@@ -263,8 +264,8 @@ function scrub(v) {
   await pm.waitForTimeout(6000);
   await shoot(pm, '10-mobile-login.png', 'モバイル：ログイン');
   try {
-    await pm.fill('input[type="tel"]', '1');
-    await pm.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => /SIGN IN|ログイン|入る/i.test(x.textContent)); if (b) b.click(); });
+    // v2.33 から番号入力はなくなり、名前を選ぶ（共有端末のログイン）
+    await pm.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => /見取大介/.test(x.textContent)); if (b) b.click(); });
     await pm.waitForTimeout(14000);
     await shoot(pm, '11-mobile-schedule.png', 'モバイル：スケジュール');
     for (const [tab, f, l] of [['カレンダー','12-mobile-calendar.png','モバイル：カレンダー'], ['代車','13-mobile-loaner.png','モバイル：代車']]) {

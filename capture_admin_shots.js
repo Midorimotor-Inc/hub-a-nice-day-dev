@@ -50,7 +50,7 @@ const gasRoute = async route => {
   if (route.request().method() === 'POST') return text('ok');
   switch (q.get('action')) {
     case 'authRequest': return body({ ok:true });
-    case 'authVerify': return body({ ok:true, token:'TK~admin', exp:now+90*D, name:'江川京志', myNumber:7, store:'honten', uid:'h7', admin:true });
+    case 'authVerify': return body({ ok:true, token:'TK~admin', tokens:{ 'hub-v8-':'TK~admin', 'hub-v8-dev-':'TK~admin' }, exp:now+90*D, name:'江川京志', myNumber:7, store:'honten', uid:'h7', admin:true });
     case 'authAdminList': return body({ ok:true, admins });
     case 'authAdminNames': return body({ ok:true, names: admins.map(a => a.name) });
     case 'authInvite': return body({ ok:true, name:'舟田祥子' });
@@ -105,11 +105,8 @@ const shot = (page, name) => page.screenshot({ path: path.join(OUT, name) });
   await shot(page, 'admin-6-admins.png');
   // 本番（青）
   await page.goto(`http://localhost:${PORT}/admin.html?env=prod`, { waitUntil: 'domcontentloaded' });
-  await see(page, '本番環境'); await page.waitForTimeout(300);
-  await shot(page, 'admin-7-prod-login.png');
-  await page.fill('#m', 'egawa@midori-m.com'); await click(page, '確認コードを送る');
-  await see(page, '6桁'); await page.fill('#c', CODE); await click(page, '確認する');
-  await see(page, '本人認証の進み具合'); await see(page, '見取大介'); await page.waitForTimeout(5400);   // 「ログインしました」の通知（5秒）が消えるのを待つ
+  // DEVでログインした時に本番の利用証も入っているので、本番はログインなしで開く
+  await see(page, '本番環境'); await see(page, '本人認証の進み具合'); await see(page, '見取大介'); await page.waitForTimeout(600);
   await shot(page, 'admin-8-prod-staff.png');
 
   await browser.close();
