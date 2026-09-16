@@ -12,7 +12,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789519763459';
+  window.__APP_BUILD='build-1789522222603';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -85,7 +85,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.35';
+const MOBILE_VERSION='2.36';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -2082,9 +2082,21 @@ const App=()=>{
   const [showAuthAdd,setShowAuthAdd]=useState(!!HUB_INVITE_ID);   // 招待リンクから開いたら最初から登録画面
   // 引き継ぎの印（?hand=）つきで開いた：この保管場所に利用証が無ければ印を出して受け取る。
   const [handPending,setHandPending]=useState(!!HUB_HANDOFF_ID&&hubLive(hubLoadMine()).length===0);
+  // 引き継ぎを受けた直後の案内（ホーム画面に追加）。すでにホーム画面のアイコンから開いている時は出さない
+  const [homeHint,setHomeHint]=useState(false);
   useEffect(()=>{
     if(!handPending)return;
-    (async()=>{ await hubTakeHandoff(); setAuthMine(hubLive(hubLoadMine())); setHandPending(false); })();
+    (async()=>{
+      const took=await hubTakeHandoff();
+      setAuthMine(hubLive(hubLoadMine()));
+      if(took){
+        // ここから「ホーム画面に追加」できるように、新しい印（30分）をURLに付け直す
+        const h=await hubMakeHandoff();
+        if(h){ try{history.replaceState(null,'',location.pathname+'?hand='+encodeURIComponent(h)+location.hash);}catch(e){} }
+        if(!(navigator.standalone||matchMedia('(display-mode: standalone)').matches)) setHomeHint(true);
+      }
+      setHandPending(false);
+    })();
   },[handPending]);
   // 自分でログアウトした直後は自動ログインを止める（止めないと即座に入り直す）
   const [authAutoOff,setAuthAutoOff]=useState(false);
@@ -2811,6 +2823,17 @@ const App=()=>{
           })}
         </div>
       </div>
+      {homeHint&&(
+        <div style={{flexShrink:0,padding:'9px 12px',background:'#eef2ff',borderBottom:'1.5px solid #c7d2fe',display:'flex',gap:9,alignItems:'flex-start'}}>
+          <span style={{fontSize:16,lineHeight:1.2}}>📲</span>
+          <div style={{flex:1,fontSize:12,color:'#3730a3',lineHeight:1.65}}>
+            <b>ホーム画面に追加</b>しておくと、次からアイコンをタップするだけで開けます。<br/>
+            iPhone：共有ボタン（□↑）→「ホーム画面に追加」／Android：メニュー（⋮）→「ホーム画面に追加」<br/>
+            <span style={{color:'#6366f1'}}>この登録はアイコンにそのまま引き継がれます（30分以内）</span>
+          </div>
+          <button onClick={()=>setHomeHint(false)} style={{border:'none',background:'transparent',color:'#6366f1',fontSize:16,padding:'0 2px'}}>✕</button>
+        </div>
+      )}
       {saveBanners.length>0&&(
         <div style={{flexShrink:0,display:'flex',flexDirection:'column',gap:4,padding:'6px 8px',background:'#f1f5f9'}}>
           {saveBanners.map(b=>{

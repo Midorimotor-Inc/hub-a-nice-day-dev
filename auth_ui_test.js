@@ -670,7 +670,9 @@ const dump = async (page, root) => page.evaluate(r => {
     // 新しいコンテキスト＝別の保管場所（ホーム画面のアイコンの模擬）
     t('引き継ぎ：印つきで開くと登録画面が出ない', !(await seeText(page, 'この端末にスタッフを追加', 2500)), await dump(page));
     t('引き継ぎ：そのまま本人として入れる', await seeText(page, '見取大介', 8000), await dump(page));
-    t('引き継ぎ：URLから印が外れる', !(await page.evaluate(() => /hand=/.test(location.search))));
+    t('引き継ぎ：受け取った側にも「ホーム画面に追加」の案内が出る', await seeText(page, 'ホーム画面に追加', 4000), await dump(page));
+    await page.waitForFunction(() => /[?&]hand=[0-9a-f]{32}/.test(location.search), null, { timeout: 6000 }).catch(()=>{});
+    t('引き継ぎ：受け取った側のURLにも新しい印が付く（ここからホーム画面に追加できる）', await page.evaluate(() => /[?&]hand=[0-9a-f]{32}/.test(location.search)), await page.url());
     t('引き継ぎ：JSエラーなし', errs.length === 0, errs.slice(0, 2));
   }, 'mobile.html', handUrl);
   await run(true, async (page, errs) => {
