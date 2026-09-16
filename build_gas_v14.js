@@ -69,6 +69,13 @@ sub('doGet の入口',
   if (e.parameter.action === 'authRenew') {
     return authRenew_(e.parameter.apiKey, authPrefixOf_(e.parameter));
   }
+  // v14: 登録の引き継ぎ（同じ端末の別ブラウザ／ホーム画面アイコンへ）。印を作る側は利用証が要る。
+  if (e.parameter.action === 'authHandoff') {
+    return authHandoff_(e.parameter.apiKey, authPrefixOf_(e.parameter));
+  }
+  if (e.parameter.action === 'authHandoffTake') {
+    return authHandoffTake_(e.parameter.hand, authPrefixOf_(e.parameter));
+  }
   // v14: 利用証の門番。HUB_AUTH_ENFORCE='1' を入れるまでは素通りする（段階移行）
   var _gate = authGate_(e.parameter.apiKey, e.parameter.action, authPrefixOf_(e.parameter));
   if (_gate) return _gate;`);

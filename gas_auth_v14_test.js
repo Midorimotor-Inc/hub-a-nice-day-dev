@@ -43,7 +43,7 @@ vm.runInContext(src+`
 this.T={authMakeToken_,authReadToken_,authValid_,authGate_,authBaseKey_,authPrefixOf_,
         authRequest_,authInvite_,authVerify_,authRenew_,authLoadDevices_,authSaveDevices_,authFindStaffByEmail_,
         authAdmins_,authAdminSave_,authAdminOf_,authAdminGate_,authResolve_,authFindStaffByUid_,
-        authAdminList_,authAdminSet_,authFindDeviceByEmail_,authAdminNames_,authWriteGate_,authIsAdminOnlyKey_,authSaveCodes_,authLoadCodes_,authCodeHash_,authInviteEmail_};`,ctx);
+        authAdminList_,authAdminSet_,authFindDeviceByEmail_,authAdminNames_,authWriteGate_,authIsAdminOnlyKey_,authSaveCodes_,authLoadCodes_,authCodeHash_,authInviteEmail_,authHandoff_,authHandoffTake_};`,ctx);
 const T=ctx.T;
 
 const ok=[],ng=[];
@@ -264,6 +264,34 @@ t('別環境の台帳を見ると未登録扱いになる',
   c=freshCode('daisuke@example.com');
   body(T.authVerify_('daisuke@example.com',c,PFX,'pc-B'));
   t('prev が無ければ別の端末として行が増える', rows().length===before+2, rows().length);
+}
+
+// 13.97) 登録の引き継ぎ（同じ端末の別ブラウザ／ホーム画面アイコン）。台帳に行を増やさず同じ利用証を渡す
+{
+  const rows=()=>Object.keys(T.authLoadDevices_(PFX)).length;
+  const c=freshCode('daisuke@example.com');
+  const reg=body(T.authVerify_('daisuke@example.com',c,PFX,'iphone-safari'));
+  const n0=rows();
+  t('利用証が無いと印を作れない', body(T.authHandoff_('hub2026co-key',PFX)).err==='expired');
+  const h=body(T.authHandoff_('hub2026co-key|'+reg.token,PFX));
+  t('登録済みなら引き継ぎの印が作れる（32桁）', h.ok===true && /^[0-9a-f]{32}$/.test(h.hand), h);
+  const take=body(T.authHandoffTake_(h.hand,PFX));
+  t('印を出すと同じ利用証が返る', take.ok===true && take.token===reg.token && take.name==='見取大介' && take.uid==='h1', take);
+  t('台帳に行は増えない（同じ端末の行を共有）', rows()===n0, rows());
+  t('30分の間は2回使える（Safari→アイコン）', body(T.authHandoffTake_(h.hand,PFX)).ok===true);
+  t('でたらめな印は bad_hand', body(T.authHandoffTake_('0'.repeat(32),PFX)).err==='bad_hand' && body(T.authHandoffTake_('xyz',PFX)).err==='bad_hand');
+  // 取り消された端末の印は使えない
+  const dv=T.authLoadDevices_(PFX); const jti=JSON.parse(Buffer.from(reg.token.split('.')[0].replace(/-/g,'+').replace(/_/g,'/'),'base64')).j;
+  delete dv[jti]; T.authSaveDevices_(PFX,dv);
+  t('取り消された端末の印は使えない', body(T.authHandoffTake_(h.hand,PFX)).err==='revoked');
+  // 30分たつと消える
+  const c2=freshCode('daisuke@example.com');
+  const reg2=body(T.authVerify_('daisuke@example.com',c2,PFX,'iphone-safari'));
+  const h2=body(T.authHandoff_('hub2026co-key|'+reg2.token,PFX));
+  const realNow=Date.now; Date.now=()=>realNow()+31*60*1000;
+  t('30分たった印は使えない', body(T.authHandoffTake_(h2.hand,PFX)).err==='bad_hand');
+  Date.now=realNow;
+  t('引き継ぎを受ける側は利用証なしで通る（門番の例外）', T.authGate_('hub2026co-key','authHandoffTake',PFX)===null);
 }
 
 // 13.8) 6桁コードは24時間有効。ただし総当たりは試行上限で止める。

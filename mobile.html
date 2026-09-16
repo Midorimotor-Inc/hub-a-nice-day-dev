@@ -12,7 +12,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789463769634';
+  window.__APP_BUILD='build-1789519763459';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -85,7 +85,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.34';
+const MOBILE_VERSION='2.35';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -437,7 +437,33 @@ const rangesOverlap=(r,fromN,toN)=>{
 // 登録が済んだら（やめた時も）URLから印を外す。残すと開き直すたびに登録画面が出る。
 const HUB_INVITE_ID=(()=>{try{return new URLSearchParams(location.search).get('inv')||'';}catch(e){return '';}})();
 const hubDropInvite=()=>{ if(!HUB_INVITE_ID)return; try{history.replaceState(null,'',location.pathname+location.hash);}catch(e){} };
-const AuthAddScreen=({onDone,onCancel})=>{
+// ── 登録の引き継ぎ（?hand=…）──────────────────────────────────────
+//   iPhoneでは Safari／LINEやメールの中のブラウザ／ホーム画面に追加したアイコン が、それぞれ別の保管場所を持つ。
+//   Safariで登録してもアイコンから開くと未登録になり、もう一度メール→6桁をやらされていた（2026-09-16 竹林）。
+//   登録が済んだブラウザが「引き継ぎの印」を作ってURLに付け（?hand=…）、その印つきURLから開いた側は
+//   印を出して同じ利用証を受け取る。台帳に行は増えない（同じ端末の行を共有する）。印は30分で消える。
+const HUB_HANDOFF_ID=(()=>{try{return new URLSearchParams(location.search).get('hand')||'';}catch(e){return '';}})();
+const hubIsPhone=()=>/iPhone|iPad|iPod|Android/i.test(navigator.userAgent||'');
+// 印を作る（この端末の利用証が要る。finish の直後に呼ぶ）
+const hubMakeHandoff=async()=>{ try{ const r=await hubAuthCall('authHandoff'); return (r&&r.ok&&r.hand)?String(r.hand):''; }catch(e){ return ''; } };
+// 印を出して利用証を受け取る。成功したら true。URLの印は結果にかかわらず外す
+const hubTakeHandoff=async()=>{
+  if(!HUB_HANDOFF_ID) return false;
+  let r=null;
+  try{ r=await hubAuthCall('authHandoffTake',{hand:HUB_HANDOFF_ID}); }catch(e){}
+  try{history.replaceState(null,'',location.pathname+location.hash);}catch(e){}   // 使った印はURLから外す
+  if(!r||!r.ok||!r.token) return false;
+  const list=hubLoadMine().filter(x=>x&&x.name!==r.name);
+  list.push({uid:r.uid||'',name:r.name,myNumber:r.myNumber,store:r.store||'honten',
+             token:r.token,exp:r.exp,isDevice:!!r.device,isAdmin:!!r.admin});
+  hubSaveMine(list);
+  if(r.kind&&!hubKind()) hubSetKind(r.kind);
+  if(r.label&&!hubLabel()) hubSetLabel(r.label);
+  hubApplyToken(r.token);
+  return true;
+};
+
+const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
   const [inv,setInv]=useState(HUB_INVITE_ID);   // 招待リンクの印。これがあればアドレスは要らない
   const [step,setStep]=useState(HUB_INVITE_ID?'code':'email');   // 招待リンクからは6桁の入力から
   const [email,setEmail]=useState('');
@@ -450,6 +476,8 @@ const AuthAddScreen=({onDone,onCancel})=>{
   const [typing,setTyping]=useState(false);
   const [plan,setPlan]=useState([]);
   const [busy,setBusy]=useState(false);
+  const [sending,setSending]=useState(false);   // 裏でサーバーにアドレスを確認中
+  const [hand,setHand]=useState('');            // 登録直後に作る引き継ぎの印（スマホ）
   const [err,setErr]=useState('');
   const [who,setWho]=useState(null);
   const firstOnDevice=hubLive(hubLoadMine()).length===0;
@@ -461,12 +489,17 @@ const AuthAddScreen=({onDone,onCancel})=>{
     const target=String(mail||email).trim();
     // 印があってアドレスが無ければ、印で送る（サーバーが印からアドレスを引く）
     const who=(!target&&inv)?{inv}:{email:target};
+    // ★サーバーの返事を待たずに6桁の画面へ進む。招待メールに6桁が書いてあるのが普通なので、
+    //   返事（3〜30秒）を待っている間に打ってもらえる。登録されていないアドレスなら戻して知らせる。
+    if(!resend){ setStep('code'); setFromInvite(true); }
+    setSending(true);
     const r=await hubAuthCall('authRequest',Object.assign(who,resend?{resend:'1'}:{}));
-    setBusy(false);
+    setBusy(false); setSending(false);
     // すでに招待メールに6桁が書いてある場合は、送り直さずそれを使ってもらう
     if(r&&r.ok) setFromInvite(!!r.existing);
     if(r&&r.err==='bad_invite'){ useEmailInstead('この招待リンクは期限切れです。メールアドレスを入れて、新しいコードを受け取ってください。'); return; }
     if(!r||!r.ok){
+      if(!resend){ setStep('email'); setFromInvite(false); setCode(''); }   // 先に進めていた6桁の画面から戻す
       setErr(r&&r.err==='not_registered'?'このアドレスは登録されていません。管理者にご確認ください。'
         :r&&r.err==='too_many'?'送信が続いています。しばらく待ってからお試しください。'
         :r&&r.err==='bad_email'?'メールアドレスの形式が正しくありません。'
@@ -494,11 +527,26 @@ const AuthAddScreen=({onDone,onCancel})=>{
   const planOf=async r=>{
     try{
       const store=(r&&r.store)==='sanda'?'sanda':'honten';
-      const list=await sGet(STOR+store+'-staff-v2');
+      // サーバーの最新は5秒だけ待つ（混み合うと30秒以上かかり、6桁のあとにまた待たされていた）。
+      // 間に合わなければ、画面がすでに持っているスタッフ表で決める。それも無ければ本人に選んでもらう。
+      const have=store==='sanda'?staffS:staffH;
+      const fresh=await Promise.race([sGet(STOR+store+'-staff-v2'),new Promise(res=>setTimeout(()=>res(null),5000))]);
+      const list=(Array.isArray(fresh)&&fresh.length)?fresh:((Array.isArray(have)&&have.length)?have:[]);
       const me=(Array.isArray(list)?list:[]).find(x=>x&&((r.uid&&x.uid===r.uid)||x.name===r.name));
       return (me&&Array.isArray(me.devPlan))?me.devPlan.filter(Boolean):[];
     }catch(e){ return []; }
   };
+  // 登録が済んだら引き継ぎの印を作り、URLに付けておく。
+  // ここから「ホーム画面に追加」「Safariで開く」をすると、印つきのURLが渡って登録が引き継がれる。
+  useEffect(()=>{
+    if(step!=='done'||hand)return;
+    (async()=>{
+      const h=await hubMakeHandoff();
+      if(!h)return;
+      setHand(h);
+      try{history.replaceState(null,'',location.pathname+'?hand='+encodeURIComponent(h)+location.hash);}catch(e){}
+    })();
+  },[step]);
   useEffect(()=>{
     if(step!=='label'||devNames!==null)return;
     (async()=>{
@@ -585,6 +633,8 @@ const AuthAddScreen=({onDone,onCancel})=>{
             style={{...IN,fontSize:30,letterSpacing:'0.35em',textAlign:'center',fontWeight:800}}
             placeholder="------" inputMode="numeric" autoComplete="one-time-code" autoFocus/>
           {err&&<div style={{color:'#fecaca',fontWeight:700,fontSize:13,marginTop:8}}>{err}</div>}
+          {!err&&busy&&<div style={{color:'rgba(255,255,255,.7)',fontSize:12,marginTop:8}}>確認しています。混み合っていると20〜30秒かかることがあります…</div>}
+          {!err&&!busy&&sending&&<div style={{color:'rgba(255,255,255,.5)',fontSize:11.5,marginTop:8}}>（アドレスをサーバーに確認中。そのまま6桁を入れて進めます）</div>}
           <button style={BTN(!busy&&code.length===6)} disabled={busy||code.length!==6} onClick={verify}>
             {busy?'確認中…':'確認する'}
           </button>
@@ -654,6 +704,15 @@ const AuthAddScreen=({onDone,onCancel})=>{
             </div>
           </div>
           <div style={LBL}>次からは、開くだけで使えます。使っているうちは登録が切れることはありません。</div>
+          <div style={{marginTop:10,padding:'12px 13px',background:'rgba(255,255,255,.10)',border:'1.5px solid rgba(255,255,255,.25)',borderRadius:12}}>
+            <div style={{color:'white',fontWeight:800,fontSize:14}}>📲 ホーム画面に追加すると便利です</div>
+            <div style={{color:'rgba(255,255,255,.8)',fontSize:12,lineHeight:1.75,marginTop:6}}>
+              {hand
+                ? <>この画面のまま、<b>共有ボタン（□↑）→「ホーム画面に追加」</b>。追加したアイコンから開くと、この登録がそのまま引き継がれます（30分以内）。</>
+                : <>引き継ぎの準備をしています…（数秒）</>}
+              <br/>※ LINEやメールの中で開いている場合は、先にメニューから<b>「Safariで開く」</b>（Androidは「ブラウザで開く」）を選んでください。
+            </div>
+          </div>
           <button style={BTN(true)} onClick={()=>onDone&&onDone(who)}>はじめる →</button>
         </div>
       )}
@@ -2021,6 +2080,12 @@ const App=()=>{
   // ── 本人認証：この端末に登録された人 ──
   const [authMine,setAuthMine]=useState(()=>hubLive(hubLoadMine()));
   const [showAuthAdd,setShowAuthAdd]=useState(!!HUB_INVITE_ID);   // 招待リンクから開いたら最初から登録画面
+  // 引き継ぎの印（?hand=）つきで開いた：この保管場所に利用証が無ければ印を出して受け取る。
+  const [handPending,setHandPending]=useState(!!HUB_HANDOFF_ID&&hubLive(hubLoadMine()).length===0);
+  useEffect(()=>{
+    if(!handPending)return;
+    (async()=>{ await hubTakeHandoff(); setAuthMine(hubLive(hubLoadMine())); setHandPending(false); })();
+  },[handPending]);
   // 自分でログアウトした直後は自動ログインを止める（止めないと即座に入り直す）
   const [authAutoOff,setAuthAutoOff]=useState(false);
   // 自分専用の端末（＝自分のスマホ）は、番号すら打たずに開いた瞬間その人として使える。
@@ -2703,8 +2768,10 @@ const App=()=>{
     })();
   },[editMode,user,vsId,inspData,schedDataH,schedDataS,loanerResH,loanerResS,rentalResData,inspLimits]);
 
+  if(!user&&handPending)
+    return <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,#1e1b4b,#3730a3 60%,#6d28d9)',color:'white',fontWeight:800,fontSize:15}}>登録を引き継いでいます…</div>;
   if(!user&&(showAuthAdd||(AUTH_REQUIRED&&authMine.length===0)))
-    return <AuthAddScreen
+    return <AuthAddScreen staffH={staffH} staffS={staffS}
       onCancel={(authMine.length>0||!AUTH_REQUIRED)?()=>setShowAuthAdd(false):null}
       onDone={()=>{setShowAuthAdd(false);setAuthMine(hubLive(hubLoadMine()));}}/>;
   if(!user)return <LoginScreen

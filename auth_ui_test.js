@@ -37,6 +37,7 @@ let devnames = [{ name:'共有PC1', store:'honten', mail:'pc1@midori-m.com' },
                 { name:'三田店タブレット', store:'sanda' }];
 let sentInvites = [];      // 送った招待
 let INVITES = {};
+let HANDS = {};            // 引き継ぎの印 → 利用証（模擬）
 const CODE = '424242';
 
 const serve = (html, name) => http.createServer((req, res) => {
@@ -103,6 +104,21 @@ const gasRoute = async (route) => {
         admin: ADMIN_NAMES.indexOf(s.name) >= 0 });
     }
     case 'authRenew':  return body({ ok: true, renewed: false, exp: Date.now() + 90 * 86400000 });
+    // 登録の引き継ぎ（同じ端末の別ブラウザ／ホーム画面アイコン）
+    case 'authHandoff': {
+      const tok = String(q.get('apiKey') || '').split('|')[1] || '';
+      if (!tok) return body({ ok: false, err: 'expired' });
+      const id = ('h' + Date.now()).padEnd(32, '0').slice(0, 32).replace(/[^0-9a-f]/g, 'a');
+      HANDS[id] = tok; return body({ ok: true, hand: id });
+    }
+    case 'authHandoffTake': {
+      const tok = HANDS[q.get('hand')];
+      if (!tok) return body({ ok: false, err: 'bad_hand' });
+      const s = staffH.find(x => 'TKN-' + x.uid === tok);
+      if (!s) return body({ ok: false, err: 'revoked' });
+      return body({ ok: true, token: tok, name: s.name, myNumber: s.myNumber, store: s.store, uid: s.uid,
+        exp: Date.now() + 90 * 86400000, admin: false, device: false, label: '', kind: 'own' });
+    }
     case 'authAdminNames': return body({ ok: true, names: ADMIN_NAMES });
     case 'authLabel': {
       labels.push({ kind: q.get('kind'), label: q.get('label') });
@@ -632,6 +648,34 @@ const dump = async (page, root) => page.evaluate(r => {
     t('スマホ：開き直しても素通しで入れる', !(await seeText(page, '誰が操作しますか', 4000)));
     t('スマホ：自分専用でJSエラーなし', errs.length === 0, errs.slice(0, 2));
   }, 'mobile.html');
+
+  // ── ⑦' 引き継ぎ：Safariで登録 → 完了画面のURLに ?hand= が付く → 別の保管場所（ホーム画面のアイコン）から開いても登録し直し不要
+  //     iPhoneは Safari／LINEの中／ホーム画面のアイコン で保管場所が別（2026-09-16 竹林が1日3回登録）。
+  let handUrl = '';
+  await run(true, async (page, errs) => {
+    await seeText(page, 'この端末にスタッフを追加');
+    await page.fill('input[type=email]', 'daisuke@example.com');
+    await clickText(page, '次へ');
+    t('引き継ぎ：アドレスを入れたらすぐ6桁の画面になる（返事を待たない）', await seeText(page, '6桁', 1500), await dump(page));
+    await page.fill('input[inputmode=numeric]', CODE);
+    await clickText(page, '確認する');
+    await seeText(page, 'この端末はどちらですか');
+    await clickText(page, '自分専用');
+    t('引き継ぎ：完了画面にホーム画面の案内が出る', await seeText(page, 'ホーム画面に追加'), await dump(page));
+    await page.waitForFunction(() => /[?&]hand=/.test(location.search), null, { timeout: 6000 }).catch(()=>{});
+    handUrl = await page.evaluate(() => location.search);
+    t('引き継ぎ：完了画面のURLに印（?hand=）が付く', /[?&]hand=[0-9a-f]{32}/.test(handUrl), handUrl);
+  }, 'mobile.html');
+  await run(true, async (page, errs) => {
+    // 新しいコンテキスト＝別の保管場所（ホーム画面のアイコンの模擬）
+    t('引き継ぎ：印つきで開くと登録画面が出ない', !(await seeText(page, 'この端末にスタッフを追加', 2500)), await dump(page));
+    t('引き継ぎ：そのまま本人として入れる', await seeText(page, '見取大介', 8000), await dump(page));
+    t('引き継ぎ：URLから印が外れる', !(await page.evaluate(() => /hand=/.test(location.search))));
+    t('引き継ぎ：JSエラーなし', errs.length === 0, errs.slice(0, 2));
+  }, 'mobile.html', handUrl);
+  await run(true, async (page, errs) => {
+    t('引き継ぎ：無効な印なら普通に登録画面', await seeText(page, 'この端末にスタッフを追加'), await dump(page));
+  }, 'mobile.html', '?hand=' + 'f'.repeat(32));
 
   // ── ⑧ 招待リンク（?inv=）から開くと、アドレスを打たずに6桁から始まる ──────
   //    「メールから入ったのに、もう一度メールを確認？」という戸惑いを無くす（ユーザー指摘 2026-09-15）。

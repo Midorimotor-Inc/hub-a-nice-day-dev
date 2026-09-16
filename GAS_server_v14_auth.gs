@@ -265,6 +265,13 @@ function doGet(e) {
   if (e.parameter.action === 'authRenew') {
     return authRenew_(e.parameter.apiKey, authPrefixOf_(e.parameter));
   }
+  // v14: 登録の引き継ぎ（同じ端末の別ブラウザ／ホーム画面アイコンへ）。印を作る側は利用証が要る。
+  if (e.parameter.action === 'authHandoff') {
+    return authHandoff_(e.parameter.apiKey, authPrefixOf_(e.parameter));
+  }
+  if (e.parameter.action === 'authHandoffTake') {
+    return authHandoffTake_(e.parameter.hand, authPrefixOf_(e.parameter));
+  }
   // v14: 利用証の門番。HUB_AUTH_ENFORCE='1' を入れるまでは素通りする（段階移行）
   var _gate = authGate_(e.parameter.apiKey, e.parameter.action, authPrefixOf_(e.parameter));
   if (_gate) return _gate;
@@ -1074,7 +1081,8 @@ var AUTH_REPLAY_SEC      = 900;   // 確認成功の返事を覚えておく時�
                                   //   Becky!の受信間隔でメールの到着が遅れることもある。
                                   //   総当たりは試行回数の上限(AUTH_MAX_TRY)で止める。
 var AUTH_MAX_SEND_PER_HR = 5;     // 同じアドレスへの送信上限（メール枠の保護）
-var AUTH_INVITE_TTL_DAYS = 30;    // 招待リンク（?inv=）が本人を指し続ける日数。6桁より長い＝切れても同じリンクから送り直せる
+var AUTH_INVITE_TTL_DAYS = 30;
+var AUTH_HANDOFF_SEC     = 1800;  // 引き継ぎリンク（?hand=）の有効時間（30分）    // 招待リンク（?inv=）が本人を指し続ける日数。6桁より長い＝切れても同じリンクから送り直せる
 
 // メールの件名の頭。受け取った人が「何のメールか」「テスト版か本番か」を件名だけで分かるように。
 //   DEV: みどりモーターススケジュールシステムテスト版【Hub a Nice Day /DEV】…
@@ -1091,7 +1099,7 @@ var AUTH_APP_URL = {              // 招待メールに載せる各環境の入�
 var AUTH_MAX_TRY         = 5;     // コード入力の試行上限
 
 // 認証そのものに使うアクションは、当然ながら利用証を要求しない
-var AUTH_OPEN_ACTIONS = ['authRequest', 'authVerify', 'caps'];
+var AUTH_OPEN_ACTIONS = ['authRequest', 'authVerify', 'authHandoffTake', 'caps'];   // 引き継ぎを受ける側はまだ利用証を持たない
 
 // ── 署名鍵（GASの中だけに存在する。HTMLには決して出さない）──────────────
 function authSecret_() {
@@ -1629,6 +1637,8 @@ function authInvite_(email, prefix) {
       '2. 上の6桁を入れれば完了です\n\n' +
       '※ リンクをその端末で開けない時（店のPCなど）は、' + url + ' を開いて\n' +
       '  「＋ スタッフを追加」→ このアドレス → 上の6桁 の順で入れてください。\n' +
+      '※ スマホは、LINEやメールの中で開いた場合、先に「Safariで開く」（Androidは「ブラウザで開く」）を\n' +
+      '  選んでから登録してください。登録が終わった画面の案内で「ホーム画面に追加」できます。\n' +
       '※ 自分のスマホと店の共有PC、両方で登録できます。\n' +
       '   端末ごとに1回ずつお願いします。\n' +
       '※ 使っているうちは登録が切れることはありません。\n' +
@@ -1784,6 +1794,55 @@ function authLabel_(rawApiKey, prefix, kind, label) {
 //
 //   毎回シートに書くとGASが重くなるので、前回の延長から AUTH_RENEW_AFTER_DAYS
 //   日たっていなければ何も書かずに帰る（renewed:false）。
+// ── 登録の引き継ぎ（同じ端末の別のブラウザ／ホーム画面のアイコンへ）──────────
+//   iPhoneでは Safari・LINEの中のブラウザ・ホーム画面に追加したアイコン が、それぞれ別の保管場所を持つ。
+//   Safariで登録してもアイコンから開くと「未登録」になり、もう一度メール→6桁をやらされていた
+//   （2026-09-16 竹林。1日で3回登録し、台帳に3行できた）。
+//   そこで、登録済みのブラウザが「引き継ぎの印」を作り、URLに付ける（?hand=…）。
+//   その印つきURLから開いた側は、印を出して同じ利用証を受け取る＝同じ端末の行を共有し、台帳に行は増えない。
+//   印は30分で消える。使い回しは30分の間だけ（Safari→アイコン と2回使うことがあるので1回限りにしない）。
+//   GET ?action=authHandoff&prefix=...&apiKey=キー|利用証   → { ok, hand }
+function authHandoff_(rawApiKey, prefix) {
+  try {
+    var token = '';
+    var i = String(rawApiKey || '').indexOf('|');
+    if (i >= 0) token = String(rawApiKey).slice(i + 1);
+    var payload = authReadToken_(token);
+    if (!payload) return makeResponse(JSON.stringify({ ok: false, err: 'expired' }));
+    if (!authValid_(payload, prefix)) return makeResponse(JSON.stringify({ ok: false, err: 'revoked' }));
+    var hand = String(Utilities.getUuid()).replace(/-/g, '');
+    CacheService.getScriptCache().put('authhand:' + String(prefix) + ':' + hand, token, AUTH_HANDOFF_SEC);
+    return makeResponse(JSON.stringify({ ok: true, hand: hand, exp: Date.now() + AUTH_HANDOFF_SEC * 1000 }));
+  } catch (err) {
+    return makeResponse(JSON.stringify({ ok: false, err: 'handoff_failed' }));
+  }
+}
+//   GET ?action=authHandoffTake&hand=...&prefix=...&apiKey=キー   → 利用証と本人の情報（authVerify と同じ形）
+function authHandoffTake_(hand, prefix) {
+  try {
+    var h = String(hand || '').trim();
+    if (!/^[0-9a-f]{32}$/.test(h)) return makeResponse(JSON.stringify({ ok: false, err: 'bad_hand' }));
+    if (SNAP_ENV_PREFIXES.indexOf(String(prefix || '')) < 0) {
+      return makeResponse(JSON.stringify({ ok: false, err: 'bad_prefix' }));
+    }
+    var token = CacheService.getScriptCache().get('authhand:' + String(prefix) + ':' + h);
+    if (!token) return makeResponse(JSON.stringify({ ok: false, err: 'bad_hand' }));
+    var payload = authReadToken_(token);
+    if (!payload) return makeResponse(JSON.stringify({ ok: false, err: 'expired' }));
+    var row = authLoadDevices_(prefix)[payload.j];
+    if (!row) return makeResponse(JSON.stringify({ ok: false, err: 'revoked' }));
+    var staff = row.e ? authResolve_(prefix, String(row.e)) : null;
+    return makeResponse(JSON.stringify({
+      ok: true, token: token,
+      name: row.n, myNumber: row.m, store: row.s || 'honten',
+      uid: (staff && staff.uid) || '', exp: payload.x,
+      admin: !!payload.a, device: !!row.dev, label: row.l || '', kind: row.k || ''
+    }));
+  } catch (err) {
+    return makeResponse(JSON.stringify({ ok: false, err: 'handoff_failed' }));
+  }
+}
+
 function authRenew_(rawApiKey, prefix) {
   try {
     var token = '';
