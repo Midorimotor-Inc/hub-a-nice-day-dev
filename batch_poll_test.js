@@ -37,13 +37,13 @@ const DK = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
   await new Promise(r => server.listen(PORT, r));
   const browser = await chromium.launch({ headless: true });
 
-  const run = async (label, { batchMode }) => {
+  const run = async (label, { batchMode, brokenFromStart }) => {
     const data = {
       [STOR + 'insp']: { [DK]: [{ name: '前村', course: 2, staff: '江川京志', store: 'honten', bookingStatus: 'confirmed', seq: Date.now() - 900000 }] },
       [STOR + 'honten-sched']: { [DK]: { '11:00': { name: '下野', work: 'M6', staff: '岡上秀一', id: 1 } } },
       [STOR + 'honten-lres']: {},
     };
-    let single = 0, batch = 0, batchKeys = [], broken = false; const singleKeys = [];
+    let single = 0, batch = 0, batchKeys = [], broken = !!brokenFromStart; const singleKeys = [];
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } });
     await ctx.route('https://script.google.com/**', async route => {
       const req = route.request();
@@ -60,7 +60,7 @@ const DK = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
         return ok(JSON.stringify(out));
       }
       const k = u.searchParams.get('key') || '';
-      if (k) { single++; singleKeys.push(k.replace(STOR, '') + '@' + Math.round(performance.now() / 1000)); if (broken) return ok('<!DOCTYPE html><html><body>Error 404</body></html>', 'text/html'); return ok((k in data) ? JSON.stringify(data[k]) : 'null'); }
+      if (k) { single++; singleKeys.push(k.replace(STOR, '') + '@' + Math.round(performance.now() / 1000)); if (broken && !brokenFromStart) return ok('<!DOCTYPE html><html><body>Error 404</body></html>', 'text/html'); return ok((k in data) ? JSON.stringify(data[k]) : 'null'); }
       return ok('null');
     });
     const page = await ctx.newPage();
@@ -71,11 +71,14 @@ const DK = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
     await seeText(page, '担当者を選択してください', 20000);
     await clickText(page, '江川京志');
     await clickText(page, 'でログイン');
-    t(label + '：スケジュールの予約が出る', await seeText(page, '前村', 15000));
+    t(label + '：スケジュールの予約が出る', await seeText(page, '前村', brokenFromStart ? 30000 : 15000));
     t(label + '：タイムスケジュールが出る', await seeText(page, '下野', 8000));
     await page.waitForTimeout(1500);
     const s0 = single, b0 = batch;
-    if (batchMode) {
+    if (brokenFromStart) {
+      t(label + '：まとめ読みが失敗しても初回はキーごと読みで予定が出る', single >= 10, { batch, single });
+      broken = false;
+    } else if (batchMode) {
       t(label + '：起動時の読み込みがまとめ読み（1〜3本）で済む', batch >= 1 && batch <= 3 && single <= 4, { batch, single, batchKeys });
       t(label + '：1本に多数のキーが入っている', Math.max(...batchKeys) >= 10, batchKeys);
     } else {
@@ -84,7 +87,7 @@ const DK = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
     // 他PCの変更 → ポーリングで反映（insp は15秒周期）
     data[STOR + 'insp'][DK].push({ name: '瀬川', course: 1, staff: '見取大介', store: 'honten', bookingStatus: 'confirmed', seq: Date.now() - 800000 });
     t(label + '：他PCの予約がポーリングで反映される', await seeText(page, '瀬川', 25000));
-    if (batchMode) {
+    if (batchMode && !brokenFromStart) {
       // 起動直後の1回きりの読み（保管箱・控えの棚卸し等）が落ち着いてから、20秒間のキーごと読みを数える
       const s1 = single, b1 = batch;
       await page.waitForTimeout(20000);
@@ -101,6 +104,7 @@ const DK = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 
   await run('まとめ読み', { batchMode: true });
   await run('非対応', { batchMode: false });
+  await run('最初から失敗', { batchMode: true, brokenFromStart: true });
 
   await browser.close(); server.close();
   console.log(fail ? `\n${fail}件 不合格 / ${pass}件 合格` : `\n全${pass}件 PASS`);

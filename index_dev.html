@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789608660817';
+    window.__APP_BUILD='build-1789609578832';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -116,7 +116,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.41';
+const APP_VERSION = '2.42';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -2303,7 +2303,9 @@ const POLL_TICK_MS = 5000;
 const sGetManyMap = async ks => {
   if (!GAS_READY || !ks.length) return null;
   const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
-  const killer = ctl ? setTimeout(() => { try { ctl.abort(); } catch (e) {} }, 45000) : null;   // 1本が詰まっても45秒で諦める
+  // ★1本が詰まっても150秒で諦める。45秒にしていたら、GASが60〜120秒かかる日（2026-09-17）に
+  //   毎回諦めて「接続済みなのに予定が出ない」になった。従来のキーごと読みは無制限に待っていた。
+  const killer = ctl ? setTimeout(() => { try { ctl.abort(); } catch (e) {} }, 150000) : null;
   try {
     const r = await fetch(GAS_URL + '?keys=' + encodeURIComponent(ks.join(',')) + '&apiKey=' + encodeURIComponent(GAS_API_KEY),
       Object.assign({ cache:'no-store' }, ctl ? { signal: ctl.signal } : {}));
@@ -2350,11 +2352,22 @@ async function __hubPollTick() {
         map = {}; keys.forEach((k, i) => { map[k] = vals[i]; });
         break;
       }
+      if (!map && due.some(s => !s.loaded)) break;                  // 初回読み込みが混じっていれば、待たずに下のキーごと読みへ
       if (!map && attempt === 0) await new Promise(r => setTimeout(r, 2500));
     }
     if (!map) {
       markGasDown();
-      due.forEach(s => { s.next = Date.now() + 10000; });             // 10秒後にまた試す
+      // ★初回読み込みがまだのキーは、従来どおりキーごとに読む（待ち時間は無制限）。
+      //   まとめ読みが不調でも「開いたのに予定が何も出ない」を避ける。ポーリング分は10秒後にまた試す。
+      const firsts = due.filter(s => !s.loaded);
+      if (firsts.length) {
+        const fk = [...new Set(firsts.map(s => s.key))];
+        const vals = await Promise.all(fk.map(k => sGet(k).catch(() => null)));
+        const fm = {}; fk.forEach((k, i) => { fm[k] = vals[i]; });
+        if (vals.some(v => v !== null)) markGasUp();
+        firsts.forEach(s => { s.loaded = true; try { s.onInitial((s.key in fm) ? fm[s.key] : null); } catch (e) {} s.next = Date.now() + s.pollMs; });
+      }
+      due.forEach(s => { if (s.loaded && !firsts.includes(s)) s.next = Date.now() + 10000; });
       return;
     }
     markGasUp();
