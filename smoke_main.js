@@ -178,15 +178,16 @@ const GAS_HOST = 'https://script.google.com';
     console.log('mobile.html を起動中（本番実データ・読み取り専用）...');
     await page3.goto(`http://127.0.0.1:${PORT}/mobile.html`, { waitUntil: 'domcontentloaded' });
     await page3.waitForTimeout(8000); // Babel変換＋スタッフリスト読込
-    await page3.fill('input[type="tel"]', loginCode);
-    await page3.evaluate(() => {
-      const b = [...document.querySelectorAll('button')].find(el => el.textContent.includes('SIGN IN'));
-      if (b) b.click();
+    // v2.33 から番号入力は無く、名前を選ぶ（共有端末のログイン）。移行期間は全員が並ぶ
+    const picked = await page3.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find(el => /見取大介/.test(el.textContent));
+      if (b) { b.click(); return true; } return false;
     });
+    if (!picked) problems.push('mobile: ログイン画面に名前が並ばない');
     await page3.waitForTimeout(12000); // ログイン演出8秒＋フェード＋初回fetchAll
     const mBody = await page3.locator('body').innerText().catch(() => '');
     if (mBody.includes('レンダリングエラー')) problems.push('mobile 起動直後: レンダリングエラー表示');
-    if (mBody.includes('SIGN IN')) problems.push('mobile: ログインできていない（コード' + loginCode + '）');
+    if (mBody.includes('誰が操作しますか')) problems.push('mobile: ログインできていない');
     for (const tab of ['カレンダー', 'スケジュール', '代車']) {
       const ok = await page3.evaluate((t) => {
         // タブはbuttonではなく onClick付きdiv。最深のラベルdivをクリックすればReactイベントがバブルする
