@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789612183149';
+    window.__APP_BUILD='build-1789624426660';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -116,7 +116,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.43';
+const APP_VERSION = '2.44';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -482,6 +482,43 @@ const DEFAULT_RENTAL_CARS = [
 ];
 // 予約バーの配色。白文字が読める濃さで、薄い同系色を隣り合わせにしないよう暖色/寒色を交互に並べた12色。
 const RES_COLORS=['#2563eb','#c2410c','#059669','#7c3aed','#be123c','#0e7490','#b45309','#be185d','#4d7c0f','#4338ca','#0f766e','#9a3412'];
+// 代車・レンタカー予約の表示色。利用者（custId または名前）から決める＝同じお客様は常に同じ色、違うお客様は違う色。
+//   記録された color は「名前を入れる前（未入力）」の時点で決まっていて、同じ日の予約が全部同じ色になっていた
+//   （2026-09-17 報告）。表示はここで決め直すので、過去の予約もそのまま色分けされる。
+const resColorOf=res=>{
+  if(!res) return RES_COLORS[0];
+  const key=String(res.custId||res.user||'').trim();
+  if(!key||key==='（未入力）'||key==='（予約中）') return res.color||RES_COLORS[0];
+  let h=5381; for(const c of key){ h=((h*33)^c.charCodeAt(0))>>>0; }   // djb2：文字の並びが違えば別の値になりやすい
+  return RES_COLORS[h%RES_COLORS.length];
+};
+// 期間が重なる予約どうしは必ず違う色にする（12色まで）。表示のたびに全予約から決める純関数。
+//   まず本人の色（resColorOf）を使い、期間の重なる予約と同じ色なら、重なる予約が使っていない次の色を選ぶ。
+//   同じお客様の別の予約（同じ名前）は同じ色のまま。戻り値は { 予約id: 色 }。
+const assignResColors=resMap=>{
+  const all=[];
+  for(const cid of Object.keys(resMap||{})){
+    const days=resMap[cid]; if(!days||typeof days!=='object'||Array.isArray(days))continue;
+    for(const r of Object.values(days)){ if(r&&r.id!=null&&r.fy!=null) all.push(r); }
+  }
+  const num=(y,m,d)=>y*10000+m*100+d;
+  all.sort((a,b)=>(num(a.fy,a.fm,a.fd)-num(b.fy,b.fm,b.fd))||(String(a.id)>String(b.id)?1:-1));
+  const out={}, placed=[];
+  for(const r of all){
+    const s=num(r.fy,r.fm,r.fd), e=num(r.ty,r.tm,r.td);
+    const key=String(r.custId||r.user||'').trim();
+    const used=new Set();
+    for(const p of placed){
+      if(p.e<s||p.s>e)continue;                       // 期間が重ならない
+      if(key&&p.key===key)continue;                   // 同じお客様は同じ色でよい
+      used.add(out[p.id]);
+    }
+    let c=resColorOf(r);
+    if(used.has(c)){ const alt=RES_COLORS.find(x=>!used.has(x)); if(alt)c=alt; }
+    out[r.id]=c; placed.push({id:r.id,s,e,key});
+  }
+  return out;
+};
 // 代車/レンタカー予約の貸出日数（両端含む）。fm/tmは0始まり。
 const loanDays=(r)=>{try{return Math.max(1,Math.round((new Date(r.ty,r.tm,r.td)-new Date(r.fy,r.fm,r.fd))/864e5)+1);}catch(e){return 1;}};
 
@@ -6663,6 +6700,9 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
 const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onReplaceRes,onUndo,selDate,onBack,onPickLoaner,pickMode,locks,currentUser,onLockCar,onUnlockCar,savedModalData,inspData,schedData,onOpenBooking,pinnedRes,setPinnedRes,hoverRes,setHoverRes,storeLoaners,storeInfo,rentalCars,rentalRes,onAddRentalRes,onDeleteRentalRes,onReplaceRentalRes,onPickRental,onOpenSettings,tireData,locationData,onOpenTireEdit,onOpenLocationEdit,onApplyOptimize,pendingDeleteBk='',justAddedIds=[]})=>{
   const LOANERS_LOCAL=storeLoaners||LOANERS;
   const RENTAL_LOCAL=rentalCars||DEFAULT_RENTAL_CARS;
+  // 表示色：期間の重なる予約どうしは必ず違う色（同じお客様は同じ色）。描画のたびに全予約から決める
+  const _resColors=useMemo(()=>assignResColors(loanerRes),[loanerRes]);
+  const _rentalColors=useMemo(()=>assignResColors(rentalRes||{}),[rentalRes]);
   const rentalResLocal=rentalRes||{};
   const [editModal,setEditModal]=useState(null);
   const [editForm,setEditForm]=useState({user:'',startDate:'',endDate:''});
@@ -7093,7 +7133,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
                     const h2=selDate&&year===selDate.getFullYear()&&month===selDate.getMonth()&&day===selDate.getDate();
                     const isStart=isObj&&st.fd===day&&st.fm===month&&st.fy===year;
                     const isEnd=isObj&&st.td===day&&st.tm===month&&st.ty===year;
-                    const bg=isDrag?'#bef264':isConf?'#93c5fd':isObj?(st.color||RES_COLORS[0]):h2?'#fef08a':'white';
+                    const bg=isDrag?'#bef264':isConf?'#93c5fd':isObj?(_resColors[st.id]||resColorOf(st)):h2?'#fef08a':'white';
                     const isFree=pickMode&&!isObj&&!isDrag&&!isConf;
                     const isBlocked=pickMode&&isObj;
                     // 隣（左＝同じ代車の前日／上＝1つ上の代車の同日）が別の予約なら濃い区切り線を引く。
@@ -7249,7 +7289,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
           {hoverRes&&hoverRes.res?(
             <div style={{display:'flex',alignItems:'center',gap:18,flexWrap:'wrap'}}>
               <span style={{display:'inline-flex',alignItems:'center',gap:9,fontSize:19,fontWeight:800,color:hoverRes.res._rental?'#065f46':'#7c2d12'}}>
-                <span style={{width:15,height:15,borderRadius:4,background:hoverRes.res.color||'#94a3b8',display:'inline-block',boxShadow:'0 1px 2px rgba(0,0,0,.25)'}}/>
+                <span style={{width:15,height:15,borderRadius:4,background:(hoverRes.res._rental?_rentalColors:_resColors)[hoverRes.res.id]||resColorOf(hoverRes.res),display:'inline-block',boxShadow:'0 1px 2px rgba(0,0,0,.25)'}}/>
                 {hoverRes.res._rental?'🔑':'🚙'} {hoverRes.car.name}{hoverRes.car.num?`（${hoverRes.car.num}）`:''}
               </span>
               <span style={{fontSize:16,fontWeight:700,color:'#334155'}}>📅 {hoverRes.res.fm+1}/{hoverRes.res.fd} 〜 {hoverRes.res.tm+1}/{hoverRes.res.td}</span>
@@ -7435,7 +7475,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
                           const isConf=st==='confirm';
                           const h2=selDate&&year===selDate.getFullYear()&&month===selDate.getMonth()&&day===selDate.getDate();
                           const isStart=isObj&&st.fd===day&&st.fm===month&&st.fy===year;
-                          const bg=isDrag?'#bef264':isConf?'#93c5fd':isObj?(st.color||'#86efac'):h2?'#fef08a':'white';
+                          const bg=isDrag?'#bef264':isConf?'#93c5fd':isObj?(_rentalColors[st.id]||resColorOf(st)):h2?'#fef08a':'white';
                           const isFree=pickMode&&!isObj&&!isDrag&&!isConf;
                           const isBlocked=pickMode&&isObj;
                           // 貸出2日以上は日数分のセルを1枠として名前を横に広げる（尻切れ可）
@@ -9316,7 +9356,7 @@ function AppInner() {
       // pendingLoanerDataのloanerRes保存（サーバー最新値ベース＋読み返し検証＝persistLres。
       //   従来はローカル全文の書き戻しを投げっぱなしにしていたため、車検側には代車ラベルが残るのに
       //   代車予約だけが無言で消えることがあった。setTimeoutで非同期化してフリーズ防止するのは従来通り）
-      const _lu = {carId,startDay,endDay,startYear,startMonth,endYear,endMonth,finalUser,color:color||RES_COLORS[0],locked:_pldLocked,
+      const _lu = {carId,startDay,endDay,startYear,startMonth,endYear,endMonth,finalUser,color:resColorOf({custId:cleanData.custId,user:finalUser,color}),locked:_pldLocked,
         bk:_finalBk||_pldBk, carName, carNum};
       // idは再送しても同じ値を使う（＝着地確認が id で行えるよう mutate の外で確定させる）
       // 返却の年月はピッカーから渡された値を使う（月またぎ対応）。
