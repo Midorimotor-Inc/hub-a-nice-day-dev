@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789606449547';
+    window.__APP_BUILD='build-1789608660817';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -116,7 +116,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.40';
+const APP_VERSION = '2.41';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -2289,14 +2289,99 @@ function mergeSharedObjects(local, server, nowTs){
   return mg;
 }
 
+// ── まとめ読みポーラー（Kyoshi承認のBLOCK-B変更・2026-09-17）────────────────────────
+//   従来は useShared ごとに setInterval で sGet(key) を投げていた＝画面1つで約20本/分。
+//   人数分が重なると、GASが遅い朝（2026-09-17 は読みに30〜90秒・Googleの404ページ）に
+//   リクエストが積み上がって同時実行数を食いつぶし、さらに遅くなる悪循環になっていた。
+//   全 useShared を1つの台帳に登録し、5秒ごとに「期限が来たキー」だけを ?keys= で1回にまとめて読む
+//   （GAS側は v11 から対応済み。スマホ版と同じ方式）。
+//   受け取り側の規則（形チェック・マージ・書き込み中は上書きしない・非表示タブは止める）は従来どおり。
+//   まとめ読みが2回続けて失敗したら markGasDown（赤い帯）。個別 sGet へは戻さない（本数を増やさないため）。
+const __hubPoll = { subs:new Map(), seq:0, timer:null, inFlight:false, kick:null };
+const POLL_TICK_MS = 5000;
+// ?keys= でまとめて読む。{キー: 値(JSON解析済み) | null} を返す。全体が失敗したら null。
+const sGetManyMap = async ks => {
+  if (!GAS_READY || !ks.length) return null;
+  const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+  const killer = ctl ? setTimeout(() => { try { ctl.abort(); } catch (e) {} }, 45000) : null;   // 1本が詰まっても45秒で諦める
+  try {
+    const r = await fetch(GAS_URL + '?keys=' + encodeURIComponent(ks.join(',')) + '&apiKey=' + encodeURIComponent(GAS_API_KEY),
+      Object.assign({ cache:'no-store' }, ctl ? { signal: ctl.signal } : {}));
+    if (r.status === 503) return null;
+    const t = await r.text();
+    // 'null' は「まとめ読みに対応していないGAS」の合図（対応版は必ずJSONの辞書を返す）。失敗とは区別して個別読みに戻す
+    if (t === 'null') return 'unsupported';
+    if (!t || t.startsWith('error') || t === 'unauthorized') return null;
+    let map; try { map = JSON.parse(t); } catch (e) { return null; }      // GoogleのHTMLエラーページ等
+    if (map === null || typeof map !== 'object' || Array.isArray(map)) return null;
+    const out = {};
+    ks.forEach(k => {
+      const s = map[k];
+      if (!s || s === 'null' || typeof s !== 'string' || s.startsWith('error:')) { out[k] = null; return; }
+      try {
+        const parsed = JSON.parse(s);
+        out[k] = (parsed && typeof parsed === 'object' && parsed.error) ? null : parsed;   // sGet と同じ扱い
+      } catch (e) { out[k] = null; }
+    });
+    return out;
+  } catch (e) { return null; }
+  finally { if (killer) clearTimeout(killer); }
+};
+async function __hubPollTick() {
+  if (!GAS_READY || __hubPoll.inFlight) return;   // 前回が終わるまで次を撃たない（積み上がり防止）
+  const now = Date.now();
+  const due = [];
+  __hubPoll.subs.forEach(s => {
+    if (!s.isActive()) return;
+    if (!s.loaded) { due.push(s); return; }                          // 初回読み込みは非表示でも行う
+    if (document.visibilityState === 'hidden') return;               // 非表示タブはポーリング停止（従来どおり）
+    if (now >= s.next) due.push(s);
+  });
+  if (!due.length) return;
+  __hubPoll.inFlight = true;
+  try {
+    const keys = [...new Set(due.map(s => s.key))];
+    let map = null;
+    for (let attempt = 0; attempt < 2 && !map; attempt++) {
+      map = await sGetManyMap(keys);
+      if (map === 'unsupported') {
+        // まとめ読み非対応（旧GAS・テストの模擬）→ 従来どおりキーごとに読む
+        const vals = await Promise.all(keys.map(k => sGet(k).catch(() => null)));
+        map = {}; keys.forEach((k, i) => { map[k] = vals[i]; });
+        break;
+      }
+      if (!map && attempt === 0) await new Promise(r => setTimeout(r, 2500));
+    }
+    if (!map) {
+      markGasDown();
+      due.forEach(s => { s.next = Date.now() + 10000; });             // 10秒後にまた試す
+      return;
+    }
+    markGasUp();
+    due.forEach(s => {
+      const v = (s.key in map) ? map[s.key] : null;
+      if (!s.loaded) { s.loaded = true; try { s.onInitial(v); } catch (e) {} }
+      else { try { s.onPoll(v); } catch (e) {} }
+      s.next = Date.now() + s.pollMs;
+    });
+  } finally { __hubPoll.inFlight = false; }
+}
+const __hubPollRegister = s => {
+  const id = ++__hubPoll.seq;
+  __hubPoll.subs.set(id, Object.assign({ next:0, loaded:false }, s));
+  if (!__hubPoll.timer && GAS_READY) __hubPoll.timer = setInterval(__hubPollTick, POLL_TICK_MS);
+  // 起動直後は多くのキーが一斉に登録される。少し待ってから1回でまとめて読む
+  if (!__hubPoll.kick) __hubPoll.kick = setTimeout(() => { __hubPoll.kick = null; __hubPollTick(); }, 300);
+  return id;
+};
+const __hubPollUnregister = id => { __hubPoll.subs.delete(id); };
+
 function useShared(key, def, pollMs=60000) {
   const [val, setVal] = useState(def);
   const mounted      = useRef(true);
   const localRef     = useRef(def);
   const initialized  = useRef(false);
   const writeCount   = useRef(0);
-  const pollTimer    = useRef(null);
-  const inFlight     = useRef(false); // ポーリングの多重発射防止
 
   // ★形チェック: defと同種（配列/オブジェクト）でない応答は反映せず記録して無視する。
   //   GASの同時アクセス混線で異形のJSONが返るとタイムスケジュール等の表示が丸ごと消えるため
@@ -2313,38 +2398,28 @@ function useShared(key, def, pollMs=60000) {
     console.warn('[useShared] 期待と異なる形の応答を無視しました:',key,v);
   };
 
+  // ★初回読み込みとポーリングは、まとめ読みポーラー（上）に登録して行う（Kyoshi承認のBLOCK-B変更・2026-09-17）。
+  //   受け取った値の扱いは従来のまま：初回は形が正しければ反映、ポーリングは
+  //   「書き込み中は上書きしない／異形は無視／オブジェクトはマージ」。
   useEffect(() => {
     mounted.current = true;
-    sGet(key).then(v => {
-      if (!mounted.current) return;
-      if (v !== null) {
-        if (shapeOk(v)) { localRef.current = v; setVal(v); } // 初期ロードは形が正しければ反映
-        else logShapeAnomaly(v); // 異形はdefのまま起動し次のポーリングで追いつく
-      }
-      initialized.current = true;
-    }).catch(() => { initialized.current = true; });
-    return () => {
-      mounted.current = false;
-      if (pollTimer.current)  clearInterval(pollTimer.current);
-    };
-  }, [key]);
-
-  useEffect(() => {
-    if (!GAS_READY) return;
-    pollTimer.current = setInterval(() => {
-      if (!mounted.current || !initialized.current) return; // writeCountチェック削除済み
-      // ★非表示タブはポーリング停止（GAS同時実行数の負荷軽減。2026-06-13 Kyoshi承認のBLOCK-B変更）
-      //   画面復帰時はvisibilitychangeハンドラがinspを即時再取得し、他キーも次のポーリングで追いつく
-      if (document.visibilityState === 'hidden') return;
-      // ★前回の取得が未完了なら今回はスキップ。GASが遅い時にリクエストが積み上がって
-      //   同時実行数が雪だるま式に膨らむのを防ぐ（2026-07-03 Kyoshi承認のBLOCK-B変更）
-      if (inFlight.current) return;
-      inFlight.current = true;
-      sGet(key).then(v => {
+    initialized.current = false;
+    const id = __hubPollRegister({
+      key, pollMs,
+      isActive: () => mounted.current,
+      onInitial: v => {
+        if (!mounted.current) return;
+        if (v !== null) {
+          if (shapeOk(v)) { localRef.current = v; setVal(v); } // 初期ロードは形が正しければ反映
+          else logShapeAnomaly(v); // 異形はdefのまま起動し次のポーリングで追いつく
+        }
+        initialized.current = true;
+      },
+      onPoll: v => {
         // ★書き込みがまだGASに届ききっていない間はサーバー値で上書きしない。
         //   GASの書き込みは1本10〜27秒かかり順番待ちもあるため、writeCountの70秒解除だけでは
         //   足りずに「保存したのに画面から消える」が起きる（2026-08-24）。
-        if (!mounted.current || v === null || writeCount.current > 0) return;
+        if (!mounted.current || !initialized.current || v === null || writeCount.current > 0) return;
         if ((window.__hubWriteBusy||0) > 0) return;
         if (!shapeOk(v)) { logShapeAnomaly(v); return; } // 異形の応答は表示に反映しない
         const cur  = JSON.stringify(localRef.current);
@@ -2362,9 +2437,9 @@ function useShared(key, def, pollMs=60000) {
             localRef.current = v; setVal(v);
           }
         }
-      }).catch(() => {}).finally(() => { inFlight.current = false; });
-    }, pollMs);
-    return () => { if (pollTimer.current) clearInterval(pollTimer.current); };
+      },
+    });
+    return () => { mounted.current = false; __hubPollUnregister(id); };
   }, [key, pollMs]);
 
   const update = useCallback((fn) => {

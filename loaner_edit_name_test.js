@@ -30,7 +30,7 @@ const Y = now.getFullYear(), M = now.getMonth(), D = now.getDate();
 // 今日を含む3日間の代車予約（車id=1 ワゴンR）。id は「古い」作成時刻（3日前）
 const OLD_ID = Date.now() - 3 * 86400000;
 const rec0 = { id: OLD_ID, carId: 1, user: '山田　太郎', fy: Y, fm: M, fd: D, ty: Y, tm: M, td: D, color: '#c2410c' };
-const STALE_MS = 20000;   // 書き込み後20秒は古い値を返し続ける（GASの60秒キャッシュの模擬）
+const STALE_MS = 28000;   // 書き込み後28秒は古い値を返し続ける（GASの60秒キャッシュの模擬）
 
 (async () => {
   const src = fs.readFileSync(path.join(DIR, process.env.SRC || 'index_dev.html'), 'utf8')   // SRC=… で別ファイルを検査（修正前の再現用）
@@ -99,15 +99,15 @@ const STALE_MS = 20000;   // 書き込み後20秒は古い値を返し続ける�
   await page.waitForTimeout(1500);
   t('保存直後：画面が新しい名前になる', await seeText(page, '鈴木　花子', 3000));
 
-  // 古いキャッシュが返っている間に、ポーリング（15秒間隔）を2回またぐ
-  await page.waitForTimeout(17000);
+  // 古いキャッシュが返っている間に、ポーリング（15秒周期＋まとめ読みの刻み5秒）を1回以上またぐ
+  await page.waitForTimeout(24000);
   const stillNew = await page.evaluate(() => document.body.innerText.includes('鈴木　花子'));
   const revertedOld = await page.evaluate(() => document.body.innerText.includes('山田　太郎'));
   t('古いサーバー値が返ってきても新しい名前のまま（元に戻らない）', stillNew && !revertedOld, { stillNew, revertedOld, staleReads });
   t('その間に古い値を実際に返している（テストの前提）', staleReads >= 1, { staleReads, reads });
 
   // キャッシュが切れた後も同じ
-  await page.waitForTimeout(6000);
+  await page.waitForTimeout(8000);
   t('キャッシュが切れた後も新しい名前', await page.evaluate(() => document.body.innerText.includes('鈴木　花子')));
 
   // サーバーに書かれた中身
