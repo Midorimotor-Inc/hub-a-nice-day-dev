@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789550767837';
+    window.__APP_BUILD='build-1789606449547';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -116,7 +116,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.39';
+const APP_VERSION = '2.40';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -7962,25 +7962,32 @@ function AppInner() {
     sGet(STOR+'insp-arch').then(v=>{ if(v&&typeof v==='object'&&!Array.isArray(v)) setInspArch(v); }).catch(()=>{});
   },[]);
   // ★起動時の未反映控えの棚卸し（自動再送はしない＝本人が消した予約の復活を防ぐ）。
-  //   サーバーに反映済みなら控えを消す／24時間超の古い控えも消す／それ以外は残して警告のみ。
-  //   保存直後に端末が落ちた等のレアケースを可視化する安全網。日常の再送は保存時の _verify が担う。
+  //   サーバーに反映済みなら控えを消す／24時間超の古い控えも消す／それ以外は画面に出して送り直せるようにする。
+  //   ★2026-09-17 までは残った控えをコンソールに警告するだけで、画面には何も出なかった。
+  //     GASが不調の朝に5件入れて3件が届かず、本人は「保存中」に気づかずリロードして失った。
+  //     確認できなかった控え（サーバーが読めない時）も画面に出す＝GASが戻ってから送り直せる。
+  const [inspPendings,setInspPendings]=useState([]);   // 画面に出す未反映の控え
   useEffect(()=>{
     const pend=inspPendLoad();
     if(!pend.length)return;
     let cancelled=false;
     const run=async()=>{
+      const left=[];
+      let remote=null;
+      try{ remote=await sGet(STOR+'insp'); }catch(e){}
       for(const p of pend){
         if(cancelled)break;
-        try{
-          const remote=await sGet(STOR+'insp');
-          if(!remote||typeof remote!=='object')continue;
+        if(Date.now()-(p.ts||0)>24*3600*1000){inspPendDrop(p.pid);continue;}   // 古すぎる控えは捨てる
+        if(remote&&typeof remote==='object'){
           const rows=remote[p.dk]||[];
           const cust=p.row&&p.row.custId,name=p.row&&p.row.name,no=p.row&&p.row.no;
           const ok=rows.some(r=>r&&r.bookingStatus!=='cancelled'&&(cust?r.custId===cust:(r.name===name&&String(r.no||'')===String(no||''))));
-          if(ok||(Date.now()-(p.ts||0)>24*3600*1000)){inspPendDrop(p.pid);continue;}
-          console.warn('[INSP PEND] 未反映の予約控えが残っています（保存し直しを推奨）:',p.dk,name);
-        }catch(e){}
+          if(ok){inspPendDrop(p.pid);continue;}
+        }
+        left.push(p);
+        console.warn('[INSP PEND] 未反映の予約控えが残っています（送り直しを推奨）:',p.dk,p.row&&p.row.name);
       }
+      if(!cancelled)setInspPendings(left);
     };
     const t=setTimeout(run,4000);
     return()=>{cancelled=true;clearTimeout(t);};
@@ -8254,6 +8261,23 @@ function AppInner() {
   const [restrictionModal, setRestrictionModal] = useState(false); // 入庫制限モーダル
   const [restrTip, setRestrTip] = useState('');                    // 入庫制限バッジのホバー説明（表示中のdk）
   const [inspLimits, setInspLimits] = useShared(STOR+'inspLimits', {}); // 車検台数制限 {dk: number}
+  // 控えの1件を送り直す。サーバー最新値に「まだ無ければ」空き行へ足す（すでに入っていれば何もしない＝二重にならない）。
+  const resendInspPending=useCallback(p=>new Promise(resolve=>{
+    const row=p&&p.row?{...p.row}:null;
+    if(!row||!row.name||!p.dk){resolve(false);return;}
+    const has=obj=>{const rows=(obj&&obj[p.dk])||[];const c=row.custId,nm=row.name,no=row.no;
+      return rows.some(r=>r&&r.bookingStatus!=='cancelled'&&(c?r.custId===c:(r.name===nm&&String(r.no||'')===String(no||''))));};
+    const params={targetDk:p.dk,origDk:p.dk,isDateChange:false,dcPlaceIdx:0,modalIdx:0,row,limits:inspLimits||{},seq:Date.now(),wasEditing:false};
+    persistInsp(base=>has(base)?base:buildInspSave(base,params).result, back=>has(back),
+      {verb:'送り直し',name:row.name,dk:p.dk,pid:p.pid,onDone:ok=>{ if(ok)setInspPendings(l=>l.filter(x=>x.pid!==p.pid)); resolve(ok); }});
+  }),[persistInsp,inspLimits]);
+  const discardInspPending=useCallback(p=>{ inspPendDrop(p.pid); setInspPendings(l=>l.filter(x=>x.pid!==p.pid)); },[]);
+  // ── 保存中の表示。終わるまで画面を閉じたりリロードしたりしないよう促す ──
+  const [saveBusyN,setSaveBusyN]=useState(0);
+  useEffect(()=>{
+    const t=setInterval(()=>{ const n=Number(window.__hubWriteBusy||0); setSaveBusyN(prev=>prev===n?prev:n); },500);
+    return()=>clearInterval(t);
+  },[]);
   // 月間休日数（会社が月ごとに決める「完全休業日＋α」の日数）。{"2026-6":10} の形。
   //   スタッフが自分で数えなくても今月の休日数が分かるようにするための表示専用の数字で、
   //   休業日データや集計には一切影響しない。入力できるのは復旧と同じ4人だけ（canRestore）。
@@ -10190,6 +10214,46 @@ function AppInner() {
   return (
     <div style={{height:'100vh',overflow:'hidden',background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)',fontFamily:'system-ui,-apple-system,sans-serif'}}>
       <style>{GCSS}</style>
+
+      {/* -- 保存中の帯（画面下・中央）。終わるまでリロードしない -- */}
+      {saveBusyN>0&&(
+        <div style={{position:'fixed',left:'50%',bottom:14,transform:'translateX(-50%)',zIndex:1600,background:'#1f2937',color:'white',borderRadius:12,padding:'9px 16px',fontSize:12.5,fontWeight:700,boxShadow:'0 8px 30px rgba(0,0,0,0.35)',display:'flex',alignItems:'center',gap:9,pointerEvents:'none'}}>
+          <span style={{width:10,height:10,borderRadius:'50%',background:'#fbbf24',animation:'hubBlink 1s ease-in-out infinite'}}/>
+          保存中です… 終わるまでこの画面を閉じたり更新したりしないでください
+          <style>{'@keyframes hubBlink{0%,100%{opacity:.25}50%{opacity:1}}'}</style>
+        </div>
+      )}
+      {/* -- 未反映の予約（端末に控えが残っている）。送り直す／破棄 -- */}
+      {inspPendings.length>0&&(
+        <div style={{position:'fixed',right:18,bottom:18,zIndex:1500,width:'min(420px,92vw)',background:'white',border:'2px solid #dc2626',borderRadius:12,boxShadow:'0 12px 40px rgba(0,0,0,0.3)',padding:'12px 14px'}}>
+          <div style={{fontWeight:900,fontSize:13.5,color:'#b91c1c',marginBottom:4}}>⚠️ サーバーに届いていない車検予約が {inspPendings.length} 件あります</div>
+          <div style={{fontSize:11.5,color:'#6b7280',lineHeight:1.6,marginBottom:8}}>
+            保存の途中で画面を閉じた・更新した、またはサーバーが混み合っていた時の控えです。「送り直す」で登録できます（すでに入っていれば二重にはなりません）。
+          </div>
+          <div style={{display:'grid',gap:6,maxHeight:180,overflowY:'auto'}}>
+            {inspPendings.map(p=>{
+              const r=p.row||{};
+              const dk=String(p.dk||'').split('-');
+              const when=dk.length===3?dk[1]+'/'+dk[2]:p.dk;
+              return(
+                <div key={p.pid} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 9px',background:'#fef2f2',border:'1px solid #fecaca',borderRadius:8}}>
+                  <div style={{flex:1,minWidth:0,fontSize:12.5}}>
+                    <b>{when}</b>　{r.name}{r.time?'　'+r.time:''}
+                    <span style={{marginLeft:6,fontSize:11,color:'#6b7280'}}>{r.store==='sanda'?'三田店':'本店'}{r.staff?'・'+r.staff:''}</span>
+                  </div>
+                  <button onClick={()=>resendInspPending(p)} style={{padding:'6px 10px',background:'#dc2626',color:'white',border:'none',borderRadius:7,fontWeight:800,fontSize:11.5,cursor:'pointer',flexShrink:0}}>送り直す</button>
+                  <button onClick={()=>{if(window.confirm('「'+(r.name||'')+'」の控えを破棄しますか？（サーバーには登録されません）'))discardInspPending(p);}}
+                    style={{padding:'6px 8px',background:'#f3f4f6',border:'none',borderRadius:7,fontSize:11.5,cursor:'pointer',flexShrink:0}}>破棄</button>
+                </div>
+              );
+            })}
+          </div>
+          {inspPendings.length>1&&(
+            <button onClick={async()=>{for(const p of [...inspPendings]){await resendInspPending(p);}}}
+              style={{marginTop:8,width:'100%',padding:'8px 0',background:'#b91c1c',color:'white',border:'none',borderRadius:8,fontWeight:800,fontSize:12,cursor:'pointer'}}>すべて送り直す</button>
+          )}
+        </div>
+      )}
 
       {/* -- ヘッダー -- */}
       <header ref={headerRef} style={{background:'#EA580C',borderBottom:`3px solid ${vsStore.color}`,padding:'9px 18px',position:'fixed',top:0,left:0,right:0,zIndex:500,boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}}>
