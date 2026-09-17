@@ -93,11 +93,21 @@ const DK = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
       await page.waitForTimeout(20000);
       t(label + '：ポーリング中はキーごとの読みが増えず、まとめ読みだけが動く', single - s1 <= 1 && batch - b1 >= 1, { single: single - s1, batch: batch - b1, singleKeys });
     }
+    if (batchMode && !brokenFromStart) {
+      // 操作が無い画面（最後の操作から5分超）は3分に1回に間引く → 20秒待っても新しいまとめ読みが来ない
+      await page.evaluate(() => { window.__hubLastActivity = Date.now() - 10 * 60 * 1000; });
+      const bI = batch; await page.waitForTimeout(20000);
+      t(label + '：操作の無い画面はポーリングが間引かれる', batch - bI === 0, { batch: batch - bI });
+      // 触ると通常の周期に戻る
+      await page.mouse.click(700, 500); await page.keyboard.press('Shift');
+      const bT = batch; await page.waitForTimeout(22000);
+      t(label + '：触るとポーリングが再開する', batch - bT >= 1, { batch: batch - bT });
+    }
     // GAS不調（HTMLエラーページ）→ 赤い帯 → 復旧で消える
     broken = true;
-    t(label + '：読み込みが失敗し続けると「サーバーに接続できません」の帯が出る', await seeText(page, 'サーバーに接続できません', 40000));
+    t(label + '：読み込みが失敗し続けると「応答待ちです」の帯が出る', await seeText(page, 'サーバー（保存先）の応答待ちです', 40000));
     broken = false;
-    t(label + '：戻れば帯が消える', await gone(page, 'サーバーに接続できません', 40000));
+    t(label + '：戻れば帯が消える', await gone(page, 'サーバー（保存先）の応答待ちです', 40000));
     t(label + '：JSエラーなし', errs.length === 0, errs.slice(0, 3));
     await ctx.close();
   };

@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789609578832';
+    window.__APP_BUILD='build-1789612183149';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -116,7 +116,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.42';
+const APP_VERSION = '2.43';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -2299,6 +2299,17 @@ function mergeSharedObjects(local, server, nowTs){
 //   まとめ読みが2回続けて失敗したら markGasDown（赤い帯）。個別 sGet へは戻さない（本数を増やさないため）。
 const __hubPoll = { subs:new Map(), seq:0, timer:null, inFlight:false, kick:null };
 const POLL_TICK_MS = 5000;
+// ★操作のない画面は間引く：最後の操作から5分たったら、どのキーも3分に1回しか読まない
+//   （開きっぱなしのPCが人数分ぶら下がっているのが、同時実行数を食う一番の原因）。
+//   触った瞬間に通常の周期へ戻り、直近の変更はその次の読みで追いつく。
+const POLL_IDLE_AFTER_MS = 5 * 60 * 1000, POLL_IDLE_EVERY_MS = 3 * 60 * 1000;
+try { window.__hubLastActivity = Date.now(); } catch (e) {}
+const __hubTouch = () => { try { window.__hubLastActivity = Date.now(); } catch (e) {} };
+try {
+  ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(ev => window.addEventListener(ev, __hubTouch, { passive:true }));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') __hubTouch(); });
+} catch (e) {}
+const __hubIdle = () => (Date.now() - (window.__hubLastActivity || 0)) > POLL_IDLE_AFTER_MS;
 // ?keys= でまとめて読む。{キー: 値(JSON解析済み) | null} を返す。全体が失敗したら null。
 const sGetManyMap = async ks => {
   if (!GAS_READY || !ks.length) return null;
@@ -2337,7 +2348,9 @@ async function __hubPollTick() {
     if (!s.isActive()) return;
     if (!s.loaded) { due.push(s); return; }                          // 初回読み込みは非表示でも行う
     if (document.visibilityState === 'hidden') return;               // 非表示タブはポーリング停止（従来どおり）
-    if (now >= s.next) due.push(s);
+    // 操作の無い画面は3分に1回に間引く（next は「前回読んだ時刻＋周期」なので、周期を3分に引き延ばす）
+    const dueAt = __hubIdle() ? Math.max(s.next, (s.next - s.pollMs) + POLL_IDLE_EVERY_MS) : s.next;
+    if (now >= dueAt) due.push(s);
   });
   if (!due.length) return;
   __hubPoll.inFlight = true;
@@ -11712,10 +11725,10 @@ const GasDownBanner=()=>{
       boxShadow:'0 2px 12px rgba(0,0,0,.45)',fontFamily:'system-ui,sans-serif'}}>
       <span style={{fontSize:20,lineHeight:1}}>⚠</span>
       <div style={{flex:1,minWidth:240}}>
-        <div style={{fontWeight:900,fontSize:15}}>サーバーに接続できません。データは守られています。</div>
+        <div style={{fontWeight:900,fontSize:15}}>Google のサーバー（保存先）の応答待ちです。データは守られています。（{sec}秒経過）</div>
         <div style={{fontSize:12,opacity:.9,marginTop:2}}>
-          いま画面に出ていない予約も消えていません。繋がり次第このメッセージは消え、自動で表示に戻ります。
-          復旧するまでの入力は保存されないのでお待ちください。（{sec}秒経過）
+          このアプリの故障ではなく、Google 側の処理が混み合っています。いま画面に出ていない予約も消えていません。
+          応答が戻り次第このメッセージは消え、自動で表示に戻ります。それまでの入力は保存されないのでお待ちください。
         </div>
       </div>
       <button onClick={()=>{try{window.__hubGasDown=0;}catch(e){}location.reload();}}
