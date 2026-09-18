@@ -9,11 +9,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## ビルド・テスト・実行
 
 - **ビルド/lint は存在しない。** 静的HTMLをGitHub Pagesが直接配信する。
-- **検査は Playwright の `*_test.js`**（`%LOCALAPPDATA%Temphub-verify
-ode_modules` の playwright を使う）。Firebase には繋がず `fake_firebase.js`（にせの firebase）を差し込む：`node fb_auth_test.js`（本人認証）・`node fb_mode_test.js`（Firestore 経路）・`node batch_poll_test.js` ほか（GAS 模擬・`BACKEND='gas'` に固定して動かす）。構文だけなら `node smoke_dev_check.js <file>`。
+- **検査は Playwright の `*_test.js`**（`%LOCALAPPDATA%/Temp/hub-verify/node_modules` の playwright を使う）。Firebase には繋がず `fake_firebase.js`（にせの firebase）を差し込む：`node fb_auth_test.js`（本人認証）・`node fb_mode_test.js`（Firestore 経路）・`node batch_poll_test.js` ほか（GAS 模擬・`BACKEND='gas'` に固定して動かす）。構文だけなら `node smoke_dev_check.js <file>`。
 - 動作確認はブラウザでHTMLを開く（PWA。**Service Workerは使っていない**ので、ブラウザの通常キャッシュだけ。念のため確認時は**強制リロード Ctrl+Shift+R**）。
 - デプロイ = `git push`。GitHub Pages反映に1〜3分。
-- コード変更後の検証は、ブラウザで開いて操作する以外に手段がない（自動テスト基盤なし）。Babelのin-browser変換のため、構文エラーは実行時まで出ない。
+- Babelのin-browser変換のため、構文エラーは実行時まで出ない（上の検査で拾う）。
 
 ## リポジトリ構成（DEVと本番は別リポジトリ）
 
