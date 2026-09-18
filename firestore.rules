@@ -5,7 +5,7 @@ service cloud.firestore {
     //   許可簿 meta/allowed に載っていて active の人だけがデータ（kv）を読み書きできる。
     //   管理者（role=admin）だけが許可簿を書き換え、端末の台帳（devices）を消せる。
     function signedIn() { return request.auth != null && request.auth.token.email != null; }
-    function ekey() { return request.auth.token.email.lower().replace('\.', ','); }   // 項目名に '.' は使えないので ',' に
+    function ekey() { return request.auth.token.email.lower().replace('\\.', ','); }   // 項目名に '.' は使えないので ',' に
     function allowedDoc() { return get(/databases/$(database)/documents/meta/allowed).data; }
     function entry() { return allowedDoc()[ekey()]; }
     function isAllowed() { return signedIn() && ekey() in allowedDoc() && entry().active == true; }
