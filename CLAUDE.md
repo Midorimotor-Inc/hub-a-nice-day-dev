@@ -32,7 +32,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`index.html` は中身がなく `index_dev.html` / `index_main.html` へ `location.replace` するだけ。** 実装は `index_dev.html`（DEV）/ `index_main.html`（本番）にある。
 - DEVと本番でファイルが**乖離している**ことがある（片方だけ修正されたまま）。**片方を直したら必ずもう片方も確認すること。** 過去に useShared のマージロジックがDEVだけ新しく、本番で代車が消えるバグが出た。
 - `customers_dev.html` / `index_redirect_dev.html` は実験用サブファイル。ユーザーが日常使うのは `customers.html` と `index_dev.html`（本番は `index_main.html`）。
-- **Firebase プロジェクト（hub-a-nice-day）も GAS_URL も DEV・本番で同一**。`STOR` プレフィックスだけでデータを分離している（Firestore の `kv` コレクションのドキュメントID＝`hub-v8-insp` vs `hub-v8-dev-insp`）。localStorageキャッシュキーも必ず `STOR` を前置すること（同一オリジンでDEV/本番が混ざるため）。`firebase_config.js`（公開設定）は両リポジトリに置く。**サービスアカウント鍵は `C:UsersADocumentsHub重要書類irebase-admin.json`（リポジトリに入れない・.gitignore 済み）**。
+- **Firebase プロジェクト（hub-a-nice-day）も GAS_URL も DEV・本番で同一**。`STOR` プレフィックスだけでデータを分離している（Firestore の `kv` コレクションのドキュメントID＝`hub-v8-insp` vs `hub-v8-dev-insp`）。localStorageキャッシュキーも必ず `STOR` を前置すること（同一オリジンでDEV/本番が混ざるため）。`firebase_config.js`（公開設定）は両リポジトリに置く。**サービスアカウント鍵は `C:/Users/A/Documents/Hub重要書類/firebase-admin.json`（リポジトリに入れない・.gitignore 済み）**。
 
 ## DEV→本番の移植は必ず port_to_main.js を使う
 
