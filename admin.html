@@ -218,7 +218,7 @@ td.act{text-align:right;white-space:nowrap}
 //  この画面を開けるのは、許可簿（Firestore の meta/allowed）で role=admin の人だけ。
 //  ログインは Firebase Authentication のメールリンク（2026-09-18〜）。判定は Firestore のルールが行う。画面の申告は信用しない。
 // =====================================================================
-var APP_VERSION = '2.46';
+var APP_VERSION = '2.47';
 var GAS_URL     = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 // 環境の切り替え（2026-09-15）。この1ファイルで本番とDEVの両方を扱う。
 //   既定はDEV（安全側）。URLに ?env=prod が付いている時だけ本番のデータを扱う。
@@ -319,6 +319,44 @@ function sendInvite(mail, info){
       : c.indexOf('unauthorized') >= 0 ? 'bad_domain' : c.indexOf('invalid-email') >= 0 ? 'bad_email' : (c || 'error') };
   });
 }
+// 招待コード（2026-09-18 夕方）：アカウントの合言葉を6桁にして、GAS でメールする。使う端末はアドレス＋6桁で登録できる。
+//   既にある人は users（合言葉の控え。管理者も読める）でその人としてサインインし直してから付け替える。控えが無い人はリンクを送る。
+function hubRandom(n){ var a = new Uint8Array(n); try { crypto.getRandomValues(a); } catch (e) { for (var i = 0; i < n; i++) a[i] = Math.floor(Math.random() * 256); } return Array.prototype.map.call(a, function(b){ return ('0' + b.toString(16)).slice(-2); }).join(''); }
+function secondaryApp(){ try { return firebase.app('hub-invite'); } catch (e) { return firebase.initializeApp(HUB_FIREBASE_CONFIG, 'hub-invite'); } }
+function gasMailInvite(mail, code){
+  var q = new URLSearchParams({ action:'mailInvite', email: mail, code: code, prefix: STOR, apiKey: GAS_API_KEY });
+  return fetch(GAS_URL + '?' + q.toString(), { cache:'no-store' }).then(function(r){ return r.text(); })
+    .then(function(t){ try { return JSON.parse(t); } catch (e) { return { ok:false, err:'bad_response' }; } }, function(){ return { ok:false, err:'offline' }; });
+}
+function inviteByCode(mail, info){
+  if (!fbAuth) return Promise.resolve({ ok:false, err:'offline' });
+  var m = String(mail || '').trim().toLowerCase();
+  if (badMail(m)) return Promise.resolve({ ok:false, err:'bad_email' });
+  var code = String(Math.floor(100000 + Math.random() * 900000));
+  return allowedUpsert(m, info || {}).then(function(){
+    var app2 = secondaryApp(), auth2 = app2.auth(), db2 = app2.firestore();
+    var fin = function(r){ return auth2.signOut().catch(function(){}).then(function(){ return r; }); };
+    return auth2.createUserWithEmailAndPassword(m, code).then(function(cred){ return cred.user; }, function(e){
+      if (fbErrCode(e).indexOf('email-already-in-use') < 0) throw e;
+      return fbDb.collection('users').where('email', '==', m).get().then(function(q){
+        var pw = ''; q.forEach(function(d){ var v = d.data() || {}; if (!pw && v.pw) pw = v.pw; });
+        if (!pw) return null;   // 控えが無い（リンクで登録した人）
+        return auth2.signInWithEmailAndPassword(m, pw).then(function(cred){ return cred.user.updatePassword(code).then(function(){ return cred.user; }); });
+      });
+    }).then(function(user2){
+      if (!user2) return fin(null).then(function(){ return sendInvite(m, info).then(function(r){ return Object.assign({ mode:'link' }, r); }); });
+      return db2.collection('users').doc(user2.uid).set({ email: m, pw: code, inviteAt: Date.now() }, { merge: true })
+        .then(function(){ return fin(null); })
+        .then(function(){ return gasMailInvite(m, code); })
+        .then(function(r){ return { ok:true, mode:'code', code: code, mailed: !!(r && r.ok), mailErr: (r && r.err) || '' }; });
+    }, function(e){ return fin({ ok:false, err: fbErrCode(e).indexOf('permission-denied') >= 0 ? 'not_admin' : (fbErrCode(e) || 'error') }); });
+  }, function(e){ return { ok:false, err: fbErrCode(e).indexOf('permission-denied') >= 0 ? 'not_admin' : (fbErrCode(e) || 'error') }; });
+}
+function inviteResult(r, who){
+  if (r && r.ok && r.mode === 'code') return [ (r.mailed ? '招待メールを送りました' : 'メールは送れませんでした'), who + '　招待コード：' + r.code + (r.mailed ? '（メールにも書いてあります。使う端末でアドレスとこの6桁を入れてもらってください）' : '（' + (r.mailErr || '') + '。この6桁を本人に伝えてください）') ];
+  if (r && r.ok) return [ 'ログイン用のリンクを送りました', who + '　この方は合言葉の控えが無いため、メールのリンクを開いてもらう方式です。' ];
+  return [ '送れませんでした', inviteErr(r) ];
+}
 // 端末の台帳（devices コレクション。env で環境を分ける）→ {端末ID: {n,s,k,l,ua,at,last,e,dev,names}}
 function devicesRead(){
   return fbWhenReady().then(function(){ return fbDb.collection('devices').where('env', '==', STOR).get(); })
@@ -409,8 +447,11 @@ function viewGate(){
       + '<b>そのアドレス宛にログイン用のリンクが届きます</b>ので、このURLを知っていても他の方は入れません。</p>'
       + '<label class="f" for="m">メールアドレス</label>'
       + '<input type="email" id="m" value="' + esc(S.mail) + '" placeholder="管理者のメールアドレスを入力" autocomplete="off" inputmode="email">'
+      + '<label class="f" for="c">招待コード（6桁・持っている場合）</label>'
+      + '<input type="text" id="c" class="code mono" maxlength="6" inputmode="numeric" placeholder="------" autocomplete="one-time-code" value="' + esc(S.typed) + '">'
       + (S.err ? '<div class="err">' + esc(S.err) + '</div>' : '')
-      + '<button class="btn w" id="send"' + (S.busy?' disabled':'') + '>' + (S.busy?'送信中…':'ログイン用のリンクを送る') + '</button>';
+      + '<button class="btn w" id="okcode"' + (S.busy?' disabled':'') + '>' + (S.busy?'確認中…':'コードでログイン') + '</button>'
+      + '<button class="btn ghost w" id="send" style="margin-top:9px"' + (S.busy?' disabled':'') + '>' + (S.busy?'送信中…':'コードがない → ログイン用のリンクを送る') + '</button>';
   } else {
     body = '<p class="hint">' + esc(S.mail) + ' 宛にメールを送りました。届いたメールの「ログイン」のリンクを<b>このブラウザで</b>開いてください。'
       + '開くだけでログインが終わります（6桁の入力はありません）。<br>'
@@ -769,7 +810,25 @@ function bind(){
       render();
     });
   };
-  if ($('m')) $('m').onkeydown = function(e){ if (e.key === 'Enter') $('send').click(); };
+  if ($('m')) $('m').onkeydown = function(e){ if (e.key === 'Enter') { if ($('okcode') && ($('c').value || '').length === 6) $('okcode').click(); } };
+  if ($('c')) {
+    $('c').oninput = function(e){ e.target.value = e.target.value.replace(/[^0-9]/g,'').slice(0,6); S.typed = e.target.value; };
+    $('c').onkeydown = function(e){ if (e.key === 'Enter') $('okcode').click(); };
+  }
+  if ($('okcode')) $('okcode').onclick = function(){
+    var v = ($('m').value || '').trim().toLowerCase(), c = ($('c').value || '').trim();
+    if (badMail(v)) { S.err = 'メールアドレスの形式が正しくありません。'; render(); return; }
+    if (c.length !== 6) { S.err = '招待コード（6桁）を入れてください。コードが無ければ下のボタンでリンクを受け取れます。'; render(); return; }
+    S.mail = v; S.typed = c; S.err = ''; S.busy = true; render();
+    fbAuth.signInWithEmailAndPassword(v, c).then(function(){ S.busy = false; S.typed = ''; afterSignIn(); }, function(e){
+      S.busy = false;
+      var cc = fbErrCode(e);
+      S.err = /wrong-password|invalid-credential|user-not-found|invalid-login/.test(cc) ? 'アドレスかコードが違います。'
+        : cc.indexOf('too-many') >= 0 ? '失敗が続いたため、しばらく止まっています。時間をおいてお試しください。'
+        : 'ログインできませんでした（' + cc + '）。';
+      render();
+    });
+  };
   if ($('back')) $('back').onclick = function(){ S.step = 'mail'; S.err = ''; S.typed = ''; render(); };
   if ($('signout')) $('signout').onclick = function(){ if (fbAuth) fbAuth.signOut().then(function(){ S.me = null; S.view = 'gate'; S.step = 'mail'; S.err = ''; render(); }); };
 
@@ -1071,9 +1130,8 @@ function bind(){
           + '<div class="addr">' + esc(s.loginEmail) + '</div>'
           + '<p style="font-size:12px;color:var(--ink-3)">' + esc(s.name) + ' さん宛</p>',
         onOk: function(){
-          sendInvite(s.loginEmail, {name:s.name, store:s.store, uid:s.uid, kind:'staff'}).then(function(r){
-            if (r && r.ok) toast('招待メールを送りました', s.name + ' さん（' + s.loginEmail + '）宛。届いたメールのリンクを、使う端末で開いてもらってください。');
-            else toast('送れませんでした', inviteErr(r));
+          inviteByCode(s.loginEmail, {name:s.name, store:s.store, uid:s.uid, kind:'staff'}).then(function(r){
+            var t = inviteResult(r, s.name + ' さん（' + s.loginEmail + '）'); toast(t[0], t[1]);
           });
         }
       };
@@ -1093,7 +1151,7 @@ function bind(){
         var sent = 0, failed = 0;
         var seq = list.reduce(function(p, s){
           return p.then(function(){
-            return sendInvite(s.loginEmail, {name:s.name, store:s.store, uid:s.uid, kind:'staff'})
+            return inviteByCode(s.loginEmail, {name:s.name, store:s.store, uid:s.uid, kind:'staff'})
               .then(function(r){ if (r && r.ok) sent++; else failed++; });
           });
         }, Promise.resolve());
@@ -1218,11 +1276,10 @@ function bind(){
         body:'<p>宛先に間違いはありませんか。1文字違うと、何も届かないだけで理由が分かりません。</p>'
           + '<div class="addr">' + esc(d.mail) + '</div>'
           + '<p style="font-size:12px;color:var(--ink-3)">' + esc(d.name) + ' 用／'
-          + '届いたメールのリンクを<b>その端末で</b>開いてください。</p>',
+          + '届いたメールの6桁を、<b>その端末で</b>アドレスと一緒に入れてください。</p>',
         onOk: function(){
-          sendInvite(d.mail, {name:d.name, store:d.store || 'honten', uid:'', kind:'device', label:d.name}).then(function(r){
-            if (r && r.ok) toast('招待メールを送りました', d.name + '（' + d.mail + '）宛。届いたメールのリンクを、その端末で開いてください。');
-            else toast('送れませんでした', inviteErr(r));
+          inviteByCode(d.mail, {name:d.name, store:d.store || 'honten', uid:'', kind:'device', label:d.name}).then(function(r){
+            var t = inviteResult(r, d.name + '（' + d.mail + '）'); toast(t[0], t[1]);
           });
         }
       };

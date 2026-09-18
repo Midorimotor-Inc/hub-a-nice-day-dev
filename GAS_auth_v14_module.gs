@@ -45,7 +45,7 @@ var AUTH_APP_URL = {              // 招待メールに載せる各環境の入�
 var AUTH_MAX_TRY         = 5;     // コード入力の試行上限
 
 // 認証そのものに使うアクションは、当然ながら利用証を要求しない
-var AUTH_OPEN_ACTIONS = ['authRequest', 'authVerify', 'authHandoffTake', 'caps'];   // 引き継ぎを受ける側はまだ利用証を持たない
+var AUTH_OPEN_ACTIONS = ['authRequest', 'authVerify', 'authHandoffTake', 'caps', 'mailInvite'];   // mailInvite は v15（Firebase 認証の招待コードを送るだけ）   // 引き継ぎを受ける側はまだ利用証を持たない
 
 // ── 署名鍵（GASの中だけに存在する。HTMLには決して出さない）──────────────
 function authSecret_() {
@@ -592,6 +592,57 @@ function authInvite_(email, prefix) {
       '心当たりが無い場合は、このメールを破棄してください。\n\n' +
       '--\nHub a Nice Day 自動送信（返信不要）'
     );
+    return makeResponse(JSON.stringify({ ok: true, name: staff.name }));
+  } catch (err) {
+    return makeResponse(JSON.stringify({ ok: false, err: 'send_failed' }));
+  }
+}
+
+// ── v15（2026-09-18）：招待コードのメール ───────────────────────────────
+//   本人認証は Firebase に移った。コードの発行と照合は画面（Firestore の invites）が行い、
+//   GAS はメールを送るだけ。送る先はスタッフ表か共有端末の名簿にあるアドレスに限る（部外者に飛ばさない）。
+//   GET ?action=mailInvite&email=...&code=123456&prefix=hub-v8-dev-&apiKey=...
+function mailInvite_(email, code, prefix) {
+  try {
+    email = String(email || '').trim().toLowerCase();
+    code = String(code || '').replace(/[^0-9]/g, '');
+    if (email.indexOf('@') <= 0) return makeResponse(JSON.stringify({ ok: false, err: 'bad_email' }));
+    if (code.length !== 6) return makeResponse(JSON.stringify({ ok: false, err: 'bad_code' }));
+    if (SNAP_ENV_PREFIXES.indexOf(String(prefix || '')) < 0) return makeResponse(JSON.stringify({ ok: false, err: 'bad_prefix' }));
+    var staff = authFindStaffByEmail_(prefix, email);
+    var devv = staff ? null : authFindDeviceByEmail_(prefix, email);
+    if (!staff && !devv) return makeResponse(JSON.stringify({ ok: false, err: 'not_registered' }));
+    var cache = CacheService.getScriptCache();
+    var cntKey = 'authinv:' + email;
+    var cnt = Number(cache.get(cntKey) || 0);
+    if (cnt >= AUTH_MAX_SEND_PER_HR) return makeResponse(JSON.stringify({ ok: false, err: 'too_many' }));
+    cache.put(cntKey, String(cnt + 1), 3600);
+    var url = AUTH_APP_URL[String(prefix)] || AUTH_APP_URL['hub-v8-'];
+    var link = url + '?e=' + encodeURIComponent(email);
+    if (devv) {
+      MailApp.sendEmail(email, authMailHead_(prefix) + '共有端末「' + devv.name + '」の登録のご案内',
+        '共有端末「' + devv.name + '」の登録手順です。\n\n' +
+        '▼ 招待コード（30日有効）\n    ' + code + '\n\n' +
+        '▼ 手順（その端末の前で）\n' +
+        '1. ' + link + ' を開く\n' +
+        '2. このアドレス（' + email + '）と上の6桁を入れて「登録する」\n\n' +
+        '登録が済むと、その端末では担当者を選ぶだけで使えます。登録は端末ごとに1回だけです。\n' +
+        '※ この登録はその端末を使う全員で共有します。個人のスマホには使わないでください。\n\n' +
+        '心当たりが無い場合は、このメールを破棄してください。\n\n--\nHub a Nice Day 自動送信（返信不要）');
+      return makeResponse(JSON.stringify({ ok: true, name: devv.name, device: true }));
+    }
+    MailApp.sendEmail(email, authMailHead_(prefix) + 'ログインの登録をお願いします',
+      staff.name + ' さん\n\n' +
+      'Hub a Nice Day のログイン用アドレスとして、このアドレス（' + email + '）が登録されました。\n\n' +
+      '▼ 招待コード（30日有効）\n    ' + code + '\n\n' +
+      '▼ 使いはじめる手順\n' +
+      '1. 使いたい端末で ' + link + ' を開く\n' +
+      '2. このアドレスと上の6桁を入れて「登録する」で完了です\n\n' +
+      '※ スマホは、LINEやメールの中で開いた場合、先に「Safariで開く」（Androidは「ブラウザで開く」）を\n' +
+      '  選んでから登録してください。登録が終わった画面の案内で「ホーム画面に追加」できます。\n' +
+      '※ 自分のスマホと店の共有PC、両方で登録できます（同じコードで）。端末ごとに1回ずつお願いします。\n' +
+      '※ 一度登録した端末は、開くだけで使えます。期限はありません。\n\n' +
+      '心当たりが無い場合は、このメールを破棄してください。\n\n--\nHub a Nice Day 自動送信（返信不要）');
     return makeResponse(JSON.stringify({ ok: true, name: staff.name }));
   } catch (err) {
     return makeResponse(JSON.stringify({ ok: false, err: 'send_failed' }));

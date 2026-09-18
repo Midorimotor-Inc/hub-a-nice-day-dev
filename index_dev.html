@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789718694930';
+    window.__APP_BUILD='build-1789723196692';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.46';
+const APP_VERSION = '2.47';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -2207,6 +2207,8 @@ const hubCheckDevice = async () => {
     const d = s.data() || {};
     if (!d.last || Date.now() - d.last > 86400000) fbDeviceRef().update({ last: Date.now() }).catch(() => {});   // update：消された行を作り直さない
   } catch (e) { return true; }   // 読めない（回線）時は何も変えない
+  // 合言葉の控えが無い人（リンクで登録した）は作っておく。古いサインインでは作れないことがある（その時は次の登録時に）
+  try { const u = await fbDb.collection('users').doc(fbUser.uid).get(); if (!u.exists || !(u.data() || {}).pw) await hubHandoffSecret(); } catch (e) {}
   try {
     const snap = await fbAllowedRef().get();
     const all = snap.exists ? (snap.data() || {}) : {};
@@ -2299,7 +2301,79 @@ const hubTakeHandoff = async () => {
   try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
   return ok;
 };
-// 管理者：スタッフを許可簿に載せて（既にあれば更新）招待メールを送る
+// ── 招待コード（2026-09-18 夕方。ユーザー要望「メールのリンクを開いて送り直して…はストレス」）──
+//   管理者が招待すると6桁のコードを発行し、GAS がメールで送る。使う端末は「アドレス＋6桁」だけで登録できる。
+//   仕組み：その人の Firebase アカウントの合言葉を6桁のコードそのものにする（無ければアカウントを作る。
+//   既にある人は本人だけが読める users/{uid} の合言葉の控え＝管理者も読める＝でいったんサインインして付け替える）。
+//   同じコードでスマホと店のPCの両方を登録できる。7日を過ぎてから新たに登録した端末は、その場で合言葉を
+//   長いものに付け替える（6桁のまま放置しない）。以後の登録は管理者がもう一度招待する（新しい6桁）。
+//   Firebase は失敗を繰り返すアドレスをしばらく止めるので、6桁を総当たりで当てることはできない。
+//   メールのリンクを開く方式も残す（コードが無い時・メールを開いた端末でそのまま登録したい時）。
+const fbSecondaryApp = () => { try { return firebase.app('hub-invite'); } catch (e) { return firebase.initializeApp(HUB_FIREBASE_CONFIG, 'hub-invite'); } };
+const hubGasMailInvite = async (email, code) => {
+  try {
+    const q = new URLSearchParams({ action: 'mailInvite', email, code, prefix: STOR, apiKey: GAS_API_KEY });
+    const r = await fetch(GAS_URL + '?' + q.toString(), { cache: 'no-store' });
+    const t = await r.text(); try { return JSON.parse(t); } catch (e) { return { ok: false, err: 'bad_response' }; }
+  } catch (e) { return { ok: false, err: 'offline' }; }
+};
+const hubNewCode = () => String(Math.floor(100000 + Math.random() * 900000));
+const hubIsCodePw = pw => /^[0-9]{6}$/.test(String(pw || ''));
+// 管理者：許可簿に載せ、コードを発行してメールで送る。戻り値 {ok, mode:'code'|'link', code, mailed, err}
+const hubInviteByCode = async (staff) => {
+  const mail = String((staff && staff.loginEmail) || '').trim().toLowerCase();
+  if (mail.indexOf('@') < 1) return { ok: false, err: 'bad_email' };
+  if (!fbAuth || !fbUser) return { ok: false, err: 'offline' };
+  const k = fbEmailKey(mail), prev = hubAllowedEntry(mail) || {};
+  try {
+    await fbAllowedRef().set({ [k]: { email: mail, name: staff.name || prev.name || '', store: staff.store || prev.store || 'honten',
+      uid: staff.uid || prev.uid || '', role: prev.role || 'staff', active: true, kind: staff.kind || prev.kind || 'staff', label: staff.label || prev.label || '', at: Date.now() } }, { merge: true });
+  } catch (e) { return { ok: false, err: 'not_admin' }; }
+  const code = hubNewCode();
+  try {
+    const app2 = fbSecondaryApp(); const auth2 = app2.auth(); const db2 = app2.firestore();   // 別インスタンス＝自分のサインインは変わらない
+    try {
+      let user2 = null;
+      try { user2 = (await auth2.createUserWithEmailAndPassword(mail, code)).user; }
+      catch (e) {
+        if (String(e && e.code).indexOf('email-already-in-use') < 0) throw e;
+        // 既にある人：合言葉の控え（users）を管理者が読んで、その人としてサインインし直してから付け替える
+        const q = await fbDb.collection('users').where('email', '==', mail).get();
+        let pw = ''; q.forEach(d => { const v = d.data() || {}; if (!pw && v.pw) pw = v.pw; });
+        if (!pw) { const r = await hubSendLink(mail); return Object.assign({ mode: 'link' }, r); }   // 控えが無い（リンクで登録した人）→ リンクで
+        user2 = (await auth2.signInWithEmailAndPassword(mail, pw)).user;
+        await user2.updatePassword(code);
+      }
+      await db2.collection('users').doc(user2.uid).set({ email: mail, pw: code, inviteAt: Date.now() }, { merge: true });
+    } finally { try { await auth2.signOut(); } catch (e) {} }
+  } catch (e) { return { ok: false, err: hubAuthErr(e), raw: String((e && e.code) || '') }; }
+  const m = await hubGasMailInvite(mail, code);
+  return { ok: true, mode: 'code', code, mailed: !!(m && m.ok), mailErr: (m && m.err) || '' };
+};
+// 使う端末：アドレスと6桁でサインインする。7日を過ぎた招待なら、その場で合言葉を長いものに付け替える
+const hubSignInWithCode = async (email, code) => {
+  if (!fbAuth) return { ok: false, err: 'offline' };
+  const mail = String(email || '').trim().toLowerCase(), c = String(code || '').replace(/[^0-9]/g, '');
+  if (mail.indexOf('@') < 1) return { ok: false, err: 'bad_email' };
+  if (c.length !== 6) return { ok: false, err: 'bad_code' };
+  try { await fbAuth.signInWithEmailAndPassword(mail, c); }
+  catch (e) {
+    const cc = String((e && e.code) || '');
+    return { ok: false, err: /wrong-password|invalid-credential|user-not-found|invalid-login/.test(cc) ? 'bad_code' : hubAuthErr(e), raw: cc };
+  }
+  try {
+    const ref = fbDb.collection('users').doc(fbAuth.currentUser.uid);
+    const s = await ref.get(); const d = s.exists ? (s.data() || {}) : {};
+    if (!d.pw) await ref.set({ email: mail, pw: c, inviteAt: Date.now() }, { merge: true });
+    else if (hubIsCodePw(d.pw) && Date.now() - (d.inviteAt || 0) > 7 * 86400000) {
+      const pw = hubRandom(24);
+      await fbAuth.currentUser.updatePassword(pw);
+      await ref.set({ pw, rotatedAt: Date.now() }, { merge: true });
+    }
+  } catch (e) { console.warn('[FB] 合言葉の控えを更新できません', e && e.message); }
+  return { ok: true };
+};
+// 管理者：スタッフを許可簿に載せて（既にあれば更新）招待メールを送る（リンク方式）
 const hubSendInvite = async (staff) => {
   const mail = String((staff && staff.loginEmail) || '').trim();
   if (mail.indexOf('@') < 1) return { ok: false, err: 'bad_email' };
@@ -3387,9 +3461,10 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
                         // 送る前に必ずアドレスを読み合わせてもらう。
                         if(!window.confirm('このアドレスに招待メールを送ります。\n\n    '+mail+'\n\n宛先に間違いはありませんか？'))return;
                         setInviteBusy(true);setInviteMsg('');
-                        const r=await hubSendInvite(selectedStaff);
+                        const r=await hubInviteByCode(selectedStaff);
                         setInviteBusy(false);
-                        setInviteMsg(r&&r.ok ? '送信しました（'+mail+'）'
+                        setInviteMsg(r&&r.ok&&r.mode==='code' ? (r.mailed?'送信しました（'+mail+'）':'メールを送れませんでした（'+(r.mailErr||'')+'）。')+' 招待コード：'+r.code+'（本人に伝えてもOK）'
+                          : r&&r.ok ? 'この方は控えが無いため、ログイン用のリンクを送りました（'+mail+'）'
                           : r&&r.err==='not_admin' ? '送れません：管理者としてログインしている端末から送ってください。'
                           : r&&r.err==='too_many' ? '送信が続いています。しばらく待ってからお試しください。'
                           : r&&r.err==='bad_domain' ? '送れません：この画面のアドレスが Firebase の承認済みドメインにありません。'
@@ -3503,6 +3578,7 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
   const firstOnDevice0 = hubLive(hubLoadMine()).length===0;
   const [step,setStep]=useState((linkOpen||(fbAuth&&firstOnDevice0))?'signing':'email');   // サインイン済みかもしれない端末は、まず確かめる
   const [email,setEmail]=useState(hubLinkEmailFromUrl());
+  const [code,setCode]=useState('');            // 招待コード（6桁）。メールのリンクを開かなくても登録できる
   const [kind,setKind]=useState(hubKind());
   const [busy,setBusy]=useState(false);
   const [hand,setHand]=useState('');            // 登録直後に作る引き継ぎの印（スマホ）
@@ -3520,10 +3596,22 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
     return e==='not_allowed' ? 'このアドレスは登録されていません。管理者にご確認ください。'
       : e==='too_many' ? '送信が続いています。しばらく待ってからお試しください。'
       : e==='bad_email' ? 'メールアドレスの形式が正しくありません。'
+      : e==='bad_code' ? 'アドレスかコードが違います。'
       : e==='bad_domain' ? 'この画面のアドレスがまだ許可されていません（管理者：Firebase の承認済みドメインに追加してください）。'
       : e==='expired' ? 'このリンクは期限切れか、すでに使われています。メールアドレスを入れて、新しいリンクを受け取ってください。'
       : e==='offline' ? '通信の状態をご確認ください。'
       : 'うまくいきませんでした。もう一度お試しください。'+(r&&r.raw?'（'+r.raw+'）':'');
+  };
+  // アドレスと6桁で登録する
+  const startCode=async()=>{
+    const mail=email.trim();
+    if(mail.indexOf('@')<1){setErr('メールアドレスの形式が正しくありません。');return;}
+    if(code.length!==6){setErr('招待コード（6桁）を入れてください。');return;}
+    setErr('');setBusy(true);
+    const r=await hubSignInWithCode(mail,code);
+    setBusy(false);
+    if(!r.ok){ setErr(r.err==='bad_code'?'アドレスかコードが違います。招待メールの6桁をご確認ください。':errText(r)); return; }
+    await afterSignIn();
   };
   // アドレスを入れてリンクを送る
   const startSend=async()=>{
@@ -3544,6 +3632,7 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
     list.push({uid:r.uid||'',name:r.name,myNumber:r.myNumber,store:r.store||'honten',email:r.email||'',
                isDevice:!!r.device,isAdmin:!!r.admin});
     hubSaveMine(list);
+    if(fbAuth&&fbUser) hubHandoffSecret().catch(()=>{});   // 合言葉の控え（引き継ぎ・管理者のコード再招待に要る）
     // 2人目が入った端末は「共有」に直す（自分専用のままだと他人の名義で予約が入る）
     if(hubLive(hubLoadMine()).filter(x=>!x.isDevice).length>1 && hubKind()==='own') hubSetKind('shared');
     // 管理者の端末一覧で読めるように、台帳へ記録する
@@ -3648,11 +3737,23 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
             </div>
             <input type="email" value={email} onChange={e=>setEmail(e.target.value)} style={IN}
               placeholder="ここにメールアドレスを入力" autoComplete="off" inputMode="email"
-              onKeyDown={e=>{if(e.key==='Enter'){ if(needEmail) completeLink(email); else startSend(); }}}/>
+              onKeyDown={e=>{if(e.key==='Enter'){ if(needEmail) completeLink(email); else if(code.length===6) startCode(); }}}/>
+            {!needEmail&&(<>
+              <div style={{fontSize:12,color:'#374151',fontWeight:700,marginTop:12,marginBottom:4}}>招待メールの「招待コード」（6桁）</div>
+              <input type="text" value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,'').slice(0,6))}
+                style={{...IN,fontSize:24,letterSpacing:'0.4em',textAlign:'center',fontWeight:800}}
+                placeholder="------" inputMode="numeric" autoComplete="one-time-code"
+                onKeyDown={e=>{if(e.key==='Enter'&&code.length===6)startCode();}}/>
+            </>)}
             {ERR}
-            <button style={BTN(!busy&&email.trim().length>0)} disabled={busy||!email.trim()} onClick={()=>{ if(needEmail) completeLink(email); else startSend(); }}>
-              {busy?'送信中…':needEmail?'確認する':'ログイン用のリンクを送る'}
-            </button>
+            {needEmail
+              ? <button style={BTN(!busy&&email.trim().length>0)} disabled={busy||!email.trim()} onClick={()=>completeLink(email)}>{busy?'確認中…':'確認する'}</button>
+              : <>
+                  <button style={BTN(!busy&&email.trim().length>0&&code.length===6)} disabled={busy||!email.trim()||code.length!==6} onClick={startCode}>
+                    {busy?'確認中…':'登録する'}
+                  </button>
+                  <button style={SUB} disabled={busy||!email.trim()} onClick={startSend}>コードがない → ログイン用のリンクをメールで受け取る</button>
+                </>}
             {onCancel&&<button style={SUB} onClick={()=>{hubDropInvite();onCancel();}}>やめる</button>}
           </div>
         )}

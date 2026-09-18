@@ -20,9 +20,10 @@ service cloud.firestore {
       allow read: if isAllowed();
       allow write: if isAdmin();
     }
-    // 本人だけが読める控え（引き継ぎ用の合言葉）
+    // 合言葉の控え（引き継ぎ・招待コード用）。本人が書く。読めるのは本人と管理者（管理者はコードで再招待する時に使う）
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read: if (request.auth != null && request.auth.uid == uid) || isAdmin();
+      allow write: if request.auth != null && request.auth.uid == uid;
     }
     // 引き継ぎの印：作るのは許可された人。出すのは印（ランダムな符号）を知っている人。期限内だけ。一覧は不可
     match /handoff/{code} {

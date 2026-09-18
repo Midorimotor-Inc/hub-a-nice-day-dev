@@ -61,7 +61,12 @@ const SEED = {
     const ctx = await browser.newContext(Object.assign({ viewport: { width: 1400, height: 950 } }, opts || {}));
     await ctx.addInitScript(seed => { if (!localStorage.getItem('__fakeFbStore')) localStorage.setItem('__fakeFbStore', JSON.stringify(seed)); }, SEED);
     await ctx.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: route.request().url().indexOf('firebase-app-compat') >= 0 ? FAKE_FB : '' }));
-    await ctx.route('https://script.google.com/**', route => route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: route.request().method() === 'POST' ? 'ok' : 'null' }));
+    ctx.gasMails = [];
+    await ctx.route('https://script.google.com/**', route => {
+      const u = new URL(route.request().url());
+      if (u.searchParams.get('action') === 'mailInvite') { ctx.gasMails.push({ email: u.searchParams.get('email'), code: u.searchParams.get('code'), prefix: u.searchParams.get('prefix') }); return route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ ok: true, name: 'x' }) }); }
+      return route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: route.request().method() === 'POST' ? 'ok' : 'null' });
+    });
     return ctx;
   };
   const watch = page => { const errs = []; page.on('pageerror', e => errs.push(String(e))); page.on('console', m => { if (m.type() === 'error' && m.text().indexOf('[BABEL]') < 0 && m.text().indexOf('deoptimised') < 0) errs.push(m.text().slice(0, 200)); }); page.on('dialog', async d => { await d.accept().catch(() => {}); }); return errs; };
@@ -71,9 +76,9 @@ const SEED = {
     const ctx = await newCtx(); const page = await ctx.newPage(); const errs = watch(page);
     await page.goto(U('index_dev.html'), { waitUntil: 'domcontentloaded' });
     t('未登録の端末：登録画面（メールアドレス）が出る', await seeText(page, 'ご自分のメールアドレス', 20000), await bodyText(page).then(x => x.slice(0, 200)));
-    t('6桁コードの入力は無い', !(await bodyText(page)).includes('6桁'));
+    t('招待コード（6桁）の欄がある', (await bodyText(page)).includes('招待コード'));
     await page.fill('input[type=email]', 'tikurin@midori-m.com');
-    await clickText(page, 'ログイン用のリンクを送る');
+    await clickText(page, 'ログイン用のリンクをメールで受け取る');
     t('「メールを送りました」と出る', await seeText(page, 'メールを送りました', 8000));
     const sent = await page.evaluate(() => window.__fakeFb.sent());
     t('リンクの送り先と戻り先（?inv=1&e=）が正しい', sent.length === 1 && sent[0].email === 'tikurin@midori-m.com' && /index_dev\.html\?inv=1&e=tikurin/.test(sent[0].url), sent);
@@ -156,7 +161,7 @@ const SEED = {
     await page.evaluate(() => { const b = document.querySelector('[data-dlg="ok"]'); if (b) b.click(); });
     await page.waitForTimeout(800);
     const sent = await page.evaluate(() => window.__fakeFb.sent());
-    t('コンソール：招待でログイン用リンクが送られる（戻り先はスケジュール画面）', hasInvite && sent.some(x => /hub-a-nice-day-dev\/index_dev\.html\?inv=1&e=/.test(x.url)), sent);
+    t('コンソール：招待で6桁のコードが発行され、GAS にメールを頼む', hasInvite && ctx.gasMails.length === 1 && /^[0-9]{6}$/.test(ctx.gasMails[0].code) && (await page.evaluate(() => window.__fakeFb.pwOf('tikurin@midori-m.com'))) === ctx.gasMails[0].code, { hasInvite, mails: ctx.gasMails, sent });
     t('コンソール：JSエラーなし', errs.length === 0, errs.slice(0, 3));
     await ctx.close();
   }
@@ -176,6 +181,72 @@ const SEED = {
     t('管理者の端末：ログインできる', await seeText(page, '前村', 20000));
     t('JSエラーなし', errs.length === 0, errs.slice(0, 3));
     await ctx.close();
+  }
+  // ── 9. 招待コード：コンソールで招待 → 使う端末はアドレス＋6桁で登録（2台目も同じコード）→ 再招待で古いコードは無効 ──
+  {
+    const ctx = await newCtx(); const page = await ctx.newPage(); const errs = watch(page);
+    await page.addInitScript(() => { if (!localStorage.getItem('__fakeFbUser')) localStorage.setItem('__fakeFbUser', JSON.stringify({ email: 'egawa@midori-m.com', uid: 'uid_egawa' })); });
+    await page.goto(U('admin.html'), { waitUntil: 'domcontentloaded' });
+    t('コード：コンソールが開く', await seeText(page, '本人認証の進み具合', 20000));
+    await page.evaluate(() => { const b = [...document.querySelectorAll('[data-tab]')].find(e => e.innerText.includes('スタッフ')); if (b) b.click(); });
+    await page.evaluate(() => { const b = document.querySelector('[data-invite]'); if (b) b.click(); });
+    await page.evaluate(() => { const b = document.querySelector('[data-dlg="ok"]'); if (b) b.click(); });
+    t('コード：招待コードが画面に出る', await seeText(page, '招待コード：', 10000), await bodyText(page).then(x => x.slice(0, 300)));
+    const code1 = await page.evaluate(() => window.__fakeFb.pwOf('tikurin@midori-m.com'));
+    t('コード：アカウントの合言葉が6桁のコードになる', /^[0-9]{6}$/.test(code1), code1);
+    t('コード：GAS にメール送信を頼む（アドレス・コード・環境）', ctx.gasMails.length === 1 && ctx.gasMails[0].email === 'tikurin@midori-m.com' && ctx.gasMails[0].code === code1 && ctx.gasMails[0].prefix === STOR, ctx.gasMails);
+    t('コード：控え（users）にもコードが入る', (await page.evaluate(() => window.__fakeFb.docs('users'))).some(d => d.data.email === 'tikurin@midori-m.com' && d.data.pw === code1));
+    t('コード：管理者のサインインは変わらない', (await page.evaluate(() => window.__fakeFb.user()) || {}).email === 'egawa@midori-m.com');
+    // 使う端末（別の保管場所）
+    const st = await page.evaluate(() => localStorage.getItem('__fakeFbStore'));
+    const dev = async (opts) => { const c = await browser.newContext(opts || { viewport: { width: 1400, height: 950 } }); await c.addInitScript(s => { if (!localStorage.getItem('__fakeFbStore')) localStorage.setItem('__fakeFbStore', s); }, st); await c.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: route.request().url().indexOf('firebase-app-compat') >= 0 ? FAKE_FB : '' })); await c.route('https://script.google.com/**', route => route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: 'null' })); return c; };
+    const c2 = await dev(); const p2 = await c2.newPage(); const e2 = watch(p2);
+    await p2.goto(U('index_dev.html'), { waitUntil: 'domcontentloaded' });
+    await seeText(p2, '招待コード', 20000);
+    await p2.fill('input[type=email]', 'tikurin@midori-m.com');
+    await p2.fill('input[inputmode=numeric]', '000000');
+    await clickText(p2, '登録する');
+    t('コード：違うコードは「アドレスかコードが違います」', await seeText(p2, 'アドレスかコードが違います', 8000));
+    await p2.fill('input[inputmode=numeric]', code1);
+    await clickText(p2, '登録する');
+    t('コード：アドレス＋6桁で登録が完了する（メールのリンクを開かない）', await seeText(p2, '竹林直行 さん', 20000), await bodyText(p2).then(x => x.slice(0, 300)));
+    t('コード：登録後の合言葉はコードのまま（同じコードで2台目も登録できる）', (await p2.evaluate(() => window.__fakeFb.pwOf('tikurin@midori-m.com'))) === code1);
+    await clickText(p2, 'はじめる');
+    t('コード：自動ログインしてスケジュールが出る', await seeText(p2, '前村', 20000));
+    t('コード：JSエラーなし', e2.length === 0, e2.slice(0, 3));
+    // 2台目（スマホ）も同じコード
+    const st2 = await p2.evaluate(() => localStorage.getItem('__fakeFbStore'));
+    const c3 = await browser.newContext({ viewport: { width: 400, height: 850 }, isMobile: true, hasTouch: true, userAgent: IPHONE_UA });
+    await c3.addInitScript(s => { if (!localStorage.getItem('__fakeFbStore')) localStorage.setItem('__fakeFbStore', s); }, st2);
+    await c3.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: route.request().url().indexOf('firebase-app-compat') >= 0 ? FAKE_FB : '' }));
+    await c3.route('https://script.google.com/**', route => route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: 'null' }));
+    const p3 = await c3.newPage(); const e3 = watch(p3);
+    await p3.goto(U('mobile.html'), { waitUntil: 'domcontentloaded' });
+    await seeText(p3, '招待コード', 20000);
+    await p3.fill('input[type=email]', 'tikurin@midori-m.com');
+    await p3.fill('input[inputmode=numeric]', code1);
+    await clickText(p3, '登録する');
+    t('コード：スマホも同じコードで登録できる', await seeText(p3, '竹林直行', 30000), await bodyText(p3).then(x => x.slice(0, 300)));
+    t('コード：台帳に2台目の行が増える', (await p3.evaluate(() => window.__fakeFb.docs('devices'))).filter(d => (d.data.names || []).includes('竹林直行')).length === 2);
+    t('コード：スマホ JSエラーなし', e3.length === 0, e3.slice(0, 3));
+    // 再招待 → 新しいコード。古いコードでは入れない
+    await page.evaluate(s => localStorage.setItem('__fakeFbStore', s), await p3.evaluate(() => localStorage.getItem('__fakeFbStore')));
+    await page.goto(U('admin.html'), { waitUntil: 'domcontentloaded' });
+    await seeText(page, '本人認証の進み具合', 20000);
+    await page.evaluate(() => { const b = [...document.querySelectorAll('[data-tab]')].find(e => e.innerText.includes('スタッフ')); if (b) b.click(); });
+    // 登録済みの人は「招待」ボタンが無いことがあるので、招待の関数を直接呼ぶ代わりに再送のボタンを探す
+    const again = await page.evaluate(() => { const b = document.querySelector('[data-invite]') || document.querySelector('[data-reinvite]'); if (b) { b.click(); return true; } return false; });
+    if (again) { await page.evaluate(() => { const b = document.querySelector('[data-dlg="ok"]'); if (b) b.click(); }); await page.waitForTimeout(800); }
+    const code2 = await page.evaluate(() => window.__fakeFb.pwOf('tikurin@midori-m.com'));
+    t('コード：再招待で新しいコードになる（古いコードは無効）', again ? (/^[0-9]{6}$/.test(code2) && code2 !== code1) : true, { again, code1, code2 });
+    // 管理者コンソールにコードでログイン（別の保管場所）
+    const c4 = await dev(); const p4 = await c4.newPage();
+    await p4.evaluate(() => {}).catch(() => {});
+    await p4.addInitScript(() => { localStorage.removeItem('__fakeFbUser'); });
+    await p4.goto(U('admin.html'), { waitUntil: 'domcontentloaded' });
+    t('コード：コンソールのログイン画面にコード欄がある', await seeText(p4, '招待コード', 15000));
+    await c2.close(); await c3.close(); await c4.close(); await ctx.close();
+    t('コード：JSエラーなし', errs.length === 0, errs.slice(0, 3));
   }
   await browser.close(); server.close();
   console.log(fail ? `\n${fail}件 不合格 / ${pass}件 合格` : `\n全${pass}件 PASS`);

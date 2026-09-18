@@ -23,10 +23,12 @@
   const denied = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
   const allowedOf = () => (store['meta/allowed'] || {});
   const ekey = e => String(e || '').trim().toLowerCase().replace(/\./g, ',');
+  const makeDb = auth => {
   const isAllowed = () => { const u = auth._user; if (!u) return false; const a = allowedOf()[ekey(u.email)]; return !!(a && a.active !== false); };
   const isAdmin = () => { const u = auth._user; if (!u) return false; const a = allowedOf()[ekey(u.email)]; return !!(a && a.active !== false && a.role === 'admin'); };
-  const canRead = (col, id) => col === 'handoff' || (col === 'users') || (col === 'kv' && (id.indexOf('hub-v8-dev-') === 0 || isAllowed())) || (col !== 'kv' && isAllowed());
-  const canWrite = (col, id) => (col === 'users') || (col === 'handoff' && isAllowed()) || (col === 'kv' && (id.indexOf('hub-v8-dev-') === 0 || isAllowed())) || (col === 'meta' && isAdmin()) || (col === 'devices' && isAllowed());
+  const own = id => !!(auth._user && auth._user.uid === id);
+  const canRead = (col, id) => col === 'handoff' || (col === 'users' && (own(id) || isAdmin())) || (col === 'kv' && (id.indexOf('hub-v8-dev-') === 0 || isAllowed())) || (col !== 'kv' && col !== 'users' && isAllowed());
+  const canWrite = (col, id) => (col === 'users' && own(id)) || (col === 'handoff' && isAllowed()) || (col === 'kv' && (id.indexOf('hub-v8-dev-') === 0 || isAllowed())) || (col === 'meta' && isAdmin()) || (col === 'devices' && isAllowed());
   const doc = (col, id) => ({
     id, __col: col, __id: id,
     get: async () => { stats.reads++; if (!canRead(col, id)) throw denied(); return snapOf(col, id); },
@@ -42,9 +44,9 @@
   });
   const collection = col => ({
     doc: id => doc(col, id),
-    where: (f, op, v) => ({ get: async () => { if (!isAllowed()) throw denied(); const rows = Object.keys(store).filter(k => k.indexOf(col + '/') === 0 && store[k] && store[k][f] === v).map(k => ({ id: k.slice(col.length + 1), data: () => store[k] })); return { forEach: fn => rows.forEach(fn), size: rows.length }; } }),
+    where: (f, op, v) => ({ get: async () => { if (!(col === 'users' ? isAdmin() : isAllowed())) throw denied(); const rows = Object.keys(store).filter(k => k.indexOf(col + '/') === 0 && store[k] && store[k][f] === v).map(k => ({ id: k.slice(col.length + 1), data: () => store[k] })); return { forEach: fn => rows.forEach(fn), size: rows.length }; } }),
   });
-  const db = {
+  return {
     collection,
     runTransaction: async fn => {
       stats.txns++;
@@ -52,29 +54,45 @@
                   set: (ref, d, opts) => { if (!canWrite(ref.__col, ref.__id)) throw denied(); writeDoc(ref.__col, ref.__id, d, opts); } };
       return fn(t);
     },
-  };
+  }; };
   // ── Authentication ──
-  const makeUser = u => u ? Object.assign({}, u, { updatePassword: async pw => { auth._user.pw = pw; try { localStorage.setItem(LS_USER, JSON.stringify(auth._user)); } catch (e) {} store['__pw/' + u.email] = { pw }; save(); } }) : null;
-  const auth = {
-    languageCode: '', _user: null, _listeners: [],
-    get currentUser() { return this._user; },
-    _set(u) { this._user = makeUser(u); try { if (u) localStorage.setItem(LS_USER, JSON.stringify(u)); else localStorage.removeItem(LS_USER); } catch (e) {} this._listeners.forEach(cb => { try { cb(this._user); } catch (e) {} }); },
-    onAuthStateChanged(cb) { this._listeners.push(cb); setTimeout(() => cb(this._user), 30); return () => {}; },
-    isSignInWithEmailLink: href => /[?&]oobCode=/.test(String(href)),
-    sendSignInLinkToEmail: async (email, s) => { if (email.indexOf('@') < 1) throw Object.assign(new Error('bad'), { code: 'auth/invalid-email' }); const sent = load('__fakeFbSent', []); sent.push({ email, url: s.url }); try { localStorage.setItem('__fakeFbSent', JSON.stringify(sent)); } catch (e) {} },
-    signInWithEmailLink: async (email, href) => {
-      const code = new URL(href).searchParams.get('oobCode');
-      if (code !== 'good') throw Object.assign(new Error('bad code'), { code: 'auth/invalid-action-code' });
-      auth._set({ email, uid: 'uid_' + email.replace(/[^a-z0-9]/gi, '_') });
-    },
-    signInWithEmailAndPassword: async (email, pw) => {
-      const rec = store['__pw/' + email];
-      if (!rec || rec.pw !== pw) throw Object.assign(new Error('wrong'), { code: 'auth/wrong-password' });
-      auth._set({ email, uid: 'uid_' + email.replace(/[^a-z0-9]/gi, '_') });
-    },
-    signOut: async () => { auth._set(null); },
+  const uidOf = email => 'uid_' + email.replace(/[^a-z0-9]/gi, '_');
+  const makeAuth = persist => {
+    const auth = {
+      languageCode: '', _user: null, _listeners: [],
+      get currentUser() { return this._user; },
+      _set(u) { this._user = u ? Object.assign({}, u, { updatePassword: async pw => { store['__pw/' + u.email] = { pw }; save(); } }) : null;
+        if (persist) { try { if (u) localStorage.setItem(LS_USER, JSON.stringify(u)); else localStorage.removeItem(LS_USER); } catch (e) {} }
+        this._listeners.forEach(cb => { try { cb(this._user); } catch (e) {} }); },
+      onAuthStateChanged(cb) { this._listeners.push(cb); setTimeout(() => cb(this._user), 30); return () => {}; },
+      isSignInWithEmailLink: href => /[?&]oobCode=/.test(String(href)),
+      sendSignInLinkToEmail: async (email, s) => { if (email.indexOf('@') < 1) throw Object.assign(new Error('bad'), { code: 'auth/invalid-email' }); const sent = load('__fakeFbSent', []); sent.push({ email, url: s.url }); try { localStorage.setItem('__fakeFbSent', JSON.stringify(sent)); } catch (e) {} },
+      signInWithEmailLink: async (email, href) => {
+        const code = new URL(href).searchParams.get('oobCode');
+        if (code !== 'good') throw Object.assign(new Error('bad code'), { code: 'auth/invalid-action-code' });
+        if (!store['__acct/' + email]) { store['__acct/' + email] = { at: Date.now() }; save(); }
+        auth._set({ email, uid: uidOf(email) });
+      },
+      createUserWithEmailAndPassword: async (email, pw) => {
+        if (store['__acct/' + email]) throw Object.assign(new Error('exists'), { code: 'auth/email-already-in-use' });
+        store['__acct/' + email] = { at: Date.now() }; store['__pw/' + email] = { pw }; save();
+        auth._set({ email, uid: uidOf(email) });
+        return { user: auth._user };
+      },
+      signInWithEmailAndPassword: async (email, pw) => {
+        const rec = store['__pw/' + email];
+        if (!rec || rec.pw !== pw) throw Object.assign(new Error('wrong'), { code: 'auth/wrong-password' });
+        auth._set({ email, uid: uidOf(email) });
+        return { user: auth._user };
+      },
+      signOut: async () => { auth._set(null); },
+    };
+    return auth;
   };
-  auth._user = makeUser(load(LS_USER, null));
+  const auth = makeAuth(true);
+  auth._set(load(LS_USER, null)); auth._listeners = [];
+  const db = makeDb(auth);
+  const apps = {};   // 名前付きの別インスタンス（招待用）
   window.__fakeFb = {
     set: (id, v, col) => writeDoc(col || 'kv', id, col && col !== 'kv' ? v : { v: JSON.stringify(v), u: Date.now() }),
     get: (id, col) => { const d = store[key(col || 'kv', id)]; if (!d) return null; return (col && col !== 'kv') ? d : JSON.parse(d.v); },
@@ -82,13 +100,18 @@
     docs: col => Object.keys(store).filter(k => k.indexOf(col + '/') === 0).map(k => ({ id: k.slice(col.length + 1), data: store[k] })),
     sent: () => load('__fakeFbSent', []),
     user: () => auth._user ? { email: auth._user.email, uid: auth._user.uid } : null,
-    signInAs: email => auth._set({ email, uid: 'uid_' + email.replace(/[^a-z0-9]/gi, '_') }),
+    signInAs: email => { if (!store['__acct/' + email]) { store['__acct/' + email] = { at: Date.now() }; save(); } auth._set({ email, uid: uidOf(email) }); },
+    pwOf: email => (store['__pw/' + email] || {}).pw || '',
+    setAccount: (email, pw) => { store['__acct/' + email] = { at: Date.now() }; if (pw) store['__pw/' + email] = { pw }; save(); },
     stats: () => Object.assign({}, stats),
     reset: () => { try { localStorage.removeItem(LS_STORE); localStorage.removeItem(LS_USER); localStorage.removeItem('__fakeFbSent'); } catch (e) {} },
   };
+  const FieldValue = { serverTimestamp: () => 'ts', delete: () => ({ __delete: true }) };
   window.firebase = {
-    apps: [], initializeApp() { this.apps.push({}); },
-    firestore: Object.assign(() => db, { FieldValue: { serverTimestamp: () => 'ts', delete: () => ({ __delete: true }) } }),
+    apps: [],
+    initializeApp(cfg, name) { if (name) { const a2 = makeAuth(false); const app = { name, auth: () => a2, firestore: () => makeDb(a2) }; apps[name] = app; return app; } this.apps.push({}); return {}; },
+    app(name) { if (name && apps[name]) return apps[name]; throw Object.assign(new Error('no app ' + name), { code: 'app/no-app' }); },
+    firestore: Object.assign(() => db, { FieldValue }),
     auth: () => auth,
   };
 })();
