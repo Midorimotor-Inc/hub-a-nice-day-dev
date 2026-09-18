@@ -15,13 +15,14 @@
   <!-- 保存先 Firebase（Firestore）。BLOCK-A の BACKEND が 'firebase' のときだけ使う。読み込めなければ GAS 版として動く（2026-09-18） -->
   <script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-auth-compat.js"></script>
   <script src="firebase_config.js"></script>
   <script>
     // ===== 自動アップデート検知（Service Workerなし・HTTPキャッシュ10分のみ） =====
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789712062977';
+    window.__APP_BUILD='build-1789716659612';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -120,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.45';
+const APP_VERSION = '2.46';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -2013,35 +2014,21 @@ const notifyFailMail = async (detail, user)=>{
 //  STEP 5: 下記URLをGASデプロイ後のウェブアプリURLに書き換える
 // ===========================================================
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
-// ★利用者認証（v14以降・Kyoshi承認のBLOCK-B変更・2026-09-03）
-//   GASへの要求には apiKey を「本来のキー|利用証」の形で送る。GAS側は '|' の前だけを
-//   本来のキーとして照合し、後ろを利用証として検証する。
-//   こうすることで、既存の通信コード（3ファイル・22箇所）に一切手を入れずに
-//   利用証を全経路へ乗せられる。触るのは各ファイルこの1箇所だけ。
+// ★GAS の API キー（通知メール・時点保存など、GAS に残す機能で使う）。
+//   利用証（apiKey に '|' で付けていた印）は 2026-09-18 に廃止。本人認証は Firebase Authentication（下の fbAuth）。
 const HUB_BASE_KEY = 'hub2026co-f466kt5vs3vnDQDPuwWeS6XM';
 let GAS_API_KEY = HUB_BASE_KEY;
-// 利用証を差し替える。空を渡せば認証前の状態（本来のキーだけ）に戻る。
-const hubApplyToken = t => { GAS_API_KEY = t ? (HUB_BASE_KEY + '|' + t) : HUB_BASE_KEY; };
-// 端末に保存した利用証を起動時に載せる。壊れていても読み飛ばして通常起動する。
-const HUB_TOKEN_KEY = STOR + 'auth-token';
-try {
-  const _t = localStorage.getItem(HUB_TOKEN_KEY);
-  if (_t) hubApplyToken(_t);
-} catch (e) {}
 
-// ★利用者認証の土台（v2.20 / 2026-09-04・Kyoshi承認のBLOCK-B変更）
-//   この端末で本人確認を済ませた人の「利用証」だけを持ち歩く。
-//   利用証は人ごと・端末ごとに1枚。使うたびに期限が90日先へ延びる（スライド式）ので、
-//   毎日使う人が締め出されることはない。3か月まったく開かれなかった端末だけが失効する。
+// ★この端末に登録した人（v2.20 / 2026-09-04・Kyoshi承認のBLOCK-B変更。2026-09-18 に Firebase Auth 化）
+//   名前を選ぶログイン画面に並べる一覧。本人確認そのものは Firebase のサインイン（端末内に保持・期限なし）。
 //   3ファイル（index_dev / customers / mobile）に同一のものを置くこと。
-const HUB_MINE_KEY = STOR + 'auth-mine';   // この端末の登録者 [{uid,name,myNumber,store,token,exp}]
+const HUB_MINE_KEY = STOR + 'auth-mine';   // この端末の登録者 [{uid,name,myNumber,store,email,isDevice,isAdmin}]
 const HUB_KIND_KEY = STOR + 'auth-kind';   // 'own'（自分専用）/ 'shared'（共有）
 const hubLoadMine = () => {
   try { const v = JSON.parse(localStorage.getItem(HUB_MINE_KEY));
-    return Array.isArray(v) ? v.filter(x => x && x.token && x.name) : []; } catch (e) { return []; }
+    return Array.isArray(v) ? v.filter(x => x && x.name && !x.token) : []; } catch (e) { return []; }   // token 付き＝旧方式の登録は無効
 };
 const hubSaveMine = list => { try { localStorage.setItem(HUB_MINE_KEY, JSON.stringify(list)); } catch (e) {} };
-// 期限切れは「居ない人」として扱う（画面に出さない）
 const hubLive = list => (list || []).filter(x => !x.exp || x.exp > Date.now());
 const hubKind = () => { try { return localStorage.getItem(HUB_KIND_KEY) || ''; } catch (e) { return ''; } };
 const hubSetKind = k => { try { localStorage.setItem(HUB_KIND_KEY, k); } catch (e) {} };
@@ -2049,41 +2036,15 @@ const hubSetKind = k => { try { localStorage.setItem(HUB_KIND_KEY, k); } catch (
 const HUB_LABEL_KEY = STOR + 'auth-label';
 const hubLabel = () => { try { return localStorage.getItem(HUB_LABEL_KEY) || ''; } catch (e) { return ''; } };
 const hubSetLabel = v => { try { localStorage.setItem(HUB_LABEL_KEY, String(v || '').slice(0, 40)); } catch (e) {} };
-// その人の利用証を通信に載せる。居なければ認証前（本来のキーだけ）に戻す。
+// その人の登録（無ければ端末そのものの登録）を返す。通信に載せる印はもう無い
 const hubUse = name => {
   const live = hubLive(hubLoadMine());
-  // 共有端末として認証したPCでは、誰が操作していてもその端末の利用証を使う。
-  // 人ごとの利用証があればそちらを優先する（個人端末・共有PCに各自が登録した場合）。
-  const m = live.find(x => x.name === name) || live.find(x => x.isDevice) || null;
-  hubApplyToken(m ? m.token : '');
-  return m;
+  return live.find(x => x.name === name) || live.find(x => x.isDevice) || null;
 };
-// この端末そのものが共有端末として認証されているか
+// この端末そのものが共有端末として登録されているか
 const hubIsDevice = () => hubLive(hubLoadMine()).some(x => x.isDevice);
-// 起動時：登録済みなら誰かの利用証を載せる（ログイン画面のデータ読み込みに要る）
-try { const _m = hubLive(hubLoadMine()); if (_m.length) hubApplyToken(_m[0].token); } catch (e) {}
-
-// 認証系のGAS呼び出し。応答を必ず読む（no-corsだと失敗が無言になるため使わない）。
-const hubAuthCall = async (action, params) => {
-  try {
-    const q = new URLSearchParams(Object.assign({ action, prefix: STOR, apiKey: GAS_API_KEY }, params || {}));
-    const r = await fetch(GAS_URL + '?' + q.toString(), { cache: 'no-store' });
-    const t = await r.text();
-    try { return JSON.parse(t); } catch (e) { return { ok: false, err: 'bad_response', raw: String(t).slice(0, 80) }; }
-  } catch (e) { return { ok: false, err: 'offline' }; }
-};
-// ログイン直後に呼ぶ。使った日から90日先へ期限を延ばす（延長が要らなければ何もしない）。
-const hubRenew = async name => {
-  const cur = hubLive(hubLoadMine()).find(x => x.name === name);
-  if (!cur) return;
-  hubApplyToken(cur.token);
-  const r = await hubAuthCall('authRenew');
-  if (!r || !r.ok) return;                       // 失敗しても通常利用は続けられる
-  const list = hubLoadMine().map(x => (x.name === name
-    ? Object.assign({}, x, r.token ? { token: r.token, exp: r.exp } : { exp: r.exp || x.exp }) : x));
-  hubSaveMine(list);
-  if (r.token) hubApplyToken(r.token);
-};
+// ログイン直後に呼ぶ（旧：期限の延長。今は台帳の最終利用を1日1回記すだけで、hubCheckDevice が行う）
+const hubRenew = async name => {};
 
 const GAS_READY = GAS_URL !== 'YOUR_GAS_URL_HERE' && GAS_URL !== '';
 
@@ -2119,10 +2080,12 @@ const fbParse = snap => {
 };
 const fbWithTimeout = (p, label) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout: ' + label)), FB_TIMEOUT_MS))]);
 const fbGet = async k => {
+  if (fbAuth) { await fbWhenReady(); if (!fbUser) return null; }   // 未サインインは「まだ読めない」（赤い帯は出さない）
   try { const s = await fbWithTimeout(fbDoc(k).get(), 'get ' + k); markGasUp(); return fbParse(s); }
   catch (e) { console.warn('[FB] 読めません', k, e && e.message); markGasDown(); return null; }
 };
 const fbSet = async (k, v) => {
+  if (fbAuth && !fbUser) { console.warn('[FB] 未サインインのため書けません', k); return false; }
   try { await fbWithTimeout(fbDoc(k).set({ v: JSON.stringify(v), u: firebase.firestore.FieldValue.serverTimestamp() }), 'set ' + k); markGasUp(); return 'ok'; }
   catch (e) { console.error('[FB] 書けません', k, e && e.message); markGasDown(); return false; }
 };
@@ -2132,6 +2095,7 @@ const fbSet = async (k, v) => {
 const fbTxn = async (k, mutate, opts) => {
   const _o = opts || {};
   let mutateErr = null;
+  if (fbAuth && !fbUser) { console.warn('[FB] 未サインインのため書けません', k); return false; }
   try {
     const r = await fbWithTimeout(fbDb.runTransaction(async t => {
       const s = await t.get(fbDoc(k));
@@ -2154,19 +2118,217 @@ const fbTxn = async (k, mutate, opts) => {
   }
 };
 
-// ★管理者の判定（v2.20・2026-09-11）
-//   以前はここに4人の名前を直書きしていた。管理者コンソールの名簿と別物になり、
-//   片方を変えても片方が変わらないので、コンソールの名簿（GASの HUB_ADMIN_EMAILS）に一本化した。
-//   起動時に名前一覧を取り、以後は名前で判定する。個人端末では利用証の印でも判定できる。
+
+// ── 本人認証：Firebase Authentication（メールリンク）（Kyoshi承認のBLOCK-B変更・2026-09-18）──
+//   6桁コードと GAS の利用証は廃止。届いたメールのリンクを開くだけで、その端末（ブラウザ）が本人として
+//   サインインし、以後ずっと保たれる（Firebase が端末内に保持。期限切れは無い）。
+//   ・誰がログインできるかは Firestore の meta/allowed（管理者が管理）。Firestore のルールもこれを見て読み書きを許す。
+//   ・この端末に登録した人の一覧（名前を選ぶログイン画面に並べる）は今までどおり端末内（auth-mine）に持つ。
+//   ・端末の台帳は devices/{端末ID}。管理者コンソールの「取り消し」はこの行を消す＝端末は次に開いた時に登録を捨てる。
+//   ・SDK が読めない時（fbAuth が無い）は認証なしで動く＝緊急時の GAS 版と同じふるまい。
+const fbAuth = (FB_ON && firebase.auth) ? firebase.auth() : null;
+let fbUser = null, fbAuthReady = !fbAuth;
+const fbAuthWaiters = [], fbUserWaiters = [], fbAuthListeners = new Set();
+if (fbAuth) {
+  try { fbAuth.languageCode = 'ja'; } catch (e) {}
+  fbAuth.onAuthStateChanged(u => {
+    fbUser = u || null; fbAuthReady = true;
+    try { window.__hubFbUser = u ? { email: u.email, uid: u.uid } : null; } catch (e) {}
+    fbAuthWaiters.splice(0).forEach(cb => { try { cb(fbUser); } catch (e) {} });
+    if (fbUser) fbUserWaiters.splice(0).forEach(cb => { try { cb(fbUser); } catch (e) {} });
+    fbAuthListeners.forEach(cb => { try { cb(fbUser); } catch (e) {} });
+  });
+}
+const fbWhenReady = () => new Promise(res => { if (fbAuthReady) res(fbUser); else fbAuthWaiters.push(res); });
+const fbWhenUser = cb => { if (fbUser) cb(fbUser); else fbUserWaiters.push(cb); };
+const fbEmailKey = e => String(e || '').trim().toLowerCase().replace(/\./g, ',');   // Firestore の項目名に '.' は使えない
+const fbAllowedRef = () => fbDb.collection('meta').doc('allowed');
+let HUB_ALLOWED = null;   // 許可簿 {emailKey: {email,name,store,uid,role,active,kind,label}}。読めるまで null
+const hubAllowedEntry = email => (HUB_ALLOWED && HUB_ALLOWED[fbEmailKey(email)]) || null;
+// 自分（サインイン中のアドレス）の登録内容。許可されていなければ {err:'not_allowed'}
+const hubResolveMe = async () => {
+  if (!fbAuth || !fbUser || !fbUser.email) return { err: 'no_user' };
+  let snap = null;
+  try { snap = await fbAllowedRef().get(); } catch (e) { return { err: 'not_allowed' }; }
+  const all = snap.exists ? (snap.data() || {}) : {};
+  HUB_ALLOWED = all;
+  const a = all[fbEmailKey(fbUser.email)];
+  if (!a || a.active === false) return { err: 'not_allowed' };
+  if (a.kind === 'device') {
+    return { ok: true, email: fbUser.email, admin: false, device: true, label: a.label || a.name || '共有端末',
+             name: a.name || a.label || '共有端末', store: a.store || 'honten', uid: '', myNumber: '' };
+  }
+  // 氏名・店はスタッフ表を優先（管理者がスタッフ表で直した内容が効くように）。読めなければ許可簿の記録を使う
+  let staff = null;
+  try {
+    const me = String(fbUser.email).trim().toLowerCase();
+    for (const st of ['honten', 'sanda']) {
+      const l = await sGet(STOR + st + '-staff-v2');
+      const m = (Array.isArray(l) ? l : []).find(x => x && x.loginEmail && String(x.loginEmail).trim().toLowerCase() === me);
+      if (m) { staff = { name: m.name, store: m.store || st, uid: m.uid || '', myNumber: m.myNumber }; break; }
+    }
+  } catch (e) {}
+  return Object.assign({ ok: true, email: fbUser.email, admin: a.role === 'admin', device: false, label: '' },
+    staff || { name: a.name || '', store: a.store || 'honten', uid: a.uid || '', myNumber: '' });
+};
+// 端末ID（この端末の台帳の行）。引き継ぎ（?hand=）で同じ端末の別ブラウザへ渡す
+const HUB_DEVID_KEY = STOR + 'auth-devid';
+const hubDevId = () => {
+  try {
+    let v = localStorage.getItem(HUB_DEVID_KEY);
+    if (!v) { v = (crypto && crypto.randomUUID) ? crypto.randomUUID() : (String(Date.now()) + Math.random().toString(16).slice(2)); localStorage.setItem(HUB_DEVID_KEY, v); }
+    return v;
+  } catch (e) { return 'nodev'; }
+};
+const fbDeviceRef = () => fbDb.collection('devices').doc(hubDevId());
+// 台帳に書く（登録時・種類や名前を変えた時）。管理者コンソールの端末一覧はこれを読む
+const hubWriteDevice = async (extra) => {
+  if (!fbAuth || !fbUser) return;
+  const mine = hubLoadMine();
+  const dev = mine.find(x => x.isDevice);
+  const doc = Object.assign({ env: STOR, e: fbUser.email || '', n: dev ? dev.name : (mine.map(x => x.name).join('・') || ''),
+    names: mine.map(x => x.name), s: (mine[0] && mine[0].store) || 'honten', k: hubKind() || '', l: hubLabel() || '',
+    ua: String(navigator.userAgent || '').slice(0, 160), dev: dev ? 1 : 0, last: Date.now() }, extra || {});
+  try {
+    const s = await fbDeviceRef().get();
+    if (!s.exists) doc.at = Date.now();
+    await fbDeviceRef().set(doc, { merge: true });
+  } catch (e) { console.warn('[FB] 台帳に書けません', e && e.message); }
+};
+// 起動時：台帳から消されていれば（管理者の「取り消し」）この端末の登録を捨てる。許可簿から外れた人も一覧から外す。
+//   最終利用は1日1回だけ記す。戻り値 false＝この端末の登録は無効になった
+const hubCheckDevice = async () => {
+  if (!fbAuth || !fbUser) return true;
+  const mine = hubLoadMine();
+  if (!mine.length) return true;
+  try {
+    const s = await fbDeviceRef().get();
+    if (!s.exists) { hubSaveMine([]); try { await fbAuth.signOut(); } catch (e) {} return false; }
+    const d = s.data() || {};
+    if (!d.last || Date.now() - d.last > 86400000) fbDeviceRef().set({ last: Date.now() }, { merge: true }).catch(() => {});
+  } catch (e) { return true; }   // 読めない（回線）時は何も変えない
+  try {
+    const snap = await fbAllowedRef().get();
+    const all = snap.exists ? (snap.data() || {}) : {};
+    HUB_ALLOWED = all;
+    const keep = mine.filter(x => !x.email || (all[fbEmailKey(x.email)] && all[fbEmailKey(x.email)].active !== false));
+    if (keep.length !== mine.length) hubSaveMine(keep);
+    if (!keep.length) { try { await fbAuth.signOut(); } catch (e) {} return false; }
+  } catch (e) {
+    // 許可簿を読めない＝自分が許可簿から外された（ルールで拒否）か回線。サインイン中なのに拒否なら登録を捨てる
+    if (e && e.code === 'permission-denied') { hubSaveMine([]); try { await fbAuth.signOut(); } catch (e2) {} return false; }
+  }
+  return true;
+};
+// ── メールリンクでのサインイン ──
+const HUB_LINK_EMAIL_KEY = STOR + 'auth-link-email';
+const hubLinkEmailFromUrl = () => { try { return new URLSearchParams(location.search).get('e') || ''; } catch (e) { return ''; } };
+const hubIsLinkOpen = () => { try { return !!(fbAuth && fbAuth.isSignInWithEmailLink(location.href)); } catch (e) { return false; } };
+const hubAppUrl = () => location.origin + location.pathname;   // メールのリンクが戻ってくる先（この画面）
+const hubAuthErr = e => {
+  const c = String((e && e.code) || '');
+  return c.indexOf('invalid-email') >= 0 ? 'bad_email' : c.indexOf('too-many') >= 0 ? 'too_many'
+    : c.indexOf('unauthorized-continue-uri') >= 0 || c.indexOf('unauthorized-domain') >= 0 ? 'bad_domain'
+    : c.indexOf('invalid-action-code') >= 0 || c.indexOf('expired-action-code') >= 0 ? 'expired'
+    : c.indexOf('network') >= 0 ? 'offline' : (c || 'error');
+};
+// リンクを送る（招待・自分で登録するとき）。戻り先URLにアドレスを載せるので、開いた側で打ち直さなくてよい
+const hubSendLink = async (email) => {
+  if (!fbAuth) return { ok: false, err: 'offline' };
+  const mail = String(email || '').trim();
+  if (mail.indexOf('@') < 1) return { ok: false, err: 'bad_email' };
+  try {
+    await fbAuth.sendSignInLinkToEmail(mail, { url: hubAppUrl() + '?inv=1&e=' + encodeURIComponent(mail), handleCodeInApp: true });
+    try { localStorage.setItem(HUB_LINK_EMAIL_KEY, mail); } catch (e) {}
+    return { ok: true };
+  } catch (e) { return { ok: false, err: hubAuthErr(e), raw: String((e && e.code) || '') }; }
+};
+// リンクから開いた：サインインを完了する。URL からリンクの印は外す（残すと開き直すたびにやり直しになる）
+const hubCompleteLink = async (emailTyped) => {
+  if (!hubIsLinkOpen()) return { ok: false, err: 'no_link' };
+  let mail = String(emailTyped || '').trim() || hubLinkEmailFromUrl();
+  if (!mail) { try { mail = localStorage.getItem(HUB_LINK_EMAIL_KEY) || ''; } catch (e) {} }
+  if (!mail) return { ok: false, err: 'need_email' };
+  try { await fbAuth.signInWithEmailLink(mail, location.href); }
+  catch (e) { return { ok: false, err: hubAuthErr(e), raw: String((e && e.code) || '') }; }
+  try { localStorage.removeItem(HUB_LINK_EMAIL_KEY); } catch (e) {}
+  try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
+  return { ok: true };
+};
+// ── 登録の引き継ぎ（?hand=）──
+//   iPhone では Safari／LINE の中のブラウザ／ホーム画面のアイコンが別々の保管場所を持ち、サインインも別。
+//   サインイン済みのブラウザが「引き継ぎの印」を作り、印つきURLから開いた側は印を出して同じ人としてサインインする。
+//   仕組み：本人だけが読める users/{uid} に引き継ぎ用の合言葉を1つ置き（Firebase の合言葉として登録）、
+//   印（handoff/{code}）にアドレスと合言葉を入れる。印は30分で無効。同じ端末IDを渡すので台帳に行は増えない。
+const hubRandom = n => { const a = new Uint8Array(n); try { crypto.getRandomValues(a); } catch (e) { for (let i = 0; i < n; i++) a[i] = Math.floor(Math.random() * 256); } return Array.from(a, b => ('0' + b.toString(16)).slice(-2)).join(''); };
+const hubHandoffSecret = async () => {
+  const ref = fbDb.collection('users').doc(fbUser.uid);
+  const s = await ref.get(); const d = s.exists ? s.data() : null;
+  if (d && d.pw) return d.pw;
+  const pw = hubRandom(24);
+  await fbUser.updatePassword(pw);
+  await ref.set({ email: fbUser.email || '', pw, at: Date.now() }, { merge: true });
+  return pw;
+};
+const hubMakeHandoff = async () => {
+  if (!fbAuth || !fbUser) return '';
+  try {
+    const pw = await hubHandoffSecret();
+    const code = hubRandom(16);
+    await fbDb.collection('handoff').doc(code).set({ email: fbUser.email || '', pw, exp: Date.now() + 30 * 60 * 1000,
+      mine: JSON.stringify(hubLoadMine()), kind: hubKind() || '', label: hubLabel() || '', devId: hubDevId() });
+    return code;
+  } catch (e) { console.warn('[FB] 引き継ぎの印を作れません', e && e.message); return ''; }
+};
+const hubTakeHandoff = async () => {
+  if (!HUB_HANDOFF_ID || !fbAuth) return false;
+  let ok = false;
+  try {
+    const s = await fbDb.collection('handoff').doc(HUB_HANDOFF_ID).get();
+    const d = s.exists ? s.data() : null;
+    if (d && d.exp > Date.now()) {
+      await fbAuth.signInWithEmailAndPassword(d.email, d.pw);
+      let mine = []; try { mine = JSON.parse(d.mine || '[]'); } catch (e) {}
+      hubSaveMine(Array.isArray(mine) ? mine.filter(x => x && x.name) : []);
+      if (d.kind && !hubKind()) hubSetKind(d.kind);
+      if (d.label && !hubLabel()) hubSetLabel(d.label);
+      if (d.devId) { try { localStorage.setItem(HUB_DEVID_KEY, d.devId); } catch (e) {} }   // 同じ端末の行を共有する
+      ok = true;
+    }
+  } catch (e) { console.warn('[FB] 引き継ぎに失敗', e && e.message); }
+  try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
+  return ok;
+};
+// 管理者：スタッフを許可簿に載せて（既にあれば更新）招待メールを送る
+const hubSendInvite = async (staff) => {
+  const mail = String((staff && staff.loginEmail) || '').trim();
+  if (mail.indexOf('@') < 1) return { ok: false, err: 'bad_email' };
+  if (!fbAuth || !fbUser) return { ok: false, err: 'offline' };
+  const k = fbEmailKey(mail), prev = hubAllowedEntry(mail) || {};
+  try {
+    await fbAllowedRef().set({ [k]: { email: mail.toLowerCase(), name: staff.name || prev.name || '', store: staff.store || prev.store || 'honten',
+      uid: staff.uid || prev.uid || '', role: prev.role || 'staff', active: true, kind: prev.kind || 'staff', at: Date.now() } }, { merge: true });
+  } catch (e) { return { ok: false, err: 'not_admin' }; }
+  return hubSendLink(mail);
+};
+// ログイン画面が「誰が座っているか」で管理者を判定するための名前一覧（許可簿の role=admin）
+let HUB_ADMIN_NAMES = null;
+const hubLoadAdminNames = () => {
+  if (!fbAuth) return;
+  fbWhenUser(() => {
+    try {
+      fbAllowedRef().onSnapshot(s => {
+        const all = s.exists ? (s.data() || {}) : {};
+        HUB_ALLOWED = all;
+        HUB_ADMIN_NAMES = Object.values(all).filter(x => x && x.role === 'admin' && x.active !== false && x.name).map(x => x.name);
+      }, () => {});
+    } catch (e) {}
+  });
+};
+
+// ★管理者の判定（v2.20・2026-09-11。2026-09-18 から許可簿 meta/allowed の role で判定）
 //   ★共有端末では誰が座っているか分からないので、誰であっても管理者扱いにしない。
 //     管理者の作業は、自分の端末か管理者コンソールから行う。
-let HUB_ADMIN_NAMES = null;   // null=未取得。取得できるまでは利用証の印だけで判定する
-const hubLoadAdminNames = async () => {
-  try {
-    const r = await hubAuthCall('authAdminNames');
-    if (r && r.ok && Array.isArray(r.names)) HUB_ADMIN_NAMES = r.names;
-  } catch (e) {}
-};
 const canRestore = (u) => {
   if (!u || !u.name) return false;
   if (hubIsDevice()) return false;                       // 共有端末では管理者の操作を出さない
@@ -2530,8 +2692,8 @@ const __hubPollRegister = s => {
     //   最初の1回は onInitial、以後の変更は onPoll に渡す＝useShared 側の受け取り規則（書き込み中は上書きしない・
     //   異形は無視・オブジェクトはマージ）はそのまま。回線断のときは手元のキャッシュ（fromCache）が来るので、
     //   初回がキャッシュ由来で中身が無ければ「読めなかった」扱い（null）にして赤い帯を出す。
-    const sub = { loaded:false, unsub:null };
-    try {
+    const sub = { loaded:false, unsub:null, dead:false };
+    const start = () => { if (sub.dead || sub.unsub) return; try {
       sub.unsub = fbDoc(s.key).onSnapshot({ includeMetadataChanges:false }, snap => {
         if (!s.isActive()) return;
         const fromCache = !!(snap.metadata && snap.metadata.fromCache);
@@ -2545,11 +2707,21 @@ const __hubPollRegister = s => {
         try { s.onPoll(v); } catch (e) {}
       }, err => {
         console.error('[FB] 購読に失敗', s.key, err && err.message);
-        markGasDown();
+        if (!(err && err.code === 'permission-denied')) markGasDown();   // 許可されていない（未登録）のは回線の異常ではない
         if (!sub.loaded) { sub.loaded = true; try { s.onInitial(null); } catch (e) {} }
       });
-    } catch (e) { console.error('[FB] 購読できません', s.key, e); }
-    __hubPoll.subs.set(id, Object.assign({ next:0 }, s, sub));
+    } catch (e) { console.error('[FB] 購読できません', s.key, e); } };
+    // ★サインインが済んでから購読する（未サインインではルールに拒否される）。判定が「未サインイン」なら
+    //   いったん空で起動し、サインインした瞬間に購読を始める（最初の値は onPoll に届く＝ポーリングで届いたのと同じ扱い）。
+    if (fbAuth) {
+      fbWhenReady().then(u => {
+        if (sub.dead) return;
+        if (u) { start(); return; }
+        if (!sub.loaded) { sub.loaded = true; try { s.onInitial(null); } catch (e) {} }
+        fbWhenUser(start);
+      });
+    } else start();
+    __hubPoll.subs.set(id, Object.assign(sub, { next:0 }, s));   // 解除で dead を立てられるよう同じ物を入れる
     return id;
   }
   __hubPoll.subs.set(id, Object.assign({ next:0, loaded:false }, s));
@@ -2558,7 +2730,7 @@ const __hubPollRegister = s => {
   if (!__hubPoll.kick) __hubPoll.kick = setTimeout(() => { __hubPoll.kick = null; __hubPollTick(); }, 300);
   return id;
 };
-const __hubPollUnregister = id => { const s = __hubPoll.subs.get(id); if (s && s.unsub) { try { s.unsub(); } catch (e) {} } __hubPoll.subs.delete(id); };
+const __hubPollUnregister = id => { const s = __hubPoll.subs.get(id); if (s) { s.dead = true; if (s.unsub) { try { s.unsub(); } catch (e) {} } } __hubPoll.subs.delete(id); };
 
 function useShared(key, def, pollMs=60000) {
   const [val, setVal] = useState(def);
@@ -3215,12 +3387,13 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
                         // 送る前に必ずアドレスを読み合わせてもらう。
                         if(!window.confirm('このアドレスに招待メールを送ります。\n\n    '+mail+'\n\n宛先に間違いはありませんか？'))return;
                         setInviteBusy(true);setInviteMsg('');
-                        const r=await hubAuthCall('authInvite',{email:mail});
+                        const r=await hubSendInvite(selectedStaff);
                         setInviteBusy(false);
                         setInviteMsg(r&&r.ok ? '送信しました（'+mail+'）'
-                          : r&&r.err==='not_registered' ? '送れません：先に「更新」を押してアドレスを保存してください。'
+                          : r&&r.err==='not_admin' ? '送れません：管理者としてログインしている端末から送ってください。'
                           : r&&r.err==='too_many' ? '送信が続いています。しばらく待ってからお試しください。'
-                          : '送信に失敗しました。通信の状態をご確認ください。');
+                          : r&&r.err==='bad_domain' ? '送れません：この画面のアドレスが Firebase の承認済みドメインにありません。'
+                          : '送信に失敗しました。通信の状態をご確認ください。'+(r&&r.raw?'（'+r.raw+'）':''));
                       }}
                       style={{width:'100%',marginTop:8,padding:'9px 0',borderRadius:8,cursor:(selectedStaff&&selectedStaff.loginEmail)?'pointer':'default',
                         border:'2px solid '+((selectedStaff&&selectedStaff.loginEmail)?'#0284c7':'#e5e7eb'),
@@ -3320,74 +3493,47 @@ const hubDropInvite=()=>{ if(!HUB_INVITE_ID)return; try{history.replaceState(nul
 //   印を出して同じ利用証を受け取る。台帳に行は増えない（同じ端末の行を共有する）。印は30分で消える。
 const HUB_HANDOFF_ID=(()=>{try{return new URLSearchParams(location.search).get('hand')||'';}catch(e){return '';}})();
 const hubIsPhone=()=>/iPhone|iPad|iPod|Android/i.test(navigator.userAgent||'');
-// 印を作る（この端末の利用証が要る。finish の直後に呼ぶ）
-const hubMakeHandoff=async()=>{ try{ const r=await hubAuthCall('authHandoff'); return (r&&r.ok&&r.hand)?String(r.hand):''; }catch(e){ return ''; } };
-// 印を出して利用証を受け取る。成功したら true。URLの印は結果にかかわらず外す
-const hubTakeHandoff=async()=>{
-  if(!HUB_HANDOFF_ID) return false;
-  let r=null;
-  try{ r=await hubAuthCall('authHandoffTake',{hand:HUB_HANDOFF_ID}); }catch(e){}
-  try{history.replaceState(null,'',location.pathname+location.hash);}catch(e){}   // 使った印はURLから外す
-  if(!r||!r.ok||!r.token) return false;
-  const list=hubLoadMine().filter(x=>x&&x.name!==r.name);
-  list.push({uid:r.uid||'',name:r.name,myNumber:r.myNumber,store:r.store||'honten',
-             token:r.token,exp:r.exp,isDevice:!!r.device,isAdmin:!!r.admin});
-  hubSaveMine(list);
-  if(r.kind&&!hubKind()) hubSetKind(r.kind);
-  if(r.label&&!hubLabel()) hubSetLabel(r.label);
-  hubApplyToken(r.token);
-  return true;
-};
+// 印を作る／出す（hubMakeHandoff / hubTakeHandoff）は Firestore 版を BLOCK-B の認証層に置いた（2026-09-18）
 
 const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
-  const [inv,setInv]=useState(HUB_INVITE_ID);   // 招待リンクの印。これがあればアドレスは要らない
-  const [step,setStep]=useState(HUB_INVITE_ID?'code':'email');   // email → code → kind → done（招待リンクからは code から）
-  const [email,setEmail]=useState('');
-  const [code,setCode]=useState('');
+  // 流れ：email（アドレスを入れる）→ sent（メールを送った）→ ［メールのリンクを開く＝この画面が開き直る］→ signing（確認中）
+  //       → kind / plan / label（端末の種類）→ done。招待メールのリンクから開いた時は signing から始まる。
+  //   6桁コードは無い。リンクを開いたブラウザがそのまま本人としてサインインする（2026-09-18）。
+  const linkOpen=hubIsLinkOpen();
+  const firstOnDevice0 = hubLive(hubLoadMine()).length===0;
+  const [step,setStep]=useState((linkOpen||(fbAuth&&firstOnDevice0))?'signing':'email');   // サインイン済みかもしれない端末は、まず確かめる
+  const [email,setEmail]=useState(hubLinkEmailFromUrl());
   const [kind,setKind]=useState(hubKind());
   const [busy,setBusy]=useState(false);
-  const [sending,setSending]=useState(false);   // 裏でサーバーにアドレスを確認中
   const [hand,setHand]=useState('');            // 登録直後に作る引き継ぎの印（スマホ）
   const [err,setErr]=useState('');
   const [who,setWho]=useState(null);
   const [pend,setPend]=useState(null);
-  const [fromInvite,setFromInvite]=useState(!!HUB_INVITE_ID);   // 招待メールの6桁を使う   // 本人確認は済んだが、端末の種類がまだの人
+  const [needEmail,setNeedEmail]=useState(false);   // リンクを開いたがアドレスが分からない（別の端末で送ったリンク）
   const [label,setLabel]=useState(hubLabel());   // この端末の名前（共有のときだけ聞く）
   const [devNames,setDevNames]=useState(null);   // 管理者が決めた端末名の候補
   const [typing,setTyping]=useState(false);      // 候補を使わず自分で入力する
   const [plan,setPlan]=useState([]);             // 管理者が決めた「使う端末」
   const firstOnDevice = hubLive(hubLoadMine()).length===0;
-
-  // 印から来た人が「アドレスを入れて進む」を選んだ時。以後は印を使わない
-  const useEmailInstead=(msg)=>{ setInv(''); setFromInvite(false); setCode(''); setErr(msg||''); setStep('email'); };
-  const sendCode=async(mail,resend)=>{
-    const target=String(mail||email).trim();
-    setErr('');setBusy(true);
-    // 印があってアドレスが無ければ、印で送る（サーバーが印からアドレスを引く）
-    const who=(!target&&inv)?{inv}:{email:target};
-    // ★サーバーの返事を待たずに6桁の画面へ進む。招待メールに6桁が書いてあるのが普通なので、
-    //   返事（3〜30秒）を待っている間に打ってもらえる。登録されていないアドレスなら戻して知らせる。
-    if(!resend){ setStep('code'); setFromInvite(true); }
-    setSending(true);
-    const r=await hubAuthCall('authRequest',Object.assign(who,resend?{resend:'1'}:{}));
-    setBusy(false); setSending(false);
-    // すでに招待メールに6桁が書いてある場合は、送り直さずそれを使ってもらう
-    if(r&&r.ok) setFromInvite(!!r.existing);
-    if(r&&r.err==='bad_invite'){ useEmailInstead('この招待リンクは期限切れです。メールアドレスを入れて、新しいコードを受け取ってください。'); return; }
-    if(!r||!r.ok){
-      setStep('email'); setFromInvite(false); setCode('');   // 先に進めていた6桁の画面から戻す
-      setErr(r&&r.err==='not_registered'
-        ? 'このアドレスは登録されていません。管理者にご確認ください。'
-        : r&&r.err==='too_many' ? '送信が続いています。しばらく待ってからお試しください。'
-        : r&&r.err==='bad_email' ? 'メールアドレスの形式が正しくありません。'
-        : 'コードを送れませんでした。通信の状態をご確認ください。');
-      return;
-    }
-    setStep('code');
+  const errText=r=>{
+    const e=r&&r.err;
+    return e==='not_allowed' ? 'このアドレスは登録されていません。管理者にご確認ください。'
+      : e==='too_many' ? '送信が続いています。しばらく待ってからお試しください。'
+      : e==='bad_email' ? 'メールアドレスの形式が正しくありません。'
+      : e==='bad_domain' ? 'この画面のアドレスがまだ許可されていません（管理者：Firebase の承認済みドメインに追加してください）。'
+      : e==='expired' ? 'このリンクは期限切れか、すでに使われています。メールアドレスを入れて、新しいリンクを受け取ってください。'
+      : e==='offline' ? '通信の状態をご確認ください。'
+      : 'うまくいきませんでした。もう一度お試しください。'+(r&&r.raw?'（'+r.raw+'）':'');
   };
-  const startSend=()=>{
-    if(email.trim().indexOf('@')<1){setErr('メールアドレスの形式が正しくありません。');return;}
-    sendCode();
+  // アドレスを入れてリンクを送る
+  const startSend=async()=>{
+    const mail=email.trim();
+    if(mail.indexOf('@')<1){setErr('メールアドレスの形式が正しくありません。');return;}
+    setErr('');setBusy(true);
+    const r=await hubSendLink(mail);
+    setBusy(false);
+    if(!r.ok){ setErr(errText(r)); return; }
+    setStep('sent');
   };
   // 利用証を端末に保存して完了。端末の種類と名前はここで確定する。
   const finish=(r,k,lb)=>{
@@ -3395,14 +3541,13 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
     hubSetKind(k);
     if(lb) hubSetLabel(lb);
     const list=hubLoadMine().filter(x=>x.name!==r.name);
-    list.push({uid:r.uid||'',name:r.name,myNumber:r.myNumber,store:r.store||'honten',
-               token:r.token,exp:r.exp,isDevice:!!r.device,isAdmin:!!r.admin});
+    list.push({uid:r.uid||'',name:r.name,myNumber:r.myNumber,store:r.store||'honten',email:r.email||'',
+               isDevice:!!r.device,isAdmin:!!r.admin});
     hubSaveMine(list);
     // 2人目が入った端末は「共有」に直す（自分専用のままだと他人の名義で予約が入る）
     if(hubLive(hubLoadMine()).filter(x=>!x.isDevice).length>1 && hubKind()==='own') hubSetKind('shared');
-    // 管理者の端末一覧で読めるように、種類と名前をサーバーへ記録する
-    hubApplyToken(r.token);
-    hubAuthCall('authLabel',{kind:hubKind()||k,label:hubLabel()||lb||''});
+    // 管理者の端末一覧で読めるように、台帳へ記録する
+    hubWriteDevice();
     setWho(r);setStep('done');
   };
   // 共有の端末は、最初に登録する人が1回だけ名前を付ける
@@ -3411,8 +3556,6 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
   const planOf=async r=>{
     try{
       const store=(r&&r.store)==='sanda'?'sanda':'honten';
-      // サーバーの最新は5秒だけ待つ（混み合うと30秒以上かかり、6桁のあとにまた待たされていた）。
-      // 間に合わなければ、画面がすでに持っているスタッフ表で決める。それも無ければ本人に選んでもらう。
       const have=store==='sanda'?staffS:staffH;
       const fresh=await Promise.race([sGet(STOR+store+'-staff-v2'),new Promise(res=>setTimeout(()=>res(null),5000))]);
       const list=(Array.isArray(fresh)&&fresh.length)?fresh:((Array.isArray(have)&&have.length)?have:[]);
@@ -3420,6 +3563,46 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
       return (me&&Array.isArray(me.devPlan))?me.devPlan.filter(Boolean):[];
     }catch(e){ return []; }
   };
+  // サインインが済んだあと：許可簿で本人を確定し、端末の種類へ進む（旧 verify の後半と同じ）
+  const afterSignIn=async()=>{
+    setBusy(true);
+    const r=await hubResolveMe();
+    setBusy(false);
+    if(!r||!r.ok){
+      setErr(errText(r||{err:'error'}));
+      try{ if(fbAuth&&fbUser) await fbAuth.signOut(); }catch(e){}
+      hubDropInvite();
+      setStep('email'); return;
+    }
+    if(r.device){ finish(r,'shared',r.label||r.name||''); return; }
+    const plan=await planOf(r);
+    if(plan.length===1){ const one=plan[0]; finish(r, one==='own'?'own':'shared', one==='own'?'':one); return; }
+    if(plan.length>1){ setPend(r); setPlan(plan); setStep('plan'); return; }
+    if(firstOnDevice && !kind){ setPend(r); setStep('kind'); return; }
+    const already=hubLive(hubLoadMine()).length>0;
+    const finalKind=(already&&(kind||hubKind())==='own')?'shared':(kind||hubKind()||'shared');
+    if(needLabel(finalKind)){ setPend(r); setKind(finalKind); setStep('label'); return; }
+    finish(r, finalKind, '');
+  };
+  // リンクから開いた：サインインを完了する。アドレスが分からなければ聞く（別の端末で送ったリンクを開いた時）
+  const completeLink=async(typed)=>{
+    setErr('');setBusy(true);
+    const r=await hubCompleteLink(typed);
+    setBusy(false);
+    if(r.ok){ setNeedEmail(false); await afterSignIn(); return; }
+    if(r.err==='need_email'){ setNeedEmail(true); setStep('email'); return; }
+    if(r.err==='expired'||r.err==='no_link'){ hubDropInvite(); setErr(errText(r)); setStep('email'); return; }
+    setErr(errText(r)); setStep('email');
+  };
+  useEffect(()=>{
+    if(step!=='signing')return;
+    (async()=>{
+      await fbWhenReady();
+      // すでにサインイン済みで、まだこの端末に登録されていない人（別の環境で登録済み・引き継ぎ後など）はそのまま確定へ
+      if(!linkOpen){ if(fbUser&&firstOnDevice){ await afterSignIn(); } else setStep('email'); return; }
+      await completeLink('');
+    })();
+  },[step]);
   // 登録が済んだら、スマホでは引き継ぎの印を作っておく（スマホ版へ移る／ホーム画面に追加する時に使う）
   useEffect(()=>{
     if(step!=='done'||!hubIsPhone()||hand)return;
@@ -3435,49 +3618,6 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
     })();
   },[step,devNames]);
   const pickKind=k=>{ setKind(k); if(needLabel(k)){setStep('label');return;} finish(pend,k,''); };
-  const verify=async()=>{
-    setErr('');setBusy(true);
-    // 印があってアドレスが無ければ印で照合する（招待リンクから開いた人）
-    const who=(!email.trim()&&inv)?{inv}:{email:email.trim()};
-    // この端末が持っている利用証も送る＝同じ人の前の登録を置き換える（台帳に行を増やさない）
-    const vq=Object.assign({code:code.trim(),ua:navigator.userAgent||'',prev:hubLoadMine().map(x=>x&&x.token).filter(Boolean).slice(0,6).join(',')},who);
-    let r=await hubAuthCall('authVerify',vq);
-    // ★返事が届かなかった（回線・サーバーの混雑）時は、3秒おいて自動でもう一度確かめる。
-    //   サーバーは成功の返事を15分覚えているので、登録が済んでいれば同じ利用証が返る（二重登録にならない）。
-    if(!r||r.err==='offline'||r.err==='bad_response'){
-      setErr('サーバーの返事を待っています。もう一度確かめます…');
-      await new Promise(res=>setTimeout(res,3000));
-      r=await hubAuthCall('authVerify',vq);
-    }
-    setBusy(false);
-    if(r&&r.err==='bad_invite'){ useEmailInstead('この招待リンクは期限切れです。メールアドレスを入れて、新しいコードを受け取ってください。'); return; }
-    if(!r||!r.ok){
-      setErr(r&&r.err==='bad_code' ? 'コードが違います。もう一度お試しください。'
-        : r&&r.err==='expired' ? 'このコードは期限切れか、すでに使われています。「コードを送り直す」で新しいコードを受け取ってください。'
-        : r&&(r.err==='too_many'||r.err==='too_many_tries') ? '入力の失敗が続いたため止めました。送り直してください。'
-        : r&&r.err==='busy' ? 'サーバーが混み合っています。少し待ってから、もう一度「確認する」を押してください。'
-        : 'サーバーの返事を受け取れませんでした。少し待ってから、同じコードでもう一度「確認する」を押してください。');
-      return;
-    }
-    // ★共有端末そのもののアドレスで認証した場合。人ではないので、
-    //   その端末を「共有端末」として登録し、以後は担当者を選んで使う。
-    if(r.device){ finish(r,'shared',r.label||r.name||''); return; }
-    // 管理者が決めた「使う端末」に従う。1つだけなら本人は何も選ばない。
-    // ★端末の状態より先に見る。管理者の指定があるなら、それが答え。
-    const plan=await planOf(r);
-    if(plan.length===1){
-      const one=plan[0];
-      finish(r, one==='own'?'own':'shared', one==='own'?'':one);
-      return;
-    }
-    if(plan.length>1){ setPend(r); setPlan(plan); setStep('plan'); return; }
-    // 管理者が決めていない場合は、これまでどおり自分で選ぶ
-    if(firstOnDevice && !kind){ setPend(r); setStep('kind'); return; }
-    const already=hubLive(hubLoadMine()).length>0;
-    const finalKind=(already&&(kind||hubKind())==='own')?'shared':(kind||hubKind()||'shared');
-    if(needLabel(finalKind)){ setPend(r); setKind(finalKind); setStep('label'); return; }
-    finish(r, finalKind, '');
-  };
 
   const BOX={background:'white',borderRadius:18,padding:'28px 30px',maxWidth:430,width:'100%',boxShadow:'0 30px 80px rgba(0,0,0,0.4)'};
   const IN={width:'100%',padding:'11px 13px',border:'2px solid #e5e7eb',borderRadius:9,fontSize:15,outline:'none',boxSizing:'border-box'};
@@ -3485,9 +3625,7 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
     color:on?'white':'#9ca3af',border:'none',borderRadius:11,fontWeight:800,fontSize:15,cursor:on?'pointer':'default',marginTop:14});
   const SUB={width:'100%',padding:'10px 0',background:'#f8fafc',border:'2px solid #cbd5e1',borderRadius:9,
     fontWeight:700,fontSize:13,color:'#475569',cursor:'pointer',marginTop:9};
-  const ERR=err?<div style={{color:'#dc2626',fontWeight:700,fontSize:12.5,marginTop:8}}>{err}</div>
-    :busy&&step==='code'?<div style={{color:'#6b7280',fontSize:12,marginTop:8}}>確認しています。混み合っていると20〜30秒かかることがあります…</div>
-    :sending?<div style={{color:'#9ca3af',fontSize:11.5,marginTop:8}}>（アドレスをサーバーに確認中。そのまま6桁を入れて進めます）</div>:null;
+  const ERR=err?<div style={{color:'#dc2626',fontWeight:700,fontSize:12.5,marginTop:8}}>{err}</div>:null;
   const CARD={width:'100%',textAlign:'left',padding:'13px 15px',borderRadius:10,border:'2px solid #cbd5e1',background:'white',cursor:'pointer'};
 
   return(
@@ -3503,17 +3641,45 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
         {step==='email'&&(
           <div>
             <div style={{fontSize:12.5,color:'#4b5563',lineHeight:1.8,marginBottom:12}}>
-              招待メールが届いた<b>ご自分のメールアドレス</b>を入れてください。<br/>
-              名前や番号の入力は要りません。
+              {needEmail
+                ? <>このリンクを送った時のメールアドレスを入れてください（別の端末で送ったリンクのため確認が要ります）。</>
+                : <>管理者に登録してもらった<b>ご自分のメールアドレス</b>を入れてください。<br/>
+                   そのアドレスにログイン用のリンクが届きます。名前や番号の入力は要りません。</>}
             </div>
             <input type="email" value={email} onChange={e=>setEmail(e.target.value)} style={IN}
               placeholder="ここにメールアドレスを入力" autoComplete="off" inputMode="email"
-              onKeyDown={e=>{if(e.key==='Enter')startSend();}}/>
+              onKeyDown={e=>{if(e.key==='Enter'){ if(needEmail) completeLink(email); else startSend(); }}}/>
             {ERR}
-            <button style={BTN(!busy&&email.trim().length>0)} disabled={busy||!email.trim()} onClick={startSend}>
-              {busy?'確認中…':'次へ'}
+            <button style={BTN(!busy&&email.trim().length>0)} disabled={busy||!email.trim()} onClick={()=>{ if(needEmail) completeLink(email); else startSend(); }}>
+              {busy?'送信中…':needEmail?'確認する':'ログイン用のリンクを送る'}
             </button>
             {onCancel&&<button style={SUB} onClick={()=>{hubDropInvite();onCancel();}}>やめる</button>}
+          </div>
+        )}
+
+        {step==='sent'&&(
+          <div>
+            <div style={{background:'#eff6ff',border:'2px solid #93c5fd',borderRadius:11,padding:'14px 14px'}}>
+              <div style={{fontWeight:900,fontSize:15,color:'#1e3a8a'}}>📧 メールを送りました</div>
+              <div style={{fontSize:12.5,color:'#1e40af',lineHeight:1.8,marginTop:6}}>
+                <b>{email.trim()}</b> 宛に届いたメールの「ログイン」のリンクを、<b>この端末で</b>開いてください。<br/>
+                開くだけで登録が終わります（6桁の入力はありません）。
+              </div>
+            </div>
+            <div style={{fontSize:11.5,color:'#6b7280',lineHeight:1.7,marginTop:10}}>
+              届かない時は迷惑メールも見てください。送信元は Firebase（noreply@hub-a-nice-day.firebaseapp.com）です。
+            </div>
+            {ERR}
+            <button style={SUB} disabled={busy} onClick={startSend}>{busy?'送信中…':'メールが見つからない → 送り直す'}</button>
+            <button style={{...SUB,marginTop:6}} onClick={()=>{setErr('');setStep('email');}}>← アドレスを入れ直す</button>
+          </div>
+        )}
+
+        {step==='signing'&&(
+          <div style={{textAlign:'center',padding:'10px 0'}}>
+            <div style={{fontWeight:800,fontSize:14,color:'#374151'}}>確認しています…</div>
+            <div style={{fontSize:12,color:'#9ca3af',marginTop:6}}>数秒で終わります</div>
+            {ERR}
           </div>
         )}
 
@@ -3537,7 +3703,7 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
             <div style={{fontSize:11.5,color:'#9ca3af',marginTop:11,lineHeight:1.7}}>
               他の人も使う端末で「自分専用」を選ぶと、その人の名義で予約が入ってしまいます。
             </div>
-            <button style={SUB} onClick={()=>{setPend(null);setStep('email');setCode('');}}>← やり直す</button>
+            <button style={SUB} onClick={()=>{setPend(null);setStep('email');}}>← やり直す</button>
           </div>
         )}
 
@@ -3595,31 +3761,6 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
             <p style={{fontSize:11.5,color:'#9ca3af',marginTop:11,lineHeight:1.7}}>
               名前は端末に1つだけです。2人目からは聞かれません。
             </p>
-          </div>
-        )}
-
-        {step==='code'&&(
-          <div>
-            <div style={{fontWeight:800,fontSize:15,color:'#111827',marginBottom:3}}>
-              {fromInvite?'招待メールに書かれた6桁を入れてください':'6桁のコードを入れてください'}</div>
-            <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>
-              {fromInvite
-                ? <>届いている<b>招待メール</b>の「確認コード」の6桁です。</>
-                : <>{email.trim()||'招待メールのアドレス'} 宛に新しい6桁を送りました（24時間以内に入力してください）</>}
-            </div>
-            <input type="text" value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,'').slice(0,6))}
-              style={{...IN,fontSize:26,letterSpacing:'0.4em',textAlign:'center',fontWeight:800}}
-              placeholder="------" inputMode="numeric" autoComplete="one-time-code" autoFocus
-              onKeyDown={e=>{if(e.key==='Enter'&&code.length===6)verify();}}/>
-            {ERR}
-            <button style={BTN(!busy&&code.length===6)} disabled={busy||code.length!==6} onClick={verify}>
-              {busy?'確認中…':'確認する'}
-            </button>
-            <button style={SUB} onClick={()=>useEmailInstead('')}>{inv?'メールアドレスを入れて進む':'← アドレスを入れ直す'}</button>
-            <button style={{...SUB,marginTop:6}} disabled={busy}
-              onClick={()=>{setCode('');sendCode(email,true);}}>
-              メールが見つからない → コードを送り直す
-            </button>
           </div>
         )}
 
@@ -8043,10 +8184,25 @@ function AppInner() {
   const [showAuthAdd,setShowAuthAdd]=useState(!!HUB_INVITE_ID);   // 招待リンクから開いたら最初から登録画面
   // 引き継ぎの印（?hand=）つきで開いた：この保管場所に利用証が無ければ印を出して受け取る。
   // すでにある時は何もしない（URLの印はホーム画面に追加する時のために残す）。
-  const [handPending,setHandPending]=useState(!!HUB_HANDOFF_ID&&hubLive(hubLoadMine()).length===0);
+  //   2026-09-18 から：Firebase のサインイン判定が出るまで（数百ミリ秒）も同じく何も描かない。判定が出たら
+  //   ・引き継ぎの印があり未登録なら印を出して受け取る
+  //   ・サインイン済みなら台帳と許可簿に突き合わせる（管理者に取り消された端末・外された人は登録を捨てる）
+  //   ・サインインが無いのに登録一覧だけ残っていれば（保管場所が消えた等）登録を捨てて登録画面へ
+  const [handPending,setHandPending]=useState(!!fbAuth||(!!HUB_HANDOFF_ID&&hubLive(hubLoadMine()).length===0));
   useEffect(()=>{
     if(!handPending)return;
-    (async()=>{ await hubTakeHandoff(); setAuthMine(hubLive(hubLoadMine())); setHandPending(false); })();
+    (async()=>{
+      try{
+        const u=await fbWhenReady();
+        let ok=true;
+        if(HUB_HANDOFF_ID&&hubLive(hubLoadMine()).length===0){ await hubTakeHandoff(); }
+        else if(fbAuth&&!u&&hubLoadMine().length){ hubSaveMine([]); ok=false; }
+        else if(fbAuth&&u){ ok=await hubCheckDevice(); }
+        // 登録が無効になった端末は、開いたままの人も外す（そのまま使い続けさせない）。招待リンクを開いた時も一度外して登録画面へ
+        if(!ok||hubIsLinkOpen()) setCurrentUserPersist(null);
+      }catch(e){}
+      setAuthMine(hubLive(hubLoadMine())); setHandPending(false);
+    })();
   },[handPending]);
   // 自分でログアウトした直後は、自動ログインを止めてログイン画面を出す。
   // 止めないと押した瞬間に入り直してしまい、交代も「＋スタッフを追加」もできない。

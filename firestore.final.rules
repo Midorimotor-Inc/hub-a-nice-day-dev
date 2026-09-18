@@ -13,9 +13,7 @@ service cloud.firestore {
 
     // アプリのデータ（本番 hub-v8-* も DEV hub-v8-dev-* も同じ扱い）
     match /kv/{key} {
-      // ★移行中（v2.45 の画面が残っている間）は DEV のキーだけ今までどおり誰でも読み書き可。
-      //   全員が v2.46 でサインインしたら firestore.final.rules に差し替える（本番データを移す前に必ず）
-      allow read, write: if isAllowed() || key.matches('hub-v8-dev-.*');
+      allow read, write: if isAllowed();
     }
     // 許可簿：読むのは許可された人、書くのは管理者
     match /meta/allowed {

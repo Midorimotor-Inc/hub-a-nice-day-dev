@@ -201,6 +201,11 @@ td.act{text-align:right;white-space:nowrap}
   <span>テスト環境の管理者コンソールです。<b>本番のデータには触れません</b>。</span>
 </div>
 <div id="app"><div class="gate"><div class="gate-card"><p class="hint">読み込んでいます…</p></div></div></div>
+<!-- 保存先・本人認証は Firebase（2026-09-18）。読み込めなければ「繋がらない」と出す -->
+<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-auth-compat.js"></script>
+<script src="firebase_config.js"></script>
 <script>
 
 (function(){
@@ -210,8 +215,8 @@ td.act{text-align:right;white-space:nowrap}
 //  ・スタッフのログイン用メール登録と招待メールの送信
 //  ・本人確認を済ませた端末の一覧と取り消し
 //  ・管理者名簿の追加と削除
-//  この画面を開けるのは、管理者として発行された利用証を持つ人だけ。
-//  判定はGAS側（authAdminGate_）で行う。画面の申告は信用しない。
+//  この画面を開けるのは、許可簿（Firestore の meta/allowed）で role=admin の人だけ。
+//  ログインは Firebase Authentication のメールリンク（2026-09-18〜）。判定は Firestore のルールが行う。画面の申告は信用しない。
 // =====================================================================
 var APP_VERSION = '2.44';
 var GAS_URL     = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
@@ -232,117 +237,101 @@ function switchEnv(toProd){
   location.href = u;
 }
 
-// ── 利用証（3ファイルと同じ保管場所を使う。ここで登録すればスケジュール側にも入れる）──
-var HUB_BASE_KEY = 'hub2026co-f466kt5vs3vnDQDPuwWeS6XM';
+// ── Firebase（保存先・本人認証）──────────────────────────
+//   本番と DEV は同じ Firebase プロジェクト。データはキー名の頭（hub-v8- / hub-v8-dev-）で分かれる。
+//   ログインは Firebase のサインイン（端末内に保持）なので、環境を切り替えてもログインは1回でよい。
+var HUB_BASE_KEY = 'hub2026co-f466kt5vs3vnDQDPuwWeS6XM';   // GAS に残す機能（時点保存）用
 var GAS_API_KEY  = HUB_BASE_KEY;
-function hubApplyToken(t){ GAS_API_KEY = t ? (HUB_BASE_KEY + '|' + t) : HUB_BASE_KEY; }
+var fbDb = null, fbAuth = null, fbUser = null, fbAuthReady = false, fbReadyWaiters = [];
+try {
+  if (typeof firebase !== 'undefined' && typeof HUB_FIREBASE_CONFIG !== 'undefined') {
+    if (!firebase.apps.length) firebase.initializeApp(HUB_FIREBASE_CONFIG);
+    fbDb = firebase.firestore(); fbAuth = firebase.auth();
+    try { fbAuth.languageCode = 'ja'; } catch (e) {}
+    fbAuth.onAuthStateChanged(function(u){ fbUser = u || null; fbAuthReady = true; fbReadyWaiters.splice(0).forEach(function(cb){ try { cb(fbUser); } catch (e) {} }); });
+  }
+} catch (e) { console.error('[FB] 初期化に失敗', e); }
+function fbWhenReady(){ return new Promise(function(res){ if (fbAuthReady || !fbAuth) res(fbUser); else fbReadyWaiters.push(res); }); }
+function fbEmailKey(e){ return String(e || '').trim().toLowerCase().replace(/\./g, ','); }
+function fbAllowedRef(){ return fbDb.collection('meta').doc('allowed'); }
+function fbDocId(k){ k = String(k); if (k.indexOf(STOR) !== 0) k = STOR + k; return k.replace(/\//g, '%2F'); }
+function fbKvRef(k){ return fbDb.collection('kv').doc(fbDocId(k)); }
+// スケジュール画面の登録一覧（この端末）。コンソールでは読むだけ（登録はスケジュール画面で行う）
 var HUB_MINE_KEY = STOR + 'auth-mine';
-var HUB_KIND_KEY = STOR + 'auth-kind';
 function hubLoadMine(){
   try { var v = JSON.parse(localStorage.getItem(HUB_MINE_KEY));
-    return (v instanceof Array) ? v.filter(function(x){ return x && x.token && x.name; }) : []; }
+    return (v instanceof Array) ? v.filter(function(x){ return x && x.name && !x.token; }) : []; }
   catch(e){ return []; }
 }
-function hubSaveMine(l){ try{ localStorage.setItem(HUB_MINE_KEY, JSON.stringify(l)); }catch(e){} }
-// 環境（本番／DEV）を指定して読む・書く。コンソールは1つで両方を扱うので、ログイン時に両方へ保存する
-function hubLoadMineOf(prefix){
-  try { var v = JSON.parse(localStorage.getItem(prefix + 'auth-mine'));
-    return (v instanceof Array) ? v.filter(function(x){ return x && x.token && x.name; }) : []; }
-  catch(e){ return []; }
-}
-function hubSaveMineOf(prefix, l){ try{ localStorage.setItem(prefix + 'auth-mine', JSON.stringify(l)); }catch(e){} }
+function hubLive(l){ return l || []; }
 var ENV_PREFIXES = ['hub-v8-', 'hub-v8-dev-'];
-function hubLive(l){ return (l||[]).filter(function(x){ return !x.exp || x.exp > Date.now(); }); }
-function hubSetKind(k){ try{ localStorage.setItem(HUB_KIND_KEY, k); }catch(e){} }
-function hubKind(){ try{ return localStorage.getItem(HUB_KIND_KEY) || ''; }catch(e){ return ''; } }
+// アプリ（スケジュール画面）の入口。招待メールのリンクはここへ戻る
+var APP_ENTRY_OF = { 'hub-v8-': 'index_main.html', 'hub-v8-dev-': 'index_dev.html' };
+function appEntryUrl(){ return APP_URL_OF[STOR] + APP_ENTRY_OF[STOR]; }
 
-// ── GASとのやりとり ────────────────────────────────
-function gasGet(params){
-  var q = new URLSearchParams(params);
-  q.set('apiKey', GAS_API_KEY);
-  return fetchT(GAS_URL + '?' + q.toString(), {cache:'no-store'}, 40000)
-    .then(function(r){ return r.text(); })
-    .then(function(t){ try { return JSON.parse(t); } catch(e){ return {ok:false, err:'bad_response', raw:String(t).slice(0,120)}; } })
-    .catch(function(){ return {ok:false, err:'offline'}; });
-}
-// 1回の通信を ms で区切る。GASは混雑時に35〜60秒返ってこないことがある（2026-09-12に実測）。
-function fetchT(url, opts, ms){
-  var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-  var o = opts || {}; if (ctl) o.signal = ctl.signal;
-  var timer = ctl ? setTimeout(function(){ ctl.abort(); }, ms) : null;
-  return fetch(url, o).then(function(r){ if (timer) clearTimeout(timer); return r; },
-                            function(e){ if (timer) clearTimeout(timer); throw e; });
-}
-// 読めなかった印。「値が無い(null)」と区別して、失敗を画面に出せるようにする。
+// ── Firestore とのやりとり（関数名は以前の GAS 版のまま。呼び出し側を変えずに済ませる）──
 var GAS_FAIL = {gasFail:true};
+function fbErrCode(e){ return String((e && e.code) || ''); }
 function gasRead(key){
-  var once = function(){
-    return fetchT(GAS_URL + '?key=' + encodeURIComponent(key) + '&apiKey=' + encodeURIComponent(GAS_API_KEY), {cache:'no-store'}, 40000)
-      .then(function(r){ return r.text(); })
-      .then(function(t){
-        if (!t || t === 'null' || t.indexOf('error:') === 0) return null;
-        // JSONでない（Googleのエラーページ等）は失敗として送り直す
-        try { return JSON.parse(t); } catch(e){ return GAS_FAIL; }
-      })
-      .catch(function(){ return GAS_FAIL; });
-  };
-  // 3回まで。間を少し空ける（混雑が収まるのを待つ）
-  return once().then(function(v){ if (v !== GAS_FAIL) return v;
-    return new Promise(function(r){ setTimeout(r, 2000); }).then(once); })
-  .then(function(v){ if (v !== GAS_FAIL) return v;
-    return new Promise(function(r){ setTimeout(r, 4000); }).then(once); });
-}
-// 書き込みは応答を必ず読む。'ok' が返るまでは書けたと見なさない。
-// GASは書き込みを25秒ロックで直列化する。続けて2回書くと2回目がロックに
-// 当たり、'lock_timeout' が返って無言で落ちる。本体の sSet と同じ作法にする:
-//   ・順番待ちの列に並べて、同時に2本走らせない
-//   ・混んでいた（busy）ら待って再送する
-var gasQueue = Promise.resolve();
-function gasWriteOnce(key, value){
-  return fetch(GAS_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({key:key, value:JSON.stringify(value), apiKey:GAS_API_KEY})})
-    .then(function(r){ return r.text(); })
-    .then(function(t){
-      t = String(t||'').trim();
-      if (t === 'ok') return 'ok';
-      if (t.indexOf('lock_timeout') >= 0) return 'busy';
-      // 管理者の利用証がサーバーで無効（端末が台帳から消えている・取り消された）。
-      // 送り直しても通らないので、すぐ知らせる。
-      if (t.indexOf('unauthorized') === 0) return 'unauthorized';
-      return 'error:' + t.slice(0, 80);
-    })
-    .catch(function(){ return 'busy'; });   // 通信の失敗も、待って送り直す
+  if (!fbDb) return Promise.resolve(GAS_FAIL);
+  return fbWhenReady().then(function(){ return fbKvRef(key).get(); }).then(function(snap){
+    if (!snap.exists) return null;
+    var d = snap.data() || {};
+    if (typeof d.v !== 'string' || !d.v || d.v === 'null') return null;
+    try { return JSON.parse(d.v); } catch(e){ return null; }
+  }).catch(function(e){ if (fbErrCode(e).indexOf('permission-denied') >= 0) lostAdmin(); return GAS_FAIL; });
 }
 function gasWrite(key, value){
-  var job = gasQueue.then(function(){
-    var attempt = function(i){
-      return gasWriteOnce(key, value).then(function(r){
-        if (r === 'ok') return true;
-        if (r === 'unauthorized') { lostAdmin(); return false; }
-        if (r === 'busy' && i < 3) {
-          return new Promise(function(done){ setTimeout(done, 3000 + 4000 * i); })
-            .then(function(){ return attempt(i + 1); });
-        }
-        return false;
-      });
-    };
-    return attempt(0);
-  });
-  gasQueue = job.then(function(){}, function(){});   // 失敗しても列は止めない
-  return job;
+  if (!fbDb) return Promise.resolve(false);
+  return fbKvRef(key).set({ v: JSON.stringify(value), u: firebase.firestore.FieldValue.serverTimestamp() })
+    .then(function(){ return true; })
+    .catch(function(e){ if (fbErrCode(e).indexOf('permission-denied') >= 0) lostAdmin(); return false; });
 }
+// 許可簿
+function allowedRead(){
+  return fbWhenReady().then(function(){ return fbAllowedRef().get(); })
+    .then(function(snap){ return snap.exists ? (snap.data() || {}) : {}; });
+}
+function allowedUpsert(mail, patch){
+  var k = fbEmailKey(mail);
+  return allowedRead().then(function(all){
+    var prev = all[k] || {};
+    var next = Object.assign({ email: String(mail).trim().toLowerCase(), role: 'staff', active: true, kind: 'staff' }, prev, patch, { at: Date.now() });
+    var o = {}; o[k] = next;
+    return fbAllowedRef().set(o, { merge: true }).then(function(){ return next; });
+  });
+}
+function adminsFromAllowed(all){
+  return Object.keys(all).filter(function(k){ var a = all[k]; return a && a.role === 'admin' && a.active !== false; })
+    .map(function(k){ var a = all[k]; return { mail: a.email || k.replace(/,/g, '.'), uid: a.uid || '', name: a.name || '' }; });
+}
+// 招待：許可簿に載せて（既にあれば更新）ログイン用のリンクを送る。リンクは各環境のスケジュール画面へ戻る
+function sendInvite(mail, info){
+  if (!fbAuth) return Promise.resolve({ ok:false, err:'offline' });
+  var m = String(mail || '').trim().toLowerCase();
+  if (badMail(m)) return Promise.resolve({ ok:false, err:'bad_email' });
+  return allowedUpsert(m, info || {}).then(function(){
+    return fbAuth.sendSignInLinkToEmail(m, { url: appEntryUrl() + '?inv=1&e=' + encodeURIComponent(m), handleCodeInApp: true })
+      .then(function(){ return { ok:true }; });
+  }).catch(function(e){
+    var c = fbErrCode(e);
+    return { ok:false, err: c.indexOf('permission-denied') >= 0 ? 'not_admin' : c.indexOf('too-many') >= 0 ? 'too_many'
+      : c.indexOf('unauthorized') >= 0 ? 'bad_domain' : c.indexOf('invalid-email') >= 0 ? 'bad_email' : (c || 'error') };
+  });
+}
+// 端末の台帳（devices コレクション。env で環境を分ける）→ {端末ID: {n,s,k,l,ua,at,last,e,dev,names}}
+function devicesRead(){
+  return fbWhenReady().then(function(){ return fbDb.collection('devices').where('env', '==', STOR).get(); })
+    .then(function(q){ var out = {}; q.forEach(function(d){ out[d.id] = d.data() || {}; }); return out; })
+    .catch(function(e){ if (fbErrCode(e).indexOf('permission-denied') >= 0) lostAdmin(); return GAS_FAIL; });
+}
+function deviceDelete(id){ return fbDb.collection('devices').doc(id).delete().then(function(){ return true; }).catch(function(){ return false; }); }
 
-// この端末の管理者の利用証がサーバーで通らなくなった時。
-//   起きる場面: 別の端末や別の管理者が「取り消し」でこの端末を消した／台帳が巻き戻った。
-//   開いたままのタブは気づけないので、書き込みが断られた時点でログインに戻す。
-//   ここで黙って「失敗しました」だけ出すと、何度押しても同じ結果になり原因が分からない
-//   （2026-09-15 テスト用スタッフの登録解除が通らなかった件）。
+// この端末の管理者のサインインが通らなくなった時（許可簿から外された・管理者でなくなった）。
+//   開いたままのタブは気づけないので、断られた時点でログインに戻す。
 function lostAdmin(){
-  hubApplyToken('');
-  var list = hubLoadMine().filter(function(x){ return !S.me || x.name !== S.me.name; });
-  hubSaveMine(list);   // 通らない利用証は捨てる。残すとスケジュール画面でも同じ失敗が続く
   S.view = 'gate'; S.step = 'mail'; S.dialog = null; S.busy = false; S.typed = '';
-  S.err = 'この端末の管理者登録が無効になっています（別の端末から取り消された可能性があります）。'
+  S.err = 'この端末の管理者登録が無効になっています（管理者から外された可能性があります）。'
         + 'もう一度ログインしてから、同じ操作をやり直してください。';
   render();
 }
@@ -357,7 +346,7 @@ function badMail(v){
 var S = {
   view:'gate', step:'mail', mail:'', typed:'', err:'', busy:false,
   me:null, tab:'staff', dialog:null, toast:null, loading:false,
-  staffH:[], staffS:[], devices:{}, admins:[], devnames:[],
+  staffH:[], staffS:[], devices:{}, admins:[], devnames:[], allowed:{},
   loadSlow:false, loadError:false   // 読み込みが長引いている／読めなかった
 };
 var toastTimer = null;
@@ -389,8 +378,7 @@ function devsOf(uid, name){
   var out = [];
   for (var j in S.devices) {
     var d = S.devices[j] || {};
-    if (d.exp && d.exp <= Date.now()) continue;      // 失効済みは数えない
-    if (d.n === name) out.push(Object.assign({id:j}, d));
+    if (d.n === name || (d.names instanceof Array && d.names.indexOf(name) >= 0)) out.push(Object.assign({id:j}, d));
   }
   return out;
 }
@@ -414,20 +402,21 @@ function statusOf(s){
 // ── ログイン画面 ─────────────────────────────────
 function viewGate(){
   var body;
-  if (S.step === 'mail') {
+  if (S.step === 'signing') {
+    body = '<p class="hint">確認しています…</p>' + (S.err ? '<div class="err">' + esc(S.err) + '</div>' : '');
+  } else if (S.step === 'mail') {
     body = '<p class="hint">管理者として登録されたメールアドレスを入れてください。'
-      + '<b>そのアドレス宛にしか確認コードは届きません</b>ので、このURLを知っていても他の方は入れません。</p>'
+      + '<b>そのアドレス宛にログイン用のリンクが届きます</b>ので、このURLを知っていても他の方は入れません。</p>'
       + '<label class="f" for="m">メールアドレス</label>'
       + '<input type="email" id="m" value="' + esc(S.mail) + '" placeholder="管理者のメールアドレスを入力" autocomplete="off" inputmode="email">'
       + (S.err ? '<div class="err">' + esc(S.err) + '</div>' : '')
-      + '<button class="btn w" id="send"' + (S.busy?' disabled':'') + '>' + (S.busy?'送信中…':'確認コードを送る') + '</button>';
+      + '<button class="btn w" id="send"' + (S.busy?' disabled':'') + '>' + (S.busy?'送信中…':'ログイン用のリンクを送る') + '</button>';
   } else {
-    body = '<p class="hint">' + esc(S.mail) + ' 宛に6桁のコードを送りました。（24時間以内に入力してください）<br>'
-      + '届かないときは、迷惑メールフォルダもご確認ください。</p>'
-      + '<label class="f" for="c">確認コード</label>'
-      + '<input type="text" id="c" class="code mono" maxlength="6" inputmode="numeric" placeholder="------" autocomplete="one-time-code" value="' + esc(S.typed) + '">'
+    body = '<p class="hint">' + esc(S.mail) + ' 宛にメールを送りました。届いたメールの「ログイン」のリンクを<b>このブラウザで</b>開いてください。'
+      + '開くだけでログインが終わります（6桁の入力はありません）。<br>'
+      + '届かないときは、迷惑メールフォルダもご確認ください（送信元 noreply@hub-a-nice-day.firebaseapp.com）。</p>'
       + (S.err ? '<div class="err">' + esc(S.err) + '</div>' : '')
-      + '<button class="btn w" id="ok"' + (S.busy?' disabled':'') + '>' + (S.busy?'確認中…':'確認する') + '</button>'
+      + '<button class="btn ghost w" id="send"' + (S.busy?' disabled':'') + '>' + (S.busy?'送信中…':'メールが見つからない → 送り直す') + '</button>'
       + '<button class="btn ghost w" id="back" style="margin-top:9px">アドレスを入れ直す</button>';
   }
   return '<div class="gate"><div class="gate-card">'
@@ -436,6 +425,7 @@ function viewGate(){
     + body
     + '<button class="btn ghost w envswitch" id="envswitch" type="button" style="margin-top:14px">'
     + (IS_DEV ? '本番に切り替える' : 'DEVに戻る') + '</button>'
+    + (fbUser ? '<button class="btn ghost w" id="signout" type="button" style="margin-top:9px">別のアドレスでログインする（ログアウト）</button>' : '')
     + '</div></div>';
 }
 
@@ -657,8 +647,7 @@ function viewAdmins(){
     + '<div class="tablewrap"><table>'
     + '<thead><tr><th class="stripe"></th><th>氏名</th><th>メールアドレス</th><th style="text-align:right">操作</th></tr></thead>'
     + '<tbody>' + rows + '</tbody></table></div>'
-    + '<div class="foot">管理者の名簿は<b>GASの中だけ</b>にあります。公開しているHTMLやスプレッドシートには置きません——'
-    + 'そこに置くと、URLとAPIキーを知っている人に書き換えられてしまうためです。'
+    + '<div class="foot">管理者の名簿は Firestore の許可簿（meta/allowed）にあり、<b>管理者としてログインした人しか書き換えられません</b>。'
     + '<br>ログイン用メールが未設定の方は管理者にできません。先に「スタッフと招待」で登録してください。</div>'
     + '</div>';
 }
@@ -712,17 +701,17 @@ function loadAll(){
   return Promise.all([
     gasRead(STOR + 'honten-staff-v2'),
     gasRead(STOR + 'sanda-staff-v2'),
-    gasRead(STOR + 'auth-devices'),
-    gasGet({action:'authAdminList', prefix:STOR}),
+    devicesRead(),
+    allowedRead().then(function(all){ return { ok:true, all:all, admins: adminsFromAllowed(all) }; }, function(){ return { ok:false }; }),
     gasRead(STOR + 'auth-devnames')
   ]).then(function(r){
     if (slowTimer) { clearTimeout(slowTimer); slowTimer = null; }
     // どれか1つでも読めなかったら、空の一覧を出さずに知らせる（黙って0人にしない）
-    var failed = r[0] === GAS_FAIL || r[1] === GAS_FAIL || r[2] === GAS_FAIL || r[4] === GAS_FAIL
-              || !(r[3] && (r[3].ok || r[3].err === 'not_admin'));
+    var failed = r[0] === GAS_FAIL || r[1] === GAS_FAIL || r[2] === GAS_FAIL || r[4] === GAS_FAIL || !(r[3] && r[3].ok);
     S.staffH = (r[0] instanceof Array) ? r[0] : [];
     S.staffS = (r[1] instanceof Array) ? r[1] : [];
     S.devices = (r[2] && typeof r[2] === 'object' && !(r[2] instanceof Array)) ? r[2] : {};
+    S.allowed = (r[3] && r[3].ok) ? r[3].all : {};
     S.admins = (r[3] && r[3].ok && r[3].admins) ? r[3].admins : [];
     S.devnames = (r[4] instanceof Array) ? r[4].filter(function(x){ return x && x.name; }) : [];
     S.loading = false; S.loadSlow = false; S.loadError = failed; render();
@@ -761,80 +750,28 @@ function bind(){
 
   // --- ログイン ---
   if ($('send')) $('send').onclick = function(){
-    var v = ($('m').value || '').trim();
+    var v = ($('m') ? ($('m').value || '') : S.mail).trim();
     if (badMail(v)) { S.err = 'メールアドレスの形式が正しくありません。（カンマや空白が入っていませんか）'; render(); return; }
+    if (!fbAuth) { S.err = 'Firebase に繋がっていません。通信の状態をご確認ください。'; render(); return; }
     S.mail = v; S.err = ''; S.busy = true; render();
-    gasGet({action:'authRequest', prefix:STOR, email:v}).then(function(r){
+    // 戻り先はこのコンソール（同じ環境）。アドレスを載せるので、開いた側で打ち直さなくてよい
+    var back = location.origin + location.pathname + '?' + (ENV_PROD ? 'env=prod&' : '') + 'inv=1&e=' + encodeURIComponent(v);
+    fbAuth.sendSignInLinkToEmail(v, { url: back, handleCodeInApp: true }).then(function(){
+      try { localStorage.setItem('hub-admin-link-email', v); } catch (e) {}
+      S.busy = false; S.step = 'sent'; render();
+    }, function(e){
       S.busy = false;
-      if (!r || !r.ok) {
-        S.err = (r && r.err === 'not_registered')
-          ? 'このアドレスは管理者として登録されていません。'
-          : (r && r.err === 'too_many') ? '送信が続いています。しばらく待ってからお試しください。'
-          : 'コードを送れませんでした。通信の状態をご確認ください。';
-        render(); return;
-      }
-      S.step = 'code'; S.typed = ''; render();
+      var c = fbErrCode(e);
+      S.err = c.indexOf('too-many') >= 0 ? '送信が続いています。しばらく待ってからお試しください。'
+        : c.indexOf('unauthorized') >= 0 ? 'この画面のアドレスが Firebase の承認済みドメインにありません（' + location.hostname + '）。'
+        : c.indexOf('invalid-email') >= 0 ? 'メールアドレスの形式が正しくありません。'
+        : 'メールを送れませんでした。通信の状態をご確認ください。（' + c + '）';
+      render();
     });
   };
   if ($('m')) $('m').onkeydown = function(e){ if (e.key === 'Enter') $('send').click(); };
-  if ($('c')) {
-    $('c').focus();
-    $('c').oninput = function(e){ e.target.value = e.target.value.replace(/[^0-9]/g,'').slice(0,6); S.typed = e.target.value; };
-    $('c').onkeydown = function(e){ if (e.key === 'Enter') $('ok').click(); };
-  }
-  if ($('ok')) $('ok').onclick = function(){
-    var v = ($('c').value || '').trim();
-    if (v.length !== 6) { S.err = '6桁を入力してください。'; render(); return; }
-    S.err = ''; S.busy = true; S.typed = v; render();
-    // この端末が持っている利用証も送る＝同じ人の前の登録（スケジュール画面で登録した行や、
-    // 前回のコンソールのログイン）を置き換える。台帳に同じ人の行を増やさない。
-    // 本番とDEVの両方の保管場所にある利用証を添える（どちらの台帳でも、この端末の前の行を置き換える）
-    var prev = [];
-    ENV_PREFIXES.forEach(function(p){ hubLoadMineOf(p).forEach(function(x){ if (x && x.token) prev.push(x.token); }); });
-    prev = prev.slice(0, 12).join(',');
-    // envs=all：管理者は本番とDEVの両方に登録され、両方の利用証が返る。
-    // コンソールは1つのページで両方を切り替えるので、片方でログインすれば以後は切り替えても聞かれない。
-    var ask = function(){ return gasGet({action:'authVerify', prefix:STOR, email:S.mail, code:v, ua:navigator.userAgent||'', prev:prev, envs:'all'}); };
-    ask().then(function(r){
-      // 返事が届かなかった時は3秒おいて自動でもう一度（サーバーは成功の返事を15分覚えている）
-      if (!r || r.err === 'offline' || r.err === 'bad_response') {
-        S.err = 'サーバーの返事を待っています。もう一度確かめます…'; render();
-        return new Promise(function(res){ setTimeout(res, 3000); }).then(ask);
-      }
-      return r;
-    }).then(function(r){
-      S.busy = false;
-      if (!r || !r.ok) {
-        S.err = (r && r.err === 'bad_code') ? 'コードが違います。もう一度お試しください。'
-          : (r && r.err === 'expired') ? 'このコードは期限切れか、すでに使われています。「アドレスを入れ直す」から新しいコードを受け取ってください。'
-          : (r && r.err === 'too_many_tries') ? '入力の失敗が続いたため止めました。送り直してください。'
-          : (r && r.err === 'busy') ? 'サーバーが混み合っています。少し待ってから、もう一度「確認する」を押してください。'
-          : 'サーバーの返事を受け取れませんでした。少し待ってから、同じコードでもう一度「確認する」を押してください。';
-        render(); return;
-      }
-      if (!r.admin) { S.err = 'このアドレスは管理者ではありません。'; render(); return; }
-      // 利用証をこの端末に保存する。スケジュール画面にもそのまま入れる。
-      var toks = (r.tokens && typeof r.tokens === 'object') ? r.tokens : {};
-      toks[STOR] = r.token;
-      Object.keys(toks).forEach(function(p){
-        var list = hubLoadMineOf(p).filter(function(x){ return x.name !== r.name; });
-        list.push({uid:r.uid||'', name:r.name, myNumber:r.myNumber, store:r.store||'honten', token:toks[p], exp:r.exp});
-        hubSaveMineOf(p, list);
-      });
-      var bothEnv = Object.keys(toks).length > 1;
-      // 端末の種類（自分専用／共有）はここでは決めない。決めるのはスケジュール画面の登録時。
-      // 以前ここで「共有」を入れていたため、その端末が自動ログインしなくなる不具合があった。
-      hubApplyToken(r.token);
-      S.me = {name:r.name, uid:r.uid, mail:S.mail};
-      S.view = 'console'; S.tab = 'staff'; render();
-      loadAll().then(function(){
-        toast('管理者としてログインしました', bothEnv
-          ? '本番とDEVの両方に入れます。切り替えてもログインは要りません。スケジュール画面にもそのまま入れます。'
-          : 'この端末は本人確認済みになりました。スケジュール画面にもそのまま入れます。');
-      });
-    });
-  };
   if ($('back')) $('back').onclick = function(){ S.step = 'mail'; S.err = ''; S.typed = ''; render(); };
+  if ($('signout')) $('signout').onclick = function(){ if (fbAuth) fbAuth.signOut().then(function(){ S.me = null; S.view = 'gate'; S.step = 'mail'; S.err = ''; render(); }); };
 
   // --- 環境の切り替え ---
   each('#envswitch', function(b){ b.onclick = function(){ switchEnv(IS_DEV); }; });
@@ -1134,10 +1071,9 @@ function bind(){
           + '<div class="addr">' + esc(s.loginEmail) + '</div>'
           + '<p style="font-size:12px;color:var(--ink-3)">' + esc(s.name) + ' さん宛</p>',
         onOk: function(){
-          gasGet({action:'authInvite', prefix:STOR, email:s.loginEmail}).then(function(r){
-            if (r && r.ok) toast('招待メールを送りました', s.name + ' さん（' + s.loginEmail + '）宛。届かないときは迷惑メールフォルダを確認してもらってください。');
-            else toast('送れませんでした', (r && r.err === 'not_registered') ? 'このアドレスはスタッフ表に登録されていません。'
-              : (r && r.err === 'too_many') ? '送信が続いています。しばらく待ってからお試しください。' : '通信の状態をご確認ください。');
+          sendInvite(s.loginEmail, {name:s.name, store:s.store, uid:s.uid, kind:'staff'}).then(function(r){
+            if (r && r.ok) toast('招待メールを送りました', s.name + ' さん（' + s.loginEmail + '）宛。届いたメールのリンクを、使う端末で開いてもらってください。');
+            else toast('送れませんでした', inviteErr(r));
           });
         }
       };
@@ -1157,7 +1093,7 @@ function bind(){
         var sent = 0, failed = 0;
         var seq = list.reduce(function(p, s){
           return p.then(function(){
-            return gasGet({action:'authInvite', prefix:STOR, email:s.loginEmail})
+            return sendInvite(s.loginEmail, {name:s.name, store:s.store, uid:s.uid, kind:'staff'})
               .then(function(r){ if (r && r.ok) sent++; else failed++; });
           });
         }, Promise.resolve());
@@ -1188,14 +1124,15 @@ function bind(){
         onOk: function(){
           // 端末の台帳は必ずサーバー最新を土台にする。画面の一覧を書き戻すと、
           // 開いている間に登録された他の端末を巻き添えで消してしまう。
-          gasRead(STOR + 'auth-devices').then(function(latest){
-            var base = (latest && typeof latest === 'object' && !(latest instanceof Array)) ? latest : null;
-            if (!base) { toast('登録解除できませんでした', 'サーバーから端末の一覧を読めていません。通信を確かめて、もう一度お試しください。'); return; }
-            var next = {};
-            for (var j in base) if (base[j] && base[j].n !== s.name) next[j] = base[j];
-            gasWrite(STOR + 'auth-devices', next).then(function(okw){
+          devicesRead().then(function(latest){
+            if (latest === GAS_FAIL) { toast('登録解除できませんでした', 'サーバーから端末の一覧を読めていません。通信を確かめて、もう一度お試しください。'); return; }
+            var ids = Object.keys(latest).filter(function(j){ var d = latest[j] || {}; return d.n === s.name || (d.names instanceof Array && d.names.indexOf(s.name) >= 0); });
+            Promise.all(ids.map(deviceDelete)).then(function(rs){
+              var okw = rs.every(Boolean);
               if (!okw) { toast('登録解除できませんでした', '端末の取り消しに失敗しました。もう一度お試しください。'); return; }
-              S.devices = next;
+              ids.forEach(function(j){ delete S.devices[j]; });
+              // 許可簿からも外す（ログインできなくする）。メールが無ければ何もしない
+              if (s.loginEmail) allowedUpsert(s.loginEmail, { active:false }).catch(function(){});
               // 印は残す。一覧から消えてしまうと、招待を送り直せなくなる。
               saveStaffField(s.uid, s.store, {loginEmail: undefined, sysUse: true}).then(function(res){
                 loadAll().then(function(){
@@ -1223,15 +1160,10 @@ function bind(){
           + '　<span style="font-weight:400;color:var(--ink-2)">' + esc(d.l || '') + '</span></div>'
           + '<p style="font-size:11.5px;color:var(--ink-3);word-break:break-all">' + esc(d.ua || '') + '</p>',
         onOk: function(){
-          gasRead(STOR + 'auth-devices').then(function(latest){
-            var base = (latest && typeof latest === 'object' && !(latest instanceof Array)) ? latest : null;
-            if (!base) { toast('取り消せませんでした', 'サーバーから最新の一覧を読めていません。'); return; }
-            var next = {}; for (var k in base) if (k !== j) next[k] = base[k];
-            gasWrite(STOR + 'auth-devices', next).then(function(okw){
+          deviceDelete(j).then(function(okw){
               if (!okw) { toast('取り消せませんでした', 'もう一度お試しください。'); return; }
-              S.devices = next; render();
-              toast('端末の登録を取り消しました', (d.n || '') + ' さんのこの端末は、もう使えません。');
-            });
+              delete S.devices[j]; render();
+              toast('端末の登録を取り消しました', (d.n || '') + ' さんのこの端末は、次に開いた時から使えません。');
           });
         }
       };
@@ -1286,15 +1218,11 @@ function bind(){
         body:'<p>宛先に間違いはありませんか。1文字違うと、何も届かないだけで理由が分かりません。</p>'
           + '<div class="addr">' + esc(d.mail) + '</div>'
           + '<p style="font-size:12px;color:var(--ink-3)">' + esc(d.name) + ' 用／'
-          + '届いたら<b>その端末の前で</b>、このアドレスと6桁を入れてください。</p>',
+          + '届いたメールのリンクを<b>その端末で</b>開いてください。</p>',
         onOk: function(){
-          gasGet({action:'authInvite', prefix:STOR, email:d.mail}).then(function(r){
-            if (r && r.ok) toast('招待メールを送りました',
-              d.name + '（' + d.mail + '）宛。その端末の前で、アドレスと6桁を入れてください。');
-            else toast('送れませんでした', (r && r.err === 'not_registered')
-              ? 'このアドレスが登録として保存されていません。メール欄を入れ直して保存してください。'
-              : (r && r.err === 'too_many') ? '送信が続いています。しばらく待ってからお試しください。'
-              : '通信の状態をご確認ください。');
+          sendInvite(d.mail, {name:d.name, store:d.store || 'honten', uid:'', kind:'device', label:d.name}).then(function(r){
+            if (r && r.ok) toast('招待メールを送りました', d.name + '（' + d.mail + '）宛。届いたメールのリンクを、その端末で開いてください。');
+            else toast('送れませんでした', inviteErr(r));
           });
         }
       };
@@ -1381,7 +1309,7 @@ function bind(){
     var uid = $('addadm').value;
     if (!uid) { toast('スタッフを選んでください', 'ログイン用メールが設定されている方だけが選べます。'); return; }
     var s = findStaff(uid); if (!s) return;
-    gasGet({action:'authAdminSet', prefix:STOR, op:'add', email:s.loginEmail, uid:s.uid}).then(function(r){
+    allowedUpsert(s.loginEmail, {name:s.name, store:s.store, uid:s.uid, role:'admin'}).then(function(){ return {ok:true}; }, function(e){ return {ok:false, err:fbErrCode(e)}; }).then(function(r){
       if (!r || !r.ok) { toast('追加できませんでした', (r && r.err) ? r.err : '通信の状態をご確認ください。'); return; }
       loadAll().then(function(){
         toast(s.name + ' さんを管理者にしました', 'この画面を開けるようになります。Apps Script を触る必要はありません。');
@@ -1397,7 +1325,8 @@ function bind(){
         body:'<p>この画面を開けなくなります。スケジュール画面は今までどおり使えます。</p>'
           + '<div class="addr">' + esc(mail) + '</div>',
         onOk: function(){
-          gasGet({action:'authAdminSet', prefix:STOR, op:'remove', email:mail}).then(function(r){
+          (S.admins.length <= 1 ? Promise.resolve({ok:false, err:'last_admin'})
+            : allowedUpsert(mail, {role:'staff'}).then(function(){ return {ok:true}; }, function(e){ return {ok:false, err:fbErrCode(e)}; })).then(function(r){
             if (!r || !r.ok) {
               toast('外せませんでした', (r && r.err === 'last_admin')
                 ? '最後の1人は外せません。先に別の方を管理者に追加してください。' : '通信の状態をご確認ください。');
@@ -1425,20 +1354,60 @@ function bind(){
 }
 
 // ── 起動 ────────────────────────────────────────
-// すでにこの端末で管理者として認証済みなら、ログイン画面を出さずに開く。
+//   Firebase のサインインが残っていればログイン画面を出さずに開く。メールのリンクから開いた時はサインインを完了する。
+function inviteErr(r){
+  var e = r && r.err;
+  return e === 'not_admin' ? '管理者としてログインしている必要があります（許可簿に書けませんでした）。'
+    : e === 'too_many' ? '送信が続いています。しばらく待ってからお試しください。'
+    : e === 'bad_domain' ? 'アプリのアドレスが Firebase の承認済みドメインにありません。'
+    : e === 'bad_email' ? 'メールアドレスの形式が正しくありません。'
+    : '通信の状態をご確認ください。' + (e ? '（' + e + '）' : '');
+}
+function enterConsole(all){
+  var a = all[fbEmailKey(fbUser.email)];
+  if (!a || a.active === false || a.role !== 'admin') {
+    S.view = 'gate'; S.step = 'mail'; S.mail = fbUser.email || '';
+    S.err = 'このアドレス（' + (fbUser.email || '') + '）は管理者ではありません。管理者に追加してもらってから、もう一度お試しください。';
+    render(); return;
+  }
+  S.me = { name: a.name || '', uid: a.uid || '', mail: fbUser.email || '' };
+  S.view = 'console'; S.tab = 'staff'; S.admins = adminsFromAllowed(all); S.allowed = all;
+  render(); loadAll();
+}
+function afterSignIn(){
+  allowedRead().then(enterConsole, function(e){
+    S.view = 'gate'; S.step = 'mail'; S.mail = (fbUser && fbUser.email) || '';
+    S.err = (fbErrCode(e).indexOf('permission-denied') >= 0)
+      ? 'このアドレス（' + S.mail + '）は登録されていません。管理者に追加してもらってから、もう一度お試しください。'
+      : '許可簿を読めませんでした。通信の状態をご確認ください。';
+    render();
+  });
+}
 (function start(){
-  var mine = hubLive(hubLoadMine());
-  if (!mine.length) { render(); return; }
-  hubApplyToken(mine[0].token);
-  gasGet({action:'authAdminList', prefix:STOR}).then(function(r){
-    if (r && r.ok) {
-      S.me = {name: mine[0].name, uid: mine[0].uid, mail: ''};
-      S.view = 'console'; S.admins = r.admins || [];
-      render(); loadAll();
-    } else {
-      hubApplyToken('');   // 管理者ではない利用証なので、ログインからやり直す
+  if (!fbAuth) { S.err = 'Firebase に繋がっていません（firebase_config.js か通信の状態をご確認ください）。'; render(); return; }
+  var linkOpen = false; try { linkOpen = fbAuth.isSignInWithEmailLink(location.href); } catch (e) {}
+  if (linkOpen) {
+    S.view = 'gate'; S.step = 'signing'; render();
+    var mail = ''; try { mail = new URLSearchParams(location.search).get('e') || localStorage.getItem('hub-admin-link-email') || ''; } catch (e) {}
+    if (!mail) { S.step = 'mail'; S.err = 'このリンクを送った時のメールアドレスを入れて、もう一度リンクを送ってください。'; render(); return; }
+    fbAuth.signInWithEmailLink(mail, location.href).then(function(){
+      try { localStorage.removeItem('hub-admin-link-email'); } catch (e) {}
+      try { history.replaceState(null, '', location.pathname + (ENV_PROD ? '?env=prod' : '')); } catch (e) {}
+      afterSignIn();
+    }, function(e){
+      var c = fbErrCode(e);
+      S.step = 'mail'; S.mail = mail;
+      S.err = (c.indexOf('invalid-action-code') >= 0 || c.indexOf('expired') >= 0)
+        ? 'このリンクは期限切れか、すでに使われています。もう一度リンクを送ってください。'
+        : 'ログインできませんでした（' + c + '）。もう一度リンクを送ってください。';
+      try { history.replaceState(null, '', location.pathname + (ENV_PROD ? '?env=prod' : '')); } catch (e2) {}
       render();
-    }
+    });
+    return;
+  }
+  S.view = 'gate'; S.step = 'signing'; render();
+  fbWhenReady().then(function(u){
+    if (u) afterSignIn(); else { S.step = 'mail'; render(); }
   });
 })();
 })();

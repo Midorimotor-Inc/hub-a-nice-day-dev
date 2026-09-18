@@ -23,30 +23,20 @@ const clickText = (page, s) => page.evaluate(x => { const b = [...document.query
 const now = new Date();
 const DK = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 
-// ブラウザに差し込む「にせの firebase」（compat API の必要な部分だけ）
-const FAKE_FB = `
-window.firebase = (function(){
-  const store = new Map(), listeners = new Map(); let writes = 0, txns = 0;
-  const snapOf = id => ({ exists: store.has(id), data: () => store.get(id), metadata: { fromCache: false, hasPendingWrites: false } });
-  const notify = id => (listeners.get(id) || new Set()).forEach(fn => setTimeout(() => fn(snapOf(id)), 0));
-  const doc = id => ({
-    __id: id,
-    get: async () => snapOf(id),
-    set: async d => { writes++; store.set(id, { v: d.v, u: Date.now() }); notify(id); },
-    onSnapshot: (opts, next, err) => { if (typeof opts === 'function') { err = next; next = opts; } const s = listeners.get(id) || new Set(); s.add(next); listeners.set(id, s); setTimeout(() => next(snapOf(id)), 0); return () => s.delete(next); },
-  });
-  const db = {
-    collection: () => ({ doc }),
-    runTransaction: async fn => { txns++; const t = { get: async ref => snapOf(ref.__id), set: (ref, d) => { writes++; store.set(ref.__id, { v: d.v, u: Date.now() }); notify(ref.__id); } }; return fn(t); },
-  };
-  window.__fakeFb = {
-    set: (id, v) => { store.set(id, { v: JSON.stringify(v), u: Date.now() }); notify(id); },
-    get: id => store.has(id) ? JSON.parse(store.get(id).v) : null,
-    stats: () => ({ writes, txns, docs: [...store.keys()] }),
-  };
-  return { apps: [], initializeApp: function(){ this.apps.push({}); }, firestore: Object.assign(() => db, { FieldValue: { serverTimestamp: () => 'ts' } }) };
-})();`;
-
+// ブラウザに差し込む「にせの firebase」は fake_firebase.js（fb_auth_test.js と共用）
+const FAKE_FB = fs.readFileSync(path.join(DIR, 'fake_firebase.js'), 'utf8');
+// 2026-09-18 から読み書きにはサインインが要る。検査ではサインイン済み・許可簿に載っている状態を先に作っておく
+const ME = { email: 'egawa@midori-m.com', uid: 'uid_egawa', name: '江川京志', store: 'honten' };
+const signedInInit = ([k, me, stor]) => {
+  localStorage.setItem('__fakeFbUser', JSON.stringify({ email: me.email, uid: me.uid }));
+  const st = JSON.parse(localStorage.getItem('__fakeFbStore') || '{}');
+  st['meta/allowed'] = { [me.email.replace(/./g, ',')]: { email: me.email, name: me.name, store: me.store, uid: 'h7', role: 'admin', active: true, kind: 'staff' } };
+  st['devices/dev-test'] = { env: stor, e: me.email, n: me.name, names: [me.name], s: me.store, k: 'shared', l: 'テストPC', ua: 'test', at: 1, last: Date.now() };
+  localStorage.setItem('__fakeFbStore', JSON.stringify(st));
+  localStorage.setItem(stor + 'auth-devid', 'dev-test');
+  localStorage.setItem(stor + 'auth-mine', JSON.stringify([{ uid: 'h7', name: me.name, store: me.store, email: me.email }]));
+  localStorage.setItem(stor + 'auth-kind', 'shared');
+};
 (async () => {
   const src = fs.readFileSync(path.join(DIR, process.env.SRC || 'index_dev.html'), 'utf8').replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = false;');
   const server = http.createServer((req, res) => {
@@ -67,6 +57,7 @@ window.firebase = (function(){
     const pend = [{ pid: 'insp-p1', dk: DK, ts: Date.now() - 600000, row: { name: '北前', carType: 'フィット', course: 1, time: '10:00', staff: '岡上秀一', store: 'honten', bookingStatus: 'confirmed' } }];
     let gasReads = 0, gasPosts = 0, gasAuth = 0; const gasPostBodies = [];
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } });
+    await ctx.addInitScript(signedInInit, [0, ME, STOR]);
     await ctx.addInitScript(([k, v]) => { localStorage.setItem(k, JSON.stringify(v)); }, [STOR + 'insp-pending', pend]);
     // Firebase SDK の代わりに「にせの firebase」を配る（SDK が読めないケースは空のスクリプト）
     await ctx.route('https://www.gstatic.com/firebasejs/**', route => {
@@ -150,6 +141,7 @@ window.firebase = (function(){
     };
     const c = { reads: 0, posts: [] };
     const ctx = await browser.newContext({ viewport: { width: 400, height: 850 }, isMobile: true, hasTouch: true });
+    await ctx.addInitScript(signedInInit, [0, ME, STOR]);
     await routeFakeFb(ctx, seed); await routeGas(ctx, c);
     const page = await ctx.newPage();
     const errs = []; page.on('pageerror', e => errs.push(String(e)));
@@ -181,6 +173,7 @@ window.firebase = (function(){
     };
     const c = { reads: 0, posts: [] };
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } });
+    await ctx.addInitScript(signedInInit, [0, ME, STOR]);
     await routeFakeFb(ctx, seed); await routeGas(ctx, c);
     const page = await ctx.newPage();
     const errs = []; page.on('pageerror', e => errs.push(String(e)));
