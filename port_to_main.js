@@ -20,12 +20,8 @@ const MAIN_DIR = path.resolve(__dirname, '..', 'hub-a-nice-day');
 const INDEX_RULES = [
   // 接続先データの分離（最重要）
   ["const STOR = 'hub-v8-dev-';", "const STOR = 'hub-v8-';", 1],
-  // 本人認証の必須化: DEVは true で試験中。本番は全員の登録が済むまで false（移行期間）。
-  //   本番を true にする時はこのルールを外す（index と mobile の両方）。2026-09-15
-  ["const AUTH_REQUIRED = true;", "const AUTH_REQUIRED = false;", 1],
-  // 保存先: DEVは Firestore で並行運用中（2026-09-18〜）。本番は切替の日まで GAS のまま。
-  //   本番を Firestore にする時はこのルールを外し、firestore.rules で hub-v8-* を許可し、fb_migrate.js --prod --write を済ませておく。
-  ["const BACKEND = 'firebase';", "const BACKEND = 'gas';", 1],
+  // 2026-09-18：本番も Firestore＋Firebase Auth（BACKEND='firebase'・AUTH_REQUIRED=true）。変換ルールは無し。
+  //   本番のデータは fb_migrate.js --prod --write で写してから移植する（GAS 側はその時点で控えになる）。
   // タイトル
   ['<title>Hub a Nice Day v1.0 [DEV]</title>', '<title>Hub a Nice Day v1.0</title>', 1],
   // 環境識別の配色: 全体背景・ログイン画面（オレンジ→青）
@@ -56,7 +52,6 @@ const CUST_REGEX_RULES = [
 // mobile.html の環境固有差分は STOR のみ（タイトル[DEV]なし・バッジなし・配色差分なし。2026-07-04時点）
 const MOBILE_RULES = [
   ["const STOR='hub-v8-dev-';", "const STOR='hub-v8-';", 1],
-  ["const AUTH_REQUIRED = true;", "const AUTH_REQUIRED = false;", 1],   // 本番は移行期間（index と同じ値に）
 ];
 const MOBILE_REGEX_RULES = [
   // 自動アップデート検知のビルド識別子をデプロイ毎に更新（旧タブ/旧PWAが新版を検知してバナー表示）
@@ -115,6 +110,9 @@ if (want.length) console.log(`※ 対象を限定して移植します: ${want.j
 if (on('index'))     port('index_dev.html', 'index_main.html', INDEX_RULES, INDEX_REGEX_RULES);
 if (on('customers')) port('customers.html', 'customers.html', CUST_RULES, CUST_REGEX_RULES);
 if (on('mobile'))    port('mobile.html', 'mobile.html', MOBILE_RULES, MOBILE_REGEX_RULES);
+// Firebase の公開設定（環境で同じ）。本番サイトにも必ず置く（無いと GAS 版として動いてしまう）
+fs.copyFileSync(path.join(DEV_DIR, 'firebase_config.js'), path.join(MAIN_DIR, 'firebase_config.js'));
+console.log('\n=== firebase_config.js → コピー ===');
 
 if (failed) {
   console.error('\n★中断: 上記の✖を解消してから再実行してください（本番ファイルは書き込み済みのものだけ更新）。');

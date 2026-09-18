@@ -2,7 +2,9 @@
 // 使い方:  node smoke_main.js
 //
 // ../hub-a-nice-day/index_main.html と customers.html をローカルサーバで起動し、
-// 【本番GASの実データ】を読み取り専用プロキシで流し込んで全画面を自動巡回。
+// 【本番 Firestore の実データ】を読み取り専用で流し込んで全画面を自動巡回（2026-09-18〜）。
+//   本物の Firebase には繋がない：サービスアカウント鍵で本番の kv（hub-v8-*）を読み取り、
+//   にせの firebase（fake_firebase.js）に入れてブラウザへ渡す。書き込みはにせの中で完結する。
 // レンダリングエラー/JSエラーが1件でもあれば FAIL（exit 1）。
 //
 // ★安全性: GASへのGET（読み取り）だけ本物へ転送。POST（書き込み）は全て遮断して
@@ -31,6 +33,22 @@ if (!chromium) {
 const MAIN_DIR = path.resolve(__dirname, '..', 'hub-a-nice-day');
 const PORT = 8140;
 const GAS_HOST = 'https://script.google.com';
+const PROD = 'hub-v8-';
+const KEY_FILE = process.env.HUB_FB_KEY || 'C:/Users/A/Documents/Hub重要書類/firebase-admin.json';
+const FAKE_FB = fs.readFileSync(path.join(__dirname, 'fake_firebase.js'), 'utf8');
+// 本番 Firestore の kv（hub-v8-* のみ・DEV は除く）を読み取り専用で集める
+async function loadProdStore() {
+  const admin = require(path.join(process.env.LOCALAPPDATA || '', 'Temp', 'hub-verify', 'node_modules', 'firebase-admin'));
+  admin.initializeApp({ credential: admin.credential.cert(JSON.parse(fs.readFileSync(KEY_FILE, 'utf8'))) });
+  const db = admin.firestore();
+  const q = await db.collection('kv').get();
+  const store = {};
+  q.forEach(d => { if (d.id.indexOf(PROD) === 0 && d.id.indexOf('hub-v8-dev-') !== 0) store['kv/' + d.id] = { v: d.data().v, u: Date.now() }; });
+  // サインイン済みの管理者として開く（許可簿・台帳・登録一覧を用意）
+  store['meta/allowed'] = { 'egawa@midori-m,com': { email: 'egawa@midori-m.com', name: '江川京志', store: 'honten', uid: 'h7', role: 'admin', active: true, kind: 'staff' } };
+  store['devices/dev-smoke'] = { env: PROD, e: 'egawa@midori-m.com', n: '江川京志', names: ['江川京志'], s: 'honten', k: 'shared', l: 'スモーク', ua: 'smoke', at: 1, last: Date.now() };
+  return store;
+}
 
 (async () => {
   const server = http.createServer((req, res) => {
@@ -42,10 +60,22 @@ const GAS_HOST = 'https://script.google.com';
     });
   });
   await new Promise(r => server.listen(PORT, r));
+  console.log('本番 Firestore の実データを読み取り中（読み取り専用）...');
+  const prodStore = await loadProdStore();
+  console.log('  kv ' + Object.keys(prodStore).filter(k => k.indexOf('kv/') === 0).length + ' 件');
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1500, height: 950 } });
   let gasReads = 0, gasBlockedWrites = 0;
+  // Firebase SDK の代わりに、にせの firebase＋本番データを配る（本物の Firestore には一切触れない）
+  await context.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: route.request().url().indexOf('firebase-app-compat') >= 0 ? FAKE_FB : '' }));
+  await context.addInitScript(([store, stor]) => {
+    if (!localStorage.getItem('__fakeFbStore')) localStorage.setItem('__fakeFbStore', JSON.stringify(store));
+    localStorage.setItem('__fakeFbUser', JSON.stringify({ email: 'egawa@midori-m.com', uid: 'uid_egawa' }));
+    localStorage.setItem(stor + 'auth-devid', 'dev-smoke');
+    localStorage.setItem(stor + 'auth-mine', JSON.stringify([{ uid: 'h7', name: '江川京志', store: 'honten', email: 'egawa@midori-m.com', isAdmin: true }]));
+    localStorage.setItem(stor + 'auth-kind', 'shared');
+  }, [prodStore, PROD]);
   await context.route(GAS_HOST + '/**', async route => {
     const req = route.request();
     if (req.method() === 'POST') {
@@ -180,7 +210,7 @@ const GAS_HOST = 'https://script.google.com';
     await page3.waitForTimeout(8000); // Babel変換＋スタッフリスト読込
     // v2.33 から番号入力は無く、名前を選ぶ（共有端末のログイン）。移行期間は全員が並ぶ
     const picked = await page3.evaluate(() => {
-      const b = [...document.querySelectorAll('button')].find(el => /見取大介/.test(el.textContent));
+      const b = [...document.querySelectorAll('button')].find(el => /江川京志/.test(el.textContent));   // 登録済みの人だけ並ぶ（2026-09-18〜）
       if (b) { b.click(); return true; } return false;
     });
     if (!picked) problems.push('mobile: ログイン画面に名前が並ばない');
