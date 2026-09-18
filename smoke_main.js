@@ -186,6 +186,15 @@ async function loadProdStore() {
       if (first) loginCode = String(first.myNumber);
     } catch (e) { console.log('  (スタッフリスト取得失敗→コード1でログイン試行)'); }
     const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    // スマホも同じ「にせの firebase＋本番データ」で開く（サインイン済み・登録済みの状態）
+    await mctx.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: route.request().url().indexOf('firebase-app-compat') >= 0 ? FAKE_FB : '' }));
+    await mctx.addInitScript(([store, stor]) => {
+      if (!localStorage.getItem('__fakeFbStore')) localStorage.setItem('__fakeFbStore', JSON.stringify(store));
+      localStorage.setItem('__fakeFbUser', JSON.stringify({ email: 'egawa@midori-m.com', uid: 'uid_egawa' }));
+      localStorage.setItem(stor + 'auth-devid', 'dev-smoke');
+      localStorage.setItem(stor + 'auth-mine', JSON.stringify([{ uid: 'h7', name: '江川京志', store: 'honten', email: 'egawa@midori-m.com', isAdmin: true }]));
+      localStorage.setItem(stor + 'auth-kind', 'shared');
+    }, [prodStore, PROD]);
     await mctx.route(GAS_HOST + '/**', async route => {
       const req = route.request();
       if (req.method() === 'POST') {
