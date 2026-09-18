@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789716659612';
+  window.__APP_BUILD='build-1789718694930';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -443,7 +443,7 @@ const hubCheckDevice = async () => {
     const s = await fbDeviceRef().get();
     if (!s.exists) { hubSaveMine([]); try { await fbAuth.signOut(); } catch (e) {} return false; }
     const d = s.data() || {};
-    if (!d.last || Date.now() - d.last > 86400000) fbDeviceRef().set({ last: Date.now() }, { merge: true }).catch(() => {});
+    if (!d.last || Date.now() - d.last > 86400000) fbDeviceRef().update({ last: Date.now() }).catch(() => {});   // update：消された行を作り直さない
   } catch (e) { return true; }   // 読めない（回線）時は何も変えない
   try {
     const snap = await fbAllowedRef().get();
