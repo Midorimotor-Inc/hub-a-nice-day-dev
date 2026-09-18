@@ -4,11 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-「Hub a Nice Day」= 車検予約管理PWA（本店・三田店の2店舗運用）。スケジュール表・カレンダー・顧客リスト・代車/レンタカー管理を、**ビルド工程なしの単一HTMLファイル**で提供する。React 18 UMD + Babel standalone（ブラウザ内トランスパイル）で動き、バックエンドは Google Apps Script (GAS) + スプレッドシート。
+「Hub a Nice Day」= 車検予約管理PWA（本店・三田店の2店舗運用）。スケジュール表・カレンダー・顧客リスト・代車/レンタカー管理を、**ビルド工程なしの単一HTMLファイル**で提供する。React 18 UMD + Babel standalone（ブラウザ内トランスパイル）で動く。**保存先は 2026-09-18 から Firebase（Firestore・東京）、本人認証は Firebase Authentication のメールリンク**。Google Apps Script (GAS) + スプレッドシートは通知メール・時点保存（スナップショット）にだけ残っている。
 
 ## ビルド・テスト・実行
 
-- **ビルド/lint/テストは存在しない。** 静的HTMLをGitHub Pagesが直接配信する。
+- **ビルド/lint は存在しない。** 静的HTMLをGitHub Pagesが直接配信する。
+- **検査は Playwright の `*_test.js`**（`%LOCALAPPDATA%Temphub-verify
+ode_modules` の playwright を使う）。Firebase には繋がず `fake_firebase.js`（にせの firebase）を差し込む：`node fb_auth_test.js`（本人認証）・`node fb_mode_test.js`（Firestore 経路）・`node batch_poll_test.js` ほか（GAS 模擬・`BACKEND='gas'` に固定して動かす）。構文だけなら `node smoke_dev_check.js <file>`。
 - 動作確認はブラウザでHTMLを開く（PWA。**Service Workerは使っていない**ので、ブラウザの通常キャッシュだけ。念のため確認時は**強制リロード Ctrl+Shift+R**）。
 - デプロイ = `git push`。GitHub Pages反映に1〜3分。
 - コード変更後の検証は、ブラウザで開いて操作する以外に手段がない（自動テスト基盤なし）。Babelのin-browser変換のため、構文エラーは実行時まで出ない。
@@ -31,14 +33,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`index.html` は中身がなく `index_dev.html` / `index_main.html` へ `location.replace` するだけ。** 実装は `index_dev.html`（DEV）/ `index_main.html`（本番）にある。
 - DEVと本番でファイルが**乖離している**ことがある（片方だけ修正されたまま）。**片方を直したら必ずもう片方も確認すること。** 過去に useShared のマージロジックがDEVだけ新しく、本番で代車が消えるバグが出た。
 - `customers_dev.html` / `index_redirect_dev.html` は実験用サブファイル。ユーザーが日常使うのは `customers.html` と `index_dev.html`（本番は `index_main.html`）。
-- **GAS_URL と GAS_API_KEY は DEV・本番で同一**。同じGASスクリプト・同じスプレッドシートを共有し、`STOR` プレフィックスだけでデータを分離している（例: `hub-v8-insp` vs `hub-v8-dev-insp`）。localStorageキャッシュキーも必ず `STOR` を前置すること（同一オリジンでDEV/本番が混ざるため）。
+- **Firebase プロジェクト（hub-a-nice-day）も GAS_URL も DEV・本番で同一**。`STOR` プレフィックスだけでデータを分離している（Firestore の `kv` コレクションのドキュメントID＝`hub-v8-insp` vs `hub-v8-dev-insp`）。localStorageキャッシュキーも必ず `STOR` を前置すること（同一オリジンでDEV/本番が混ざるため）。`firebase_config.js`（公開設定）は両リポジトリに置く。**サービスアカウント鍵は `C:UsersADocumentsHub重要書類irebase-admin.json`（リポジトリに入れない・.gitignore 済み）**。
 
 ## DEV→本番の移植は必ず port_to_main.js を使う
 
 - DEVリポジトリで `node port_to_main.js` を実行すると、`index_dev.html` → `../hub-a-nice-day/index_main.html`、`customers.html` → 同名 をコピーし、環境固有差分を自動変換する。**手動コピー＋手動置換で移植しないこと**（2026-06-12、手動移植でDEVのオレンジ配色が本番に混入した事故あり）。
+- 移植のたびに `firebase_config.js` も本番へコピーされる。`BACKEND`・`AUTH_REQUIRED` は DEV・本番とも同じ値（firebase / true）で変換しない。
 - 環境固有差分は4種類：① `STOR`（`hub-v8-dev-` ↔ `hub-v8-`）② タイトルの `[DEV]` ③「⚠ テスト版（DEV）」バッジ ④ **配色**（DEV＝オレンジ背景・グレー戻るボタン／本番＝青背景・緑戻るボタン。ただし代車管理の「スケジュールに戻る」(BACK_S)は2026-09-12からDEVも緑で共通）。スクリプトが全変換し、パターン未検出（DEV側コードの乖離）やDEV残骸の検出時は中断する。
 - スクリプトが ✖ で中断したら、DEV側の該当コードが変わってルールが古くなった合図。`port_to_main.js` のルールを現状に合わせて更新してから再実行する。
-- **移植後は `node smoke_main.js` が PASS するまで push 禁止。** 本番GASの実データを読み取り専用（書き込みは全遮断）で流し込み、全画面（カレンダー/スケジュール/代車管理/車両管理/空き枠検索/三田店切替/顧客リスト）を自動巡回してレンダリングエラーを検出する。**DEVと本番はデータの形が違うことがあり、DEVでの動作確認だけでは不十分**（例: 本番のrresはオブジェクト構造・DEVは空 → DEVで踏めないクラッシュが本番で発生した事故あり）。
+- **移植後は `node smoke_main.js` が PASS するまで push 禁止。** 本番 Firestore の実データをサービスアカウント鍵で読み取り、にせの firebase に入れて（本物には書けない）流し込み、全画面（カレンダー/スケジュール/代車管理/車両管理/空き枠検索/三田店切替/顧客リスト）を自動巡回してレンダリングエラーを検出する。**DEVと本番はデータの形が違うことがあり、DEVでの動作確認だけでは不十分**（例: 本番のrresはオブジェクト構造・DEVは空 → DEVで踏めないクラッシュが本番で発生した事故あり）。
 - push後の最終確認：本番ファイルをブラウザで開いて「**青ヘッダー・[DEV]表記なし**」を目視。
 
 ## index_*.html 内のBLOCK制約（最重要）
@@ -46,14 +49,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ファイル先頭のコメントに編集可否が宣言されている。逸脱しないこと：
 
 - **BLOCK-A: 設定値・定数** → 変更可能
-- **BLOCK-B: データ層・GAS通信**（`STOR` / `GAS_URL` / `GAS_API_KEY` / `sGet` / `sSet` / `acquireLock` / `releaseLock` / `useShared`）→ **変更禁止**（データ消失リスク。必要時はユーザー Kyoshi に確認）
+- **BLOCK-B: データ層・Firestore/GAS通信・本人認証**（`STOR` / `sGet` / `sSet` / `writeVerified` / `useShared` / `fbGet` / `fbSet` / `fbTxn` / `fbAuth` まわり / `acquireLock` / `releaseLock`）→ **変更禁止**（データ消失リスク。必要時はユーザー Kyoshi に確認）
 - **BLOCK-C: コアロジック**（`InspRow` / 1日6台・7台目承認ロジック・レギュラー車検3台上限）→ **変更禁止**
 - **BLOCK-D: UIコンポーネント・モーダル** → 変更可能
 - **BLOCK-E: メインアプリ・画面レイアウト** → 変更可能（要注意）
 
 ## データアーキテクチャ
 
-すべての共有状態はGAS経由でスプレッドシート `hubdata`（key/value/updated 列）に保存。フロントは `sGet(key)` / `sSet(key,value)` で読み書きする。
+すべての共有状態は Firestore のコレクション `kv`（ドキュメントID＝キー名、`{v: JSON文字列, u: サーバー時刻}`）に保存。フロントは `sGet(key)` / `sSet(key,value)` / `writeVerified(key, mutate, check)`（runTransaction）で読み書きし、`useShared` は onSnapshot で購読する（ポーリングは無い）。`BACKEND='gas'` にすると従来の GAS＋スプレッドシート経路に戻る（緊急用。GAS 側のデータは 2026-09-18 以降更新されていない）。`STOR` 無しのキー（`schedRestrictions`）は Firestore では `STOR` を前置したドキュメントになる（`fbDocId`）。
+
+### 本人認証（Firebase Authentication・メールリンク）
+- 6桁コード・GAS の利用証は廃止（v2.46）。「アドレスを入れる → 届いたメールのリンクを開く」でその端末（ブラウザ）が本人としてサインインし、期限なく保たれる。
+- 誰がログインできるかは Firestore の `meta/allowed`（`{emailKey: {email,name,store,uid,role,active,kind,label}}`、emailKey は '.'→','）。Firestore のルール（`firestore.rules`）もこれを見る。管理者は `role:'admin'`。投入・確認は `node fb_seed_allowed.js`。
+- 端末の台帳は `devices/{端末ID}`。管理者コンソール（admin.html・DEV サイトのみ。`?env=prod` で本番）の「取り消し」は行を削除し、端末は次に開いた時に登録を捨てる。
+- iPhone の Safari／ホーム画面の引き継ぎ（`?hand=`）は `handoff/{code}`（本人だけが読める `users/{uid}` の合言葉を使う）。
+- 端末内の登録一覧（名前を選ぶログイン画面）は従来どおり `STOR+'auth-mine'`。
+- ルールの配備はコンソールに貼る（Claude の自動モードでは `node fb_rules.js --deploy` がブロックされる）。文法確認だけなら Admin SDK の createRuleset で行える。
+
+### GAS→Firestore の移行
+`node fb_migrate.js [--prod] [--write|--verify]`（キー一覧はスナップショット＋cf-index＋既知キーから集める）。DEV は 2026-09-18、本番も同日に写し済み。
 
 主なキー（`STOR` 前置。store別は `storKey(base, storeId)` = `${STOR}${storeId}-${base}`）:
 - `${STOR}insp` — スケジュール（車検枠）。`{ "YYYY-M-D": [行...] }`。**日付キーはゼロ詰めなし**（`2026-3-6`）。
@@ -73,8 +87,8 @@ GASサーバーコードはリポジトリ内の `GAS_server_v10_snapshots.gs`�
 - 書き込みは `LockService`（25秒）で直列化。毎日深夜2時に `backup_YYYYMMDD` シートへ自動バックアップ（90日保持）。
 - GASは**1プロジェクトに複数デプロイが存在しうる**。フロントが使う本番デプロイIDは `AKfycby...` で始まるもの（**2026-08-08に会社アカウント `hubaniceday.system@gmail.com` の新環境へ移行済み**。旧・個人アカウントの `AKfycbxy...` は稼働したまま残してあり、切り戻し先になる）。コード更新は「デプロイを管理 → 該当デプロイを編集 → 新バージョン」で行う（URLが変わると繋がらなくなる）。DriveApp を使う変更はドライブ権限の再承認＋再デプロイが必要。
 
-### useShared（ポーリング同期）
-`useShared(key, def, pollMs)` が各共有状態のフック。マウント時に `sGet`、`pollMs` 間隔でポーリングしてサーバーの最新を反映する。**書き込み中（writeCount>0）はポーリングをスキップし、idベースマージ**でローカルの新しいエントリ（id大）を保持する——これを怠ると、保存中のポーリングが新規予約をサーバーの古い値で上書きして消す。配列値（insp等）はマージせずGAS版を採用。
+### useShared（購読同期）
+`useShared(key, def, pollMs)` が各共有状態のフック。Firestore では onSnapshot で購読し（`pollMs` は GAS 版でだけ使う）、サーバーの変更が届くたびに反映する。**書き込み中（writeCount>0）は上書きせず、idベースマージ**でローカルの新しいエントリ（id大）を保持する。配列値（insp等）はマージせずサーバー版を採用。
 
 ## コミット規約
 
