@@ -21,7 +21,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789708724834';
+    window.__APP_BUILD='build-1789712062977';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -2107,7 +2107,9 @@ const FB_ON = (() => {
 })();
 try { window.__hubBackend = FB_ON ? 'firebase' : 'gas'; } catch (e) {}
 const FB_TIMEOUT_MS = 25000;   // 回線が切れている時に無限に待たない（Firestore は繋がり次第あとで書くが、画面は「失敗」として扱う）
-const fbDocId = k => String(k).replace(/\//g, '%2F');   // ドキュメントIDに '/' は使えない
+// ドキュメントID。'/' は使えない。STOR で始まらないキー（'schedRestrictions' や 'hub-v8-gasping'）は STOR を前置して
+//   この環境のものとして扱う（DEV と本番で同じ行を共有していた古い作りを、ここで環境ごとに分ける）。
+const fbDocId = k => { k = String(k); if (k.indexOf(STOR) !== 0) k = STOR + k; return k.replace(/\//g, '%2F'); };   // ドキュメントIDに '/' は使えない
 const fbDoc = k => fbDb.collection('kv').doc(fbDocId(k));
 const fbParse = snap => {
   if (!snap || !snap.exists) return null;

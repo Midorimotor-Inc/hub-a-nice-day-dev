@@ -104,7 +104,10 @@ const gasMany = async (keys) => {
   // 自分の prefix 以外（本番のとき DEV キー）を除外
   const list = [...keys].filter(k => k.startsWith(PREFIX) && !(PREFIX === 'hub-v8-' && k.startsWith('hub-v8-dev-')) && k.indexOf('__chunk') < 0 && !SKIP.some(b => k === PREFIX + b)).sort();
   console.log(`候補キー ${list.length} 件。GAS から今の値を読みます…`);
+  // STOR 無しで共有されていたキー（DEV と本番で同じ行）。Firestore では PREFIX を前置した別ドキュメントにする（アプリ側 fbDocId と同じ規則）
+  const UNPREFIXED = ['schedRestrictions'];
   const vals = await gasMany(list);
+  for (const uk of UNPREFIXED) { const t = await gasGet({ key: uk }); if (t && t !== 'null' && !t.startsWith('error')) { vals[PREFIX + uk] = t; list.push(PREFIX + uk); console.log('  共有キー', uk, '→', PREFIX + uk); } }
   const present = list.filter(k => vals[k] !== null);
   let total = 0, big = [];
   present.forEach(k => { const n = Buffer.byteLength(vals[k], 'utf8'); total += n; if (n > 900 * 1024) big.push([k, n]); });
