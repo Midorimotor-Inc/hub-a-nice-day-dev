@@ -34,7 +34,8 @@ const STALE_MS = 28000;   // 書き込み後28秒は古い値を返し続ける�
 
 (async () => {
   const src = fs.readFileSync(path.join(DIR, process.env.SRC || 'index_dev.html'), 'utf8')   // SRC=… で別ファイルを検査（修正前の再現用）
-    .replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = false;');
+    .replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = false;')
+    .replace(/const BACKEND = '[a-z]+';/, "const BACKEND = 'gas';");   // この検査は GAS を模擬するので保存先を GAS に固定（2026-09-18）
   const server = http.createServer((req, res) => {
     const p = decodeURIComponent(req.url.split('?')[0]).replace(/^\//, '');
     if (p === 'index_dev.html') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(src); return; }

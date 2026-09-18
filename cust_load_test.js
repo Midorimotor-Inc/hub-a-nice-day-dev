@@ -47,6 +47,8 @@ const data = {
 
   const browser = await chromium.launch({ headless: true });
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  // この検査は GAS を模擬するので Firebase SDK は読ませない（保存先が GAS 版として動く・2026-09-18）
+  await ctx.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
   await ctx.route('https://script.google.com/**', async route => {
     const req = route.request();
     const ok = b => route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: b });

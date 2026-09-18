@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 第1段階（2026-09-18）: DEV のキー（hub-v8-dev-*）だけ読み書きできる。
+    //   今の GAS も「HTML に載せた API キー」で誰でも読み書きできる状態なので露出は同等。
+    //   第2段階で Firebase Authentication（メールリンク）にして、許可したメールだけに締める。
+    match /kv/{key} {
+      allow read, write: if key.matches('hub-v8-dev-.*');
+    }
+  }
+}

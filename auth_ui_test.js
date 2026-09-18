@@ -164,7 +164,8 @@ const dump = async (page, root) => page.evaluate(r => {
   if (!/const AUTH_REQUIRED = (true|false);/.test(src0)) {
     console.error('X AUTH_REQUIRED の宣言が見つかりません'); process.exit(1);
   }
-  const src = src0.replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = false;');
+  const src = src0.replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = false;')
+    .replace(/const BACKEND = '[a-z]+';/, "const BACKEND = 'gas';");   // この検査は GAS を模擬するので保存先を GAS に固定（2026-09-18）
   const browser = await chromium.launch({ headless: true });
 
   const mobSrc = fs.readFileSync(path.join(DIR, 'mobile.html'), 'utf8').replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = false;');

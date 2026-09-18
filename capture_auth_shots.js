@@ -20,7 +20,7 @@ const staffH = [
 const staffS = [{ uid: 's10', name: '藤原昭人', myNumber: 10, badge: 'sales', store: 'sanda' }];
 let devices = {}; const HANDS = {};
 
-const src = f => fs.readFileSync(path.join(DIR, f), 'utf8').replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = true;');
+const src = f => fs.readFileSync(path.join(DIR, f), 'utf8').replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = true;').replace(/const BACKEND = '[a-z]+';/, "const BACKEND = 'gas';");
 const pages = { 'index_dev.html': src('index_dev.html'), 'mobile.html': src('mobile.html') };
 const server = http.createServer((req, res) => {
   const p = decodeURIComponent(req.url.split('?')[0]).replace(/^\//, '') || 'index_dev.html';

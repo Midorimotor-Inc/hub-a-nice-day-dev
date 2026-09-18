@@ -23,6 +23,9 @@ const INDEX_RULES = [
   // 本人認証の必須化: DEVは true で試験中。本番は全員の登録が済むまで false（移行期間）。
   //   本番を true にする時はこのルールを外す（index と mobile の両方）。2026-09-15
   ["const AUTH_REQUIRED = true;", "const AUTH_REQUIRED = false;", 1],
+  // 保存先: DEVは Firestore で並行運用中（2026-09-18〜）。本番は切替の日まで GAS のまま。
+  //   本番を Firestore にする時はこのルールを外し、firestore.rules で hub-v8-* を許可し、fb_migrate.js --prod --write を済ませておく。
+  ["const BACKEND = 'firebase';", "const BACKEND = 'gas';", 1],
   // タイトル
   ['<title>Hub a Nice Day v1.0 [DEV]</title>', '<title>Hub a Nice Day v1.0</title>', 1],
   // 環境識別の配色: 全体背景・ログイン画面（オレンジ→青）

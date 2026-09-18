@@ -27,6 +27,8 @@ const PORT = 8141;
   const browser = await chromium.launch({ headless: true });
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   // GAS書き込み遮断・読み取りは空で返す（構文エラー検出が目的なのでデータ不要）
+  // この検査は GAS を模擬するので Firebase SDK は読ませない（保存先が GAS 版として動く・2026-09-18）
+  await ctx.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
   await ctx.route('https://script.google.com/**', route => route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: '{}' }));
 
   const page = await ctx.newPage();

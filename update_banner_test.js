@@ -28,7 +28,8 @@ const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction
       if (err) { res.writeHead(404); res.end('nf'); return; }
       let out = d;
       if (p.endsWith('.html')) {
-        out = out.replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = false;');
+        out = out.replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = false;')
+    .replace(/const BACKEND = '[a-z]+';/, "const BACKEND = 'gas';");   // この検査は GAS を模擬するので保存先を GAS に固定（2026-09-18）
         // 帯の確認用の取得（?_v=）にだけ、バージョン番号を1つ上げた版を返す
         if (qs && /_v=/.test(qs) && served[p] && served[p].bumpVersion) {
           out = out.replace(/(APP_VERSION|MOBILE_VERSION)(\s*=\s*)'(\d+)\.(\d+)'/, (m, k, eq, a, b) => `${k}${eq}'${a}.${Number(b) + 1}'`);
