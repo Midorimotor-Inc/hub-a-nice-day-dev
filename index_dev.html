@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789786245828';
+    window.__APP_BUILD='build-1789787110262';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.49';
+const APP_VERSION = '2.50';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -8631,9 +8631,9 @@ function AppInner() {
       const fs=!!(document.fullscreenElement||document.webkitFullscreenElement);
       setIsFullscreen(fs);
       if(!unloading){try{sessionStorage.setItem(STOR+'fs-restore',fs?'1':'0');}catch(e){}}
-      // 外れた（Esc など）。「元に戻す」で外したのでなければ、次の操作でまた全画面に入れるようにする。
-      //   ページを閉じる途中（unloading）は何もしない。
-      if(!fs&&!unloading){ try{ setTimeout(arm,0); }catch(e){} }
+      // ★Esc などで外れたら、この画面ではもう自動では入らない（B案・2026-09-19 ユーザー選択）。
+      //   以前は次の操作でまた入れていたが「画面切替のボタンを押すと違う動きになる」と感じられたため。
+      //   開き直せば（次の読み込み）また最初の操作で入る。「全画面」ボタンでいつでも入れる。
     };
     document.addEventListener('fullscreenchange',h);
     document.addEventListener('webkitfullscreenchange',h);
