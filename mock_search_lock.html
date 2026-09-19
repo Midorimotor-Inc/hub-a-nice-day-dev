@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>モック：検索 ／ 入力中の表示</title>
+<style>
+  body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#f1f5f9;margin:0;padding:22px;color:#111827}
+  h1{font-size:18px;margin:0 0 6px} h2{font-size:15px;margin:26px 0 8px;border-left:5px solid #ea580c;padding-left:8px}
+  .note{font-size:12px;color:#475569;margin-bottom:10px}
+  .card{background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.08);padding:14px 16px;margin-bottom:14px}
+  .tag{display:inline-block;background:#1d4ed8;color:#fff;font-weight:800;font-size:12px;border-radius:6px;padding:2px 8px;margin-right:8px}
+  /* ヘッダー */
+  .hdr{background:#EA580C;border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:10px}
+  .nav{background:#fff;border:1px solid #fed7aa;border-radius:8px;padding:6px 12px;font-weight:700;font-size:13px;color:#7c2d12}
+  .nav.on{background:#1d4ed8;color:#fff;border-color:#1d4ed8}
+  .nav.search{background:#fff7ed;border:2px solid #fdba74;color:#9a3412}
+  /* 検索パネル */
+  .panel{background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.18);width:560px;overflow:hidden}
+  .sin{display:flex;gap:8px;padding:12px;border-bottom:1px solid #e5e7eb;background:#fafafa}
+  .sin input{flex:1;padding:10px 12px;border:2px solid #fdba74;border-radius:9px;font-size:15px}
+  .grp{padding:8px 12px 4px;font-size:11px;font-weight:800;color:#64748b;letter-spacing:.05em}
+  .row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid #f1f5f9;font-size:13px;cursor:pointer}
+  .row:hover{background:#fff7ed}
+  .d{font-weight:800;color:#1d4ed8;width:92px;flex-shrink:0}
+  .nm{font-weight:800}
+  .sub{color:#64748b;font-size:12px}
+  .pill{font-size:10px;font-weight:800;border-radius:20px;padding:1px 7px;color:#fff}
+  .pill.i{background:#c2410c}.pill.s{background:#0e7490}.pill.c{background:#059669}
+  .tabs{display:flex;gap:4px;padding:8px 12px 0}
+  .tab{padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid #cbd5e1;background:#fff;color:#334155}
+  .tab.on{background:#1d4ed8;color:#fff;border-color:#1d4ed8}
+  .hl{background:#fef08a;border-radius:3px;padding:0 2px}
+  /* 車検の表 */
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th{background:#b91c1c;color:#fff;font-size:12px;padding:6px 8px;text-align:left}
+  td{border-bottom:1px solid #e5e7eb;padding:7px 8px;vertical-align:middle}
+  td.no{color:#1d4ed8;font-weight:800;width:32px;text-align:center}
+  .chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:800;border-radius:20px;padding:2px 8px;white-space:nowrap}
+  .A .chip{background:#fef2f2;border:1px solid #fca5a5;color:#dc2626}
+  .B tr.busy td{background:#fffbeb}
+  .B tr.busy td:first-child{border-left:5px solid #f59e0b}
+  .B .chip{background:#f59e0b;color:#fff;animation:pl 1.2s ease-in-out infinite}
+  @keyframes pl{0%,100%{opacity:1}50%{opacity:.45}}
+  .C tr.busy td{background:#f8fafc;color:#94a3b8}
+  .C .who{display:inline-flex;align-items:center;gap:6px;background:#1e293b;color:#fff;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:800}
+  .C .who .av{width:20px;height:20px;border-radius:50%;background:#f59e0b;display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:#fff}
+  .D tr.busy td{background:#fff7ed}
+  .D .bar{display:flex;align-items:center;gap:8px;background:#ffedd5;border:1px dashed #fb923c;border-radius:8px;padding:5px 10px;font-size:12px;color:#9a3412;font-weight:700}
+  .D .dots span{display:inline-block;width:5px;height:5px;border-radius:50%;background:#ea580c;margin-left:2px;animation:dt 1s infinite}
+  .D .dots span:nth-child(2){animation-delay:.2s}.D .dots span:nth-child(3){animation-delay:.4s}
+  @keyframes dt{0%,80%,100%{transform:scale(.6);opacity:.4}40%{transform:scale(1);opacity:1}}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+</style></head><body>
+<h1>モック：① 検索 ／ ② 入力中の表示</h1>
+<div class="note">どれも「見た目の案」です。番号（1-A など）で選んでください。組み合わせても構いません。</div>
+
+<h2>① 「空き枠検索」→「🔍 検索」（顧客・車両をシステム内から探す）</h2>
+<div class="note">探す先：車検予約（過去の保管箱も含む）・整備予約・顧客ファイル（氏名／車種／ナンバー／電話）。結果を押すとその日のスケジュールが開きます。</div>
+
+<div class="card">
+  <span class="tag">1-A</span><b>ヘッダーのボタンから、その場に開く小さなパネル</b>
+  <div class="note">「検索」を押すと下にパネルが出て、打つそばから絞り込まれる。結果は「予約」「顧客ファイル」の2グループ。</div>
+  <div class="hdr"><span class="nav">📅 カレンダー</span><span class="nav on">🕒 スケジュール</span><span class="nav">🚙 代車管理</span><span class="nav">🔔 車両管理</span><span class="nav search">🔍 検索</span><span class="nav" style="background:#d1fae5;border-color:#10b981;color:#065f46">👥 顧客リスト</span></div>
+  <div class="panel" style="margin:8px 0 0 330px">
+    <div class="sin"><input value="セリエ"><span style="align-self:center;font-size:12px;color:#64748b">3件</span></div>
+    <div class="grp">予約（車検・整備）</div>
+    <div class="row"><span class="d">9/20（日）</span><span class="pill i">車検</span><span class="nm">㈱<span class="hl">セリエ</span></span><span class="sub">ハイエース ・ 三田店 ・ 9:00</span></div>
+    <div class="row"><span class="d">7/02（木）</span><span class="pill s">整備</span><span class="nm">㈱<span class="hl">セリエ</span></span><span class="sub">ハイエース ・ 本店 ・ M6</span></div>
+    <div class="grp">顧客ファイル</div>
+    <div class="row"><span class="d">202609</span><span class="pill c">顧客</span><span class="nm">㈱<span class="hl">セリエ</span></span><span class="sub">ハイエース 神戸300 あ 12-34 ・ 090-xxxx-xxxx ・ 満了 10/15</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <span class="tag">1-B</span><b>大きな検索画面（タブで種類を切替）</b>
+  <div class="note">画面中央に開く。上のタブで「すべて／車検／整備／顧客ファイル」を切替。件数が多い時に見やすい。</div>
+  <div class="panel" style="width:640px;margin:0 auto">
+    <div class="sin"><input value="神戸300"><span style="align-self:center;font-size:12px;color:#64748b">ナンバーでも探せます</span></div>
+    <div class="tabs"><span class="tab on">すべて 4</span><span class="tab">車検 1</span><span class="tab">整備 1</span><span class="tab">顧客ファイル 2</span></div>
+    <div class="grp">&nbsp;</div>
+    <div class="row"><span class="d">9/20（日）</span><span class="pill i">車検</span><span class="nm">㈱セリエ</span><span class="sub">ハイエース ・ <span class="hl">神戸300</span> あ 12-34 ・ 三田店</span></div>
+    <div class="row"><span class="d">8/11（火）</span><span class="pill s">整備</span><span class="nm">田中 正悟</span><span class="sub">プリウス ・ <span class="hl">神戸300</span> か 56-78 ・ 本店</span></div>
+    <div class="row"><span class="d">202609</span><span class="pill c">顧客</span><span class="nm">㈱セリエ</span><span class="sub">ハイエース ・ <span class="hl">神戸300</span> あ 12-34</span></div>
+    <div class="row"><span class="d">202610</span><span class="pill c">顧客</span><span class="nm">田中 正悟</span><span class="sub">プリウス ・ <span class="hl">神戸300</span> か 56-78</span></div>
+  </div>
+</div>
+
+<h2>② 他の人が入力しているところの表示（車検の表・整備の表とも同じ見せ方）</h2>
+<div class="note">今も小さな赤い「編集中」の印は出ていますが、気づきにくいので目立たせる案です。誰かがその行（新規入力の空き行も含む）を開いている間だけ出て、閉じると消えます。</div>
+
+<div class="two">
+<div class="card A">
+  <span class="tag">2-A</span><b>名前の横に赤い印（今の印を大きく）</b>
+  <table><tr><th>No</th><th>氏名</th><th>車種</th><th>コース</th><th>入庫</th></tr>
+  <tr><td class="no">1</td><td><b>前村</b><br><small>江川京志</small></td><td>フィット</td><td>ク</td><td>09:00</td></tr>
+  <tr><td class="no">2</td><td><b>㈱セリエ</b> <span class="chip">✏️ 見取大介 が入力中</span></td><td>ハイエース</td><td>レ</td><td>09:00</td></tr>
+  <tr><td class="no">3</td><td style="color:#94a3b8">＋ クリックして追加 <span class="chip">✏️ 藤原昭人 が入力中</span></td><td>—</td><td></td><td>—</td></tr>
+  </table>
+</div>
+<div class="card B">
+  <span class="tag">2-B</span><b>行ごと黄色くして、左に太い縁＋点滅する印</b>
+  <table><tr><th>No</th><th>氏名</th><th>車種</th><th>コース</th><th>入庫</th></tr>
+  <tr><td class="no">1</td><td><b>前村</b><br><small>江川京志</small></td><td>フィット</td><td>ク</td><td>09:00</td></tr>
+  <tr class="busy"><td class="no">2</td><td><b>㈱セリエ</b><br><span class="chip">✏️ 見取大介 入力中</span></td><td>ハイエース</td><td>レ</td><td>09:00</td></tr>
+  <tr class="busy"><td class="no">3</td><td><span class="chip">✏️ 藤原昭人 入力中</span> <small style="color:#92400e">（新規入力）</small></td><td>—</td><td></td><td>—</td></tr>
+  </table>
+</div>
+<div class="card C">
+  <span class="tag">2-C</span><b>行を薄くして「誰が」を黒い札で大きく</b>
+  <table><tr><th>No</th><th>氏名</th><th>車種</th><th>コース</th><th>入庫</th></tr>
+  <tr><td class="no">1</td><td><b>前村</b><br><small>江川京志</small></td><td>フィット</td><td>ク</td><td>09:00</td></tr>
+  <tr class="busy"><td class="no">2</td><td><span class="who"><span class="av">見</span>見取大介 が入力中…</span><br><small>㈱セリエ</small></td><td>ハイエース</td><td>レ</td><td>09:00</td></tr>
+  <tr class="busy"><td class="no">3</td><td><span class="who"><span class="av">藤</span>藤原昭人 が入力中…</span></td><td>—</td><td></td><td>—</td></tr>
+  </table>
+</div>
+<div class="card D">
+  <span class="tag">2-D</span><b>行の中に「入力中」の帯（点々が動く）</b>
+  <table><tr><th>No</th><th>氏名</th><th>車種</th><th>コース</th><th>入庫</th></tr>
+  <tr><td class="no">1</td><td><b>前村</b><br><small>江川京志</small></td><td>フィット</td><td>ク</td><td>09:00</td></tr>
+  <tr class="busy"><td class="no">2</td><td colspan="4"><div class="bar">✏️ <b>見取大介</b> さんが「㈱セリエ」を入力中<span class="dots"><span></span><span></span><span></span></span><span style="margin-left:auto;font-weight:400">ハイエース ・ レ ・ 09:00</span></div></td></tr>
+  <tr class="busy"><td class="no">3</td><td colspan="4"><div class="bar">✏️ <b>藤原昭人</b> さんが新しい予約を入力中<span class="dots"><span></span><span></span><span></span></span></div></td></tr>
+  </table>
+</div>
+</div>
+</body></html>

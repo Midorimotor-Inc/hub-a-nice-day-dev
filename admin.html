@@ -561,9 +561,9 @@ function viewStaff(){
     + '<div class="foot"><b>「操作しない」にした方も、スタッフ表からは消えません。</b>'
     + '休日設定・頭数・予約の担当欄には今までどおり出ます。ログインできないだけです。'
     + '<br><b>メールはあとからで構いません。</b>先に役割だけ決めておき、アドレスが分かった時点で入力して招待を送れます。'
-    + '<br><b>「登録解除」を押すと</b>、その方の登録端末をすべて取り消し、ログイン用メールを消します。'
+    + '<br><b>「登録解除」を押すと</b>、その方の登録端末をすべて取り消し、ログインを止め、スタッフ表から名前も消します。'
     + '端末を消し忘れて、辞めた方のスマホから入れたまま——という取りこぼしを防ぐため、1つの操作にまとめています。'
-    + '<br>スタッフ表からお名前は消えません（過去の予約に残るため）。名前も消す場合は、スケジュール画面のスタッフ設定から削除してください。</div>'
+    + '<br>過去の予約に書かれた名前はそのまま残ります。</div>'
     + '</div>';
 }
 
@@ -762,6 +762,19 @@ function loadAll(){
   });
 }
 
+// スタッフ表から1人を消す（登録解除のとき。過去の予約に書かれた氏名はそのまま残る）
+function removeStaff(uid, store){
+  var key = STOR + (store === 'sanda' ? 'sanda' : 'honten') + '-staff-v2';
+  return gasRead(key).then(function(latest){
+    if (!(latest instanceof Array)) return {ok:false, why:'読めなかった'};
+    var next = latest.filter(function(x){ return !(x && x.uid === uid); });
+    if (next.length === latest.length) return {ok:true, why:''};   // 既に無い
+    return gasWrite(key, next).then(function(okw){
+      if (okw) { if (store === 'sanda') S.staffS = next; else S.staffH = next; }
+      return {ok:okw, why: okw ? '' : '書き込めなかった'};
+    });
+  });
+}
 function findStaff(uid){
   var l = allStaff().filter(function(s){ return s.uid === uid; });
   return l[0] || null;
@@ -1173,12 +1186,13 @@ function bind(){
       var mine = devsOf(s.uid, s.name);
       S.dialog = {
         title: s.name + ' さんを登録解除します', okLabel:'登録解除する', danger:true,
-        body:'<p>次の2つをまとめて行います。取り消した端末は、その瞬間から使えなくなります。</p>'
+        body:'<p>次の3つをまとめて行います。取り消した端末は、次に開いた時から使えなくなります。</p>'
           + '<div class="addr" style="font-family:inherit;font-size:13px;font-weight:400;line-height:1.9">'
           + '① 登録端末を取り消す（' + mine.length + '台）'
           + (mine.length ? '<br><span style="color:var(--ink-2);font-size:12px">　' + mine.map(function(d){ return esc(String(d.ua||'端末').slice(0,40)); }).join('<br>　') + '</span>' : '')
-          + '<br>② ログイン用メールを消す（以後ログインできません）</div>'
-          + '<p style="font-size:12px;color:var(--ink-2)">スタッフ表からお名前は消えません。過去の予約も残ります。</p>',
+          + '<br>② ログインできなくする（許可簿から外す）'
+          + '<br>③ スタッフ表からお名前を消す（担当の選択肢・休日設定・頭数から外れます）</div>'
+          + '<p style="font-size:12px;color:var(--ink-2)">過去の予約に書かれたお名前はそのまま残ります。</p>',
         onOk: function(){
           // 端末の台帳は必ずサーバー最新を土台にする。画面の一覧を書き戻すと、
           // 開いている間に登録された他の端末を巻き添えで消してしまう。
@@ -1191,11 +1205,11 @@ function bind(){
               ids.forEach(function(j){ delete S.devices[j]; });
               // 許可簿からも外す（ログインできなくする）。メールが無ければ何もしない
               if (s.loginEmail) allowedUpsert(s.loginEmail, { active:false }).catch(function(){});
-              // 印は残す。一覧から消えてしまうと、招待を送り直せなくなる。
-              saveStaffField(s.uid, s.store, {loginEmail: undefined, sysUse: true}).then(function(res){
+              // スタッフ表からも名前を消す（2026-09-19 ユーザー要望。以前はメールだけ消して名前を残していた）
+              removeStaff(s.uid, s.store).then(function(res){
                 loadAll().then(function(){
-                  if (res.ok) toast(s.name + ' さんを登録解除しました', '端末' + mine.length + '台を取り消し、ログイン用メールを消しました。');
-                  else toast('端末だけ取り消しました', 'ログイン用メールを消せませんでした（' + res.why + '）。メール欄を空にして保存してください。');
+                  if (res.ok) toast(s.name + ' さんを登録解除しました', '端末' + mine.length + '台を取り消し、ログインを止め、スタッフ表から名前を消しました。');
+                  else toast('端末とログインは止めました', 'スタッフ表から名前を消せませんでした（' + res.why + '）。スケジュール画面のスタッフ設定から削除してください。');
                 });
               });
             });
