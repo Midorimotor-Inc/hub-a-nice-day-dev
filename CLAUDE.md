@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-「Hub a Nice Day」= 車検予約管理PWA（本店・三田店の2店舗運用）。スケジュール表・カレンダー・顧客リスト・代車/レンタカー管理を、**ビルド工程なしの単一HTMLファイル**で提供する。React 18 UMD + Babel standalone（ブラウザ内トランスパイル）で動く。**保存先は 2026-09-18 から Firebase（Firestore・東京）、本人認証は Firebase Authentication のメールリンク**。Google Apps Script (GAS) + スプレッドシートは通知メール・時点保存（スナップショット）にだけ残っている。
+「Hub a Nice Day」= 車検予約管理PWA（本店・三田店の2店舗運用）。スケジュール表・カレンダー・顧客リスト・代車/レンタカー管理を、**ビルド工程なしの単一HTMLファイル**で提供する。React 18 UMD + Babel standalone（ブラウザ内トランスパイル）で動く。**保存先は 2026-09-18 から Firebase（Firestore・東京）、本人認証は Firebase Authentication（招待コード＝アカウントの合言葉、またはメールリンク）、時点保存／復旧も 2026-09-19 から Firestore**。Google Apps Script (GAS) は**メール送信（招待コード・保存失敗の通知）だけ**に残っている。
 
 ## ビルド・テスト・実行
 
@@ -57,13 +57,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 すべての共有状態は Firestore のコレクション `kv`（ドキュメントID＝キー名、`{v: JSON文字列, u: サーバー時刻}`）に保存。フロントは `sGet(key)` / `sSet(key,value)` / `writeVerified(key, mutate, check)`（runTransaction）で読み書きし、`useShared` は onSnapshot で購読する（ポーリングは無い）。`BACKEND='gas'` にすると従来の GAS＋スプレッドシート経路に戻る（緊急用。GAS 側のデータは 2026-09-18 以降更新されていない）。`STOR` 無しのキー（`schedRestrictions`）は Firestore では `STOR` を前置したドキュメントになる（`fbDocId`）。
 
-### 本人認証（Firebase Authentication・メールリンク）
-- 6桁コード・GAS の利用証は廃止（v2.46）。「アドレスを入れる → 届いたメールのリンクを開く」でその端末（ブラウザ）が本人としてサインインし、期限なく保たれる。
+### 本人認証（Firebase Authentication）
+- GAS の利用証は廃止（v2.46）。登録は「アドレス＋招待コード（6桁）」（v2.47〜。コード＝その人の Firebase アカウントの合言葉。管理者の招待で発行し GAS の `mailInvite` がメールする。既存の人は `users/{uid}.pw` でサインインし直して付け替える）か、「メールのリンクを開く」。いずれもその端末（ブラウザ）が本人としてサインインし、期限なく保たれる。
 - 誰がログインできるかは Firestore の `meta/allowed`（`{emailKey: {email,name,store,uid,role,active,kind,label}}`、emailKey は '.'→','）。Firestore のルール（`firestore.rules`）もこれを見る。管理者は `role:'admin'`。投入・確認は `node fb_seed_allowed.js`。
 - 端末の台帳は `devices/{端末ID}`。管理者コンソール（admin.html・DEV サイトのみ。`?env=prod` で本番）の「取り消し」は行を削除し、端末は次に開いた時に登録を捨てる。
 - iPhone の Safari／ホーム画面の引き継ぎ（`?hand=`）は `handoff/{code}`（本人だけが読める `users/{uid}` の合言葉を使う）。
 - 端末内の登録一覧（名前を選ぶログイン画面）は従来どおり `STOR+'auth-mine'`。
 - ルールの配備はコンソールに貼る（Claude の自動モードでは `node fb_rules.js --deploy` がブロックされる）。文法確認だけなら Admin SDK の createRuleset で行える。
+
+### 時点保存／復旧（Firestore・2026-09-19）
+- `snaps/{id}`（要約・ready）＋ `snaps/{id}/kv/{キー}`（値の写し）、一覧は `snapidx/{prefix}`。GAS の snapXxx と同じ関数名（`snapList/snapRead/snapRestore/snapAddBack/snapRestoreStore`）が FB_ON なら Firestore 版（`fbSnapXxx`）に流れる。
+- サーバーは無いので **開いている PC 画面（index）が作る**：daily（1日1回・90日保持）、auto（1時間ごと・48時間保持）、復旧直前の pre-restore。一覧のトランザクションで claim してから中身を書く（複数画面の重複防止）。14日より前の車検の `insp → insp-arch` 仕分けも daily の後に画面側で行う。
+- 復旧画面（管理者）に「今すぐ時点保存を作る」。検査は `node fb_snap_test.js`。
 
 ### GAS→Firestore の移行
 `node fb_migrate.js [--prod] [--write|--verify]`（キー一覧はスナップショット＋cf-index＋既知キーから集める）。DEV は 2026-09-18、本番も同日に写し済み。
@@ -78,8 +83,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### loanerRes / rentalRes は配列ではなくオブジェクト
 `loanerRes[carId]` / `rentalRes[carId]` は `{ key: 予約 }` のオブジェクト。`.filter`/`.map`/`.find` を直接呼ぶと `TypeError`。必ず `Object.values(loanerRes[carId]||{})` で配列化してから使う。各予約は日付フィールド `fy/fm/fd`（from）・`ty/tm/td`（to）で期間を表す（`fm`/`tm` は0始まりの月）。
 
-### GAS側（スプレッドシート + ドライブ）
-GASサーバーコードはリポジトリ内の `GAS_server_v10_snapshots.gs`（控え。v11の追記あり。実体はGoogle Apps Script側にデプロイ済み）。重要な制約と設計：
+### GAS側（スプレッドシート + ドライブ）— 2026-09-19 からはメール送信だけ
+GASサーバーコードはリポジトリ内の `GAS_server_v14_auth.gs`（`build_gas_v14.js` が `GAS_auth_v14_module.gs` と合成して生成。実体はGoogle Apps Script側にデプロイ済み）。使っているのは `mailInvite`（招待コードのメール）と `notifyFail`（保存失敗の通知）だけ。データ・認証・時点保存は Firestore。以下は GAS 時代の記録（`BACKEND='gas'` に戻す時にだけ関係する）：
 - **1セルの上限は50,000文字。** これを超えると `setValue` が失敗する（no-corsのためフロントは失敗を検知できない）。
 - v9以降、**30,000字超の値はGoogleドライブのファイル**（`hubdata_blobs` フォルダ）に保存し、シートにはマーカー `__DRIVEFILE__` だけ置く。`doGet`/`doPost` が透過的に処理するのでフロントは無変更。
 - シートに巨大セルがあると、そのシートへの全書き込みが極端に遅くなる（小データでも10秒超）。大きいデータは必ずドライブへ逃がす。
