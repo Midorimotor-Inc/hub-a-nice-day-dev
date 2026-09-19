@@ -2418,7 +2418,7 @@ const fbSnapReadAll = async () => {
   const out = {};
   q.forEach(d => {
     const k = d.id;
-    if (STOR === 'hub-v8-' && k.indexOf('hub-v8-dev-') === 0) return;
+    if (STOR === 'hub-v8-' && k.indexOf(STOR + 'dev-') === 0) return;   // 本番のときは DEV のキーを除く
     if (k === STOR + 'snap-index' || k === STOR + 'auth-codes' || k.indexOf('__chunk') >= 0) return;
     const v = (d.data() || {}).v;
     if (typeof v === 'string' && v && v !== 'null') out[k] = v;
