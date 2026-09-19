@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789723196692';
+  window.__APP_BUILD='build-1789778770803';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.47';
+const MOBILE_VERSION='2.48';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -139,12 +139,12 @@ const MOBILE_KEYS=()=>[STOR+'insp',storKey('sched','honten'),storKey('sched','sa
 // ── データ復旧（GAS v10スナップショット）。PC版と同じ4名のみ ──
 const RESTORE_ALLOWED=[{uid:'h0',name:'見取勇一'},{uid:'h1',name:'見取大介'},{uid:'s10',name:'藤原昭人'},{uid:'h7',name:'江川京志'}];
 const canRestore=(u)=>!!u&&RESTORE_ALLOWED.some(a=>(u.uid&&a.uid===u.uid)||(u.name&&a.name===u.name));
-const snapList=async()=>{ try{ const r=await fetch(`${GAS_URL}?action=snapList&prefix=${encodeURIComponent(STOR)}&apiKey=${encodeURIComponent(GAS_API_KEY)}`,{cache:'no-store'}); const t=await r.text(); if(!t||t.startsWith('error'))return []; const a=JSON.parse(t); return Array.isArray(a)?a:[]; }catch{ return []; } };
-const snapRead=async(file)=>{ try{ const r=await fetch(`${GAS_URL}?action=snapRead&prefix=${encodeURIComponent(STOR)}&file=${encodeURIComponent(file)}&apiKey=${encodeURIComponent(GAS_API_KEY)}`,{cache:'no-store'}); const t=await r.text(); if(!t||t.startsWith('error'))return null; return JSON.parse(t); }catch{ return null; } };
+const snapList=async()=>{ if(FB_ON) return fbSnapList(); try{ const r=await fetch(`${GAS_URL}?action=snapList&prefix=${encodeURIComponent(STOR)}&apiKey=${encodeURIComponent(GAS_API_KEY)}`,{cache:'no-store'}); const t=await r.text(); if(!t||t.startsWith('error'))return []; const a=JSON.parse(t); return Array.isArray(a)?a:[]; }catch{ return []; } };
+const snapRead=async(file)=>{ if(FB_ON) return fbSnapRead(file); try{ const r=await fetch(`${GAS_URL}?action=snapRead&prefix=${encodeURIComponent(STOR)}&file=${encodeURIComponent(file)}&apiKey=${encodeURIComponent(GAS_API_KEY)}`,{cache:'no-store'}); const t=await r.text(); if(!t||t.startsWith('error'))return null; return JSON.parse(t); }catch{ return null; } };
 const snapPost=async(body)=>{ await fetch(GAS_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...body,prefix:STOR,apiKey:GAS_API_KEY})}); };
-const snapRestore=async(file)=>snapPost({action:'snapRestore',file});
-const snapRestoreStore=async(file,store)=>snapPost({action:'snapRestoreStore',file,store});
-const snapAddBack=async(date,rows)=>snapPost({action:'snapAddBack',date,rows});
+const snapRestore=async(file)=>FB_ON?fbSnapRestore(file):snapPost({action:'snapRestore',file});
+const snapRestoreStore=async(file,store)=>FB_ON?fbSnapRestoreStore(file,store):snapPost({action:'snapRestoreStore',file,store});
+const snapAddBack=async(date,rows)=>FB_ON?fbSnapAddBack(date,rows):snapPost({action:'snapAddBack',date,rows});
 // ★入庫済みチェック。氏名の左の〇を押すと黄色地に赤チェックが点く（PC版と同じ印）。
 //   任意の印で、予約内容そのものには影響しない（2026-08-27にユーザーが要望）。
 const ArrivedCheck=({on,onToggle,size=18})=>(
@@ -610,7 +610,173 @@ const hubSignInWithCode = async (email, code) => {
     }
   } catch (e) { console.warn('[FB] 合言葉の控えを更新できません', e && e.message); }
   return { ok: true };
+};const fbKvRef = k => fbDoc(k);   // 時点保存などから「キーのドキュメント」を指す別名
+
+// ── 時点保存／復旧（Firestore 版・2026-09-19。GAS v10 の snapXxx をそのまま Firestore に置き換え）──
+//   置き方：snaps/{id} = {prefix, ts, tsText, kind, label, summary, n, ready}、中身は snaps/{id}/kv/{キー} = {v: JSON文字列}。
+//   一覧は snapidx/{prefix} = {list:[{file,ts,tsText,kind,label,summary}]}（GAS の snap-index と同じ形。file = id）。
+//   保持：daily は 90 日、auto/manual/pre-restore は 48 時間（GAS と同じ）。間引きは作る時に行う。
+//   作るのは「開いている画面」＝サーバーは無い。同時に複数の画面が作らないよう、一覧の更新をトランザクションで先に行い（claim）、
+//   中身を書き終えたら ready にする。読めるのは ready の分だけ。
+const SNAP_DAILY_KEEP_DAYS = 90, SNAP_INTRADAY_KEEP_HOURS = 48, SNAP_AUTO_EVERY_MIN = 60;
+const fbSnapIdx = () => fbDb.collection('snapidx').doc(STOR);
+const fbSnapDoc = id => fbDb.collection('snaps').doc(id);
+const snapStamp = d => { const p = n => String(n).padStart(2, '0'); return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()); };
+// この環境の全キーを読む（cf-* や insp-arch も含む。本番のときは DEV のキーを除く）。{キー: JSON文字列}
+const fbSnapReadAll = async () => {
+  const FP = firebase.firestore.FieldPath.documentId();
+  const q = await fbDb.collection('kv').where(FP, '>=', STOR).where(FP, '<', STOR + '\uf8ff').get();
+  const out = {};
+  q.forEach(d => {
+    const k = d.id;
+    if (STOR === 'hub-v8-' && k.indexOf('hub-v8-dev-') === 0) return;
+    if (k === STOR + 'snap-index' || k === STOR + 'auth-codes' || k.indexOf('__chunk') >= 0) return;
+    const v = (d.data() || {}).v;
+    if (typeof v === 'string' && v && v !== 'null') out[k] = v;
+  });
+  return out;
 };
+const snapSummaryOf = data => {
+  const j = b => { try { const v = data[STOR + b]; return v ? JSON.parse(v) : null; } catch (e) { return null; } };
+  const inspN = o => { let n = 0; if (o) for (const d in o) for (const r of (o[d] || [])) if (r && r.name && r.bookingStatus !== 'cancelled') n++; return n; };
+  const schedN = o => { let n = 0; if (o) for (const d in o) for (const s in (o[d] || {})) if (o[d][s] && o[d][s].name) n++; return n; };
+  const objN = o => { let n = 0; if (o) for (const c in o) n += Object.keys(o[c] || {}).length; return n; };
+  const memoN = o => { let n = 0; if (o) for (const d in o) n += (o[d] || []).length; return n; };
+  return { insp: inspN(j('insp')), sched: schedN(j('honten-sched')) + schedN(j('sanda-sched')),
+           loaner: objN(j('honten-lres')) + objN(j('sanda-lres')) + objN(j('rres')), memo: memoN(j('honten-memo')) + memoN(j('sanda-memo')) };
+};
+// 保持ルールで一覧を間引く（消す分は後で中身も消す）
+const snapPruneList = list => {
+  const now = Date.now(), keep = [], drop = [];
+  for (const en of list) {
+    const limit = en.kind === 'daily' ? SNAP_DAILY_KEEP_DAYS * 86400000 : SNAP_INTRADAY_KEEP_HOURS * 3600000;
+    (now - (en.ts || 0) <= limit ? keep : drop).push(en);
+  }
+  return { keep, drop };
+};
+const fbSnapDelete = async id => {
+  try {
+    const q = await fbSnapDoc(id).collection('kv').get();
+    let b = fbDb.batch(), n = 0;
+    q.forEach(d => { b.delete(d.ref); if (++n % 400 === 0) { b.commit(); b = fbDb.batch(); } });
+    b.delete(fbSnapDoc(id)); await b.commit();
+  } catch (e) { console.warn('[SNAP] 古い時点保存を消せません', id, e && e.message); }
+};
+// 時点保存を作る。opts.ifNone(kind, withinMs)：その種類の新しいものが withinMs 以内にあれば作らない（daily/auto の重複防止）
+//   戻り値：作った id。作らなかった／失敗は ''
+const fbSnapCreate = async (kind, label, opts) => {
+  if (!FB_ON || !fbUser) return '';
+  const _o = opts || {};
+  const now = new Date(), id = STOR + snapStamp(now) + '_' + kind;
+  let claimed = false, drop = [];
+  try {
+    await fbDb.runTransaction(async t => {
+      const s = await t.get(fbSnapIdx());
+      const list = (s.exists && Array.isArray((s.data() || {}).list)) ? s.data().list : [];
+      const newest = list.filter(e => e.kind === kind && e.ready !== false).sort((a, b) => b.ts - a.ts)[0];
+      if (_o.withinMs && newest && now.getTime() - newest.ts < _o.withinMs) { claimed = false; return; }
+      if (_o.sameDay && newest && new Date(newest.ts).toDateString() === now.toDateString()) { claimed = false; return; }
+      // 作りかけ（10分以上 ready にならない）は捨てる
+      const pr = snapPruneList(list.filter(e => !(e.ready === false && now.getTime() - e.ts > 600000)));
+      drop = pr.drop;
+      const entry = { file: id, ts: now.getTime(), tsText: now.toLocaleString('ja-JP'), kind, label: label || '', summary: null, ready: false };
+      t.set(fbSnapIdx(), { list: [entry].concat(pr.keep) });
+      claimed = true;
+    });
+  } catch (e) { console.warn('[SNAP] 一覧を更新できません', e && e.message); return ''; }
+  if (!claimed) return '';
+  try {
+    const data = await fbSnapReadAll();
+    const keys = Object.keys(data);
+    const summary = snapSummaryOf(data);
+    let b = fbDb.batch(), n = 0;
+    for (const k of keys) { b.set(fbSnapDoc(id).collection('kv').doc(k), { v: data[k] }); if (++n % 400 === 0) { await b.commit(); b = fbDb.batch(); } }
+    b.set(fbSnapDoc(id), { prefix: STOR, ts: now.getTime(), tsText: now.toLocaleString('ja-JP'), kind, label: label || '', summary, n: keys.length, ready: true, by: fbUser.email || '' });
+    await b.commit();
+    await fbDb.runTransaction(async t => {
+      const s = await t.get(fbSnapIdx());
+      const list = (s.exists && Array.isArray((s.data() || {}).list)) ? s.data().list : [];
+      t.set(fbSnapIdx(), { list: list.map(e => e.file === id ? Object.assign({}, e, { summary, ready: true }) : e) });
+    });
+    for (const en of drop) fbSnapDelete(en.file);   // 古い分は裏で消す
+    return id;
+  } catch (e) { console.error('[SNAP] 時点保存に失敗', e && e.message); return ''; }
+};
+const fbSnapList = async () => {
+  if (!FB_ON) return [];
+  try { await fbWhenReady(); if (!fbUser) return []; const s = await fbSnapIdx().get(); const list = (s.exists && Array.isArray((s.data() || {}).list)) ? s.data().list : []; return list.filter(e => e.ready !== false).sort((a, b) => b.ts - a.ts); }
+  catch (e) { console.warn('[SNAP] 一覧を読めません', e && e.message); return []; }
+};
+const fbSnapRead = async id => {
+  if (!FB_ON) return null;
+  try {
+    const s = await fbSnapDoc(id).get(); if (!s.exists) return null;
+    const q = await fbSnapDoc(id).collection('kv').get();
+    const keys = {}; q.forEach(d => { keys[d.id] = (d.data() || {}).v; });
+    return Object.assign({}, s.data(), { keys });
+  } catch (e) { console.warn('[SNAP] 中身を読めません', e && e.message); return null; }
+};
+// 復旧：全キーを時点保存の値に戻す。直前に pre-restore を取る（やり直し用）
+const fbSnapRestore = async id => {
+  if (!FB_ON || !fbUser) return 'error: offline';
+  const p = await fbSnapRead(id); if (!p || !p.keys) return 'error: snapshot not found';
+  if (p.prefix !== STOR) return 'error: prefix mismatch';
+  await fbSnapCreate('pre-restore', '復旧直前の自動保存');
+  const keys = Object.keys(p.keys);
+  let b = fbDb.batch(), n = 0;
+  for (const k of keys) { b.set(fbKvRef(k), { v: String(p.keys[k] == null ? '' : p.keys[k]), u: firebase.firestore.FieldValue.serverTimestamp() }); if (++n % 400 === 0) { await b.commit(); b = fbDb.batch(); } }
+  await b.commit();
+  return 'ok: restored ' + keys.length + ' keys';
+};
+// 部分復旧：指定日の insp に「消えていた予約(rows)」だけを足す（同じ氏名＋時間＋車種があれば足さない）
+const fbSnapAddBack = async (date, rows) => {
+  if (!FB_ON || !fbUser || !date || !rows || !rows.length) return 'error: no rows';
+  const sig = r => [String((r && r.name) || ''), String((r && r.time) || ''), String((r && r.carType) || '')].join('|');
+  let added = 0;
+  const r = await fbTxn(STOR + 'insp', base => {
+    const insp = (base && typeof base === 'object' && !Array.isArray(base)) ? base : {};
+    const day = Array.isArray(insp[date]) ? insp[date] : (insp[date] = []);
+    const have = {}; for (const x of day) if (x && x.name && x.bookingStatus !== 'cancelled') have[sig(x)] = true;
+    added = 0;
+    for (const x of rows) { if (!x || !x.name || have[sig(x)]) continue; day.push(x); have[sig(x)] = true; added++; }
+    return added ? insp : undefined;
+  });
+  return r ? 'ok: added ' + added : 'error: write failed';
+};
+// 店別復旧：その店の整備(sched)・メモ(memo)・整備に紐づく代車(sched-)だけ戻す。車検・車検代車・他店・共有キーには触らない
+const fbSnapRestoreStore = async (id, store) => {
+  if (store !== 'honten' && store !== 'sanda') return 'error: bad store';
+  if (!FB_ON || !fbUser) return 'error: offline';
+  const p = await fbSnapRead(id); if (!p || !p.keys) return 'error: snapshot not found';
+  if (p.prefix !== STOR) return 'error: prefix mismatch';
+  await fbSnapCreate('pre-restore', '店別復旧(' + store + ')直前の自動保存');
+  const restored = [];
+  for (const suf of ['-sched', '-memo']) {
+    const k = STOR + store + suf;
+    if (!(k in p.keys)) continue;
+    await fbKvRef(k).set({ v: String(p.keys[k] == null ? '' : p.keys[k]), u: firebase.firestore.FieldValue.serverTimestamp() });
+    restored.push(store + suf);
+  }
+  const lresKey = STOR + store + '-lres';
+  if (lresKey in p.keys) {
+    let snapLres = {}; try { snapLres = JSON.parse(p.keys[lresKey] || '{}') || {}; } catch (e) {}
+    const bkStarts = (res, mapKey, pre) => String((res && res.bookingKey) || mapKey || '').indexOf(pre) === 0;
+    await fbTxn(lresKey, base => {
+      const cur = (base && typeof base === 'object' && !Array.isArray(base)) ? base : {};
+      const ids = Object.assign({}, cur, snapLres), merged = {};
+      for (const car in ids) {
+        const out = {};
+        for (const bk in (cur[car] || {})) if (bkStarts(cur[car][bk], bk, 'insp-')) out[bk] = cur[car][bk];      // 車検代車＝現状維持
+        for (const bk in (snapLres[car] || {})) if (bkStarts(snapLres[car][bk], bk, 'sched-')) out[bk] = snapLres[car][bk];   // 整備代車＝時点保存へ
+        if (Object.keys(out).length) merged[car] = out;
+      }
+      return merged;
+    });
+    restored.push(store + '-lres(整備分のみ)');
+  }
+  return 'ok: ' + store + ' restored [' + restored.join(', ') + ']';
+};
+
 // 管理者：スタッフを許可簿に載せて（既にあれば更新）招待メールを送る（リンク方式）
 const hubSendInvite = async (staff) => {
   const mail = String((staff && staff.loginEmail) || '').trim();

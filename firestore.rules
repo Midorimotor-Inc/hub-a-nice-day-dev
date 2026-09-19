@@ -32,6 +32,16 @@ service cloud.firestore {
       allow create: if isAllowed();
       allow get: if resource.data.exp > request.time.toMillis();
     }
+    // 時点保存（バックアップ）：許可された人の画面が作り、復旧に使う。一覧 snapidx/{prefix}、本体 snaps/{id}/kv/{キー}
+    match /snapidx/{prefix} {
+      allow read, write: if isAllowed();
+    }
+    match /snaps/{id} {
+      allow read, write: if isAllowed();
+      match /kv/{key} {
+        allow read, write: if isAllowed();
+      }
+    }
     // 端末の台帳：許可された人が自分の端末を記す。消せるのは管理者（取り消し）
     match /devices/{id} {
       allow read, create, update: if isAllowed();

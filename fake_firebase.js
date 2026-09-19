@@ -13,8 +13,9 @@
   const snapOf = (col, id) => ({ id, exists: key(col, id) in store, data: () => store[key(col, id)], metadata: { fromCache: false, hasPendingWrites: false } });
   const notify = (col, id) => (listeners.get(key(col, id)) || new Set()).forEach(fn => setTimeout(() => fn(snapOf(col, id)), 0));
   const deepMerge = (a, b) => { const o = Object.assign({}, a); for (const k in b) { const v = b[k]; if (v && v.__delete) delete o[k]; else if (v && typeof v === 'object' && !Array.isArray(v) && o[k] && typeof o[k] === 'object' && !Array.isArray(o[k])) o[k] = deepMerge(o[k], v); else o[k] = v; } return o; };
+  const wlog = load('__fakeFbWlog', []);
   const writeDoc = (col, id, d, opts) => {
-    stats.writes++;
+    stats.writes++; wlog.push({ col, id, t: Date.now(), merge: !!(opts && opts.merge), v: (d && typeof d.v === 'string') ? d.v.slice(0, 160) : undefined }); try { localStorage.setItem('__fakeFbWlog', JSON.stringify(wlog.slice(-300))); } catch (e) {}
     const cur = store[key(col, id)];
     store[key(col, id)] = (opts && opts.merge && cur) ? deepMerge(cur, d) : deepMerge({}, d);
     save(); notify(col, id);
@@ -28,12 +29,13 @@
   const isAdmin = () => { const u = auth._user; if (!u) return false; const a = allowedOf()[ekey(u.email)]; return !!(a && a.active !== false && a.role === 'admin'); };
   const own = id => !!(auth._user && auth._user.uid === id);
   const canRead = (col, id) => col === 'handoff' || (col === 'users' && (own(id) || isAdmin())) || (col === 'kv' && (id.indexOf('hub-v8-dev-') === 0 || isAllowed())) || (col !== 'kv' && col !== 'users' && isAllowed());
-  const canWrite = (col, id) => (col === 'users' && own(id)) || (col === 'handoff' && isAllowed()) || (col === 'kv' && (id.indexOf('hub-v8-dev-') === 0 || isAllowed())) || (col === 'meta' && isAdmin()) || (col === 'devices' && isAllowed());
+  const canWrite = (col, id) => (col === 'users' && own(id)) || (col === 'handoff' && isAllowed()) || (col === 'kv' && (id.indexOf('hub-v8-dev-') === 0 || isAllowed())) || (col === 'meta' && isAdmin()) || (col === 'devices' && isAllowed()) || (col.indexOf('snap') === 0 && isAllowed());
   const doc = (col, id) => ({
     id, __col: col, __id: id,
     get: async () => { stats.reads++; if (!canRead(col, id)) throw denied(); return snapOf(col, id); },
     set: async (d, opts) => { if (!canWrite(col, id)) throw denied(); writeDoc(col, id, d, opts); },
     delete: async () => { if (!(col === 'devices' ? isAdmin() : canWrite(col, id))) throw denied(); delete store[key(col, id)]; save(); notify(col, id); },
+    collection: sub => collection(col + '/' + id + '/' + sub),   // サブコレクション（snaps/{id}/kv）
     onSnapshot: (opts, next, err) => {
       if (typeof opts === 'function') { err = next; next = opts; }
       if (!canRead(col, id)) { setTimeout(() => err && err(denied()), 0); return () => {}; }
@@ -42,12 +44,17 @@
       return () => s.delete(next);
     },
   });
-  const collection = col => ({
-    doc: id => doc(col, id),
-    where: (f, op, v) => ({ get: async () => { if (!(col === 'users' ? isAdmin() : isAllowed())) throw denied(); const rows = Object.keys(store).filter(k => k.indexOf(col + '/') === 0 && store[k] && store[k][f] === v).map(k => ({ id: k.slice(col.length + 1), data: () => store[k] })); return { forEach: fn => rows.forEach(fn), size: rows.length }; } }),
-  });
+  const runQuery = (col, conds) => {
+    if (!(col === 'users' ? isAdmin() : (col === 'kv' ? isAllowed() : isAllowed()))) throw denied();
+    const rows = Object.keys(store).filter(k => k.indexOf(col + '/') === 0 && k.slice(col.length + 1).indexOf('/') < 0 && store[k]).map(k => ({ id: k.slice(col.length + 1), data: () => store[k], ref: doc(col, k.slice(col.length + 1)) }))
+      .filter(r => conds.every(([f, op, v]) => { const x = f === '__id__' ? r.id : (store[key(col, r.id)] || {})[f]; return op === '==' ? x === v : op === '>=' ? x >= v : op === '<' ? x < v : op === '<=' ? x <= v : op === '>' ? x > v : true; }));
+    return { forEach: fn => rows.forEach(fn), size: rows.length, docs: rows };
+  };
+  const query = (col, conds) => ({ where: (f, op, v) => query(col, conds.concat([[f, op, v]])), get: async () => runQuery(col, conds) });
+  const collection = col => ({ doc: id => doc(col, id), where: (f, op, v) => query(col, [[f, op, v]]), get: async () => runQuery(col, []) });
   return {
     collection,
+    batch: () => { const ops = []; const b = { set: (ref, d, opts) => { ops.push(() => { if (!canWrite(ref.__col, ref.__id)) throw denied(); writeDoc(ref.__col, ref.__id, d, opts); }); return b; }, delete: ref => { ops.push(() => { if (!canWrite(ref.__col, ref.__id)) throw denied(); delete store[key(ref.__col, ref.__id)]; save(); notify(ref.__col, ref.__id); }); return b; }, commit: async () => { ops.forEach(f => f()); } }; return b; },
     runTransaction: async fn => {
       stats.txns++;
       const t = { get: async ref => { stats.reads++; if (!canRead(ref.__col, ref.__id)) throw denied(); return snapOf(ref.__col, ref.__id); },
@@ -104,14 +111,16 @@
     pwOf: email => (store['__pw/' + email] || {}).pw || '',
     setAccount: (email, pw) => { store['__acct/' + email] = { at: Date.now() }; if (pw) store['__pw/' + email] = { pw }; save(); },
     stats: () => Object.assign({}, stats),
+    writes: () => wlog.slice(),
     reset: () => { try { localStorage.removeItem(LS_STORE); localStorage.removeItem(LS_USER); localStorage.removeItem('__fakeFbSent'); } catch (e) {} },
   };
   const FieldValue = { serverTimestamp: () => 'ts', delete: () => ({ __delete: true }) };
+  const FieldPath = { documentId: () => '__id__' };
   window.firebase = {
     apps: [],
     initializeApp(cfg, name) { if (name) { const a2 = makeAuth(false); const app = { name, auth: () => a2, firestore: () => makeDb(a2) }; apps[name] = app; return app; } this.apps.push({}); return {}; },
     app(name) { if (name && apps[name]) return apps[name]; throw Object.assign(new Error('no app ' + name), { code: 'app/no-app' }); },
-    firestore: Object.assign(() => db, { FieldValue }),
+    firestore: Object.assign(() => db, { FieldValue, FieldPath }),
     auth: () => auth,
   };
 })();
