@@ -248,6 +248,40 @@ const SEED = {
     await c2.close(); await c3.close(); await c4.close(); await ctx.close();
     t('コード：JSエラーなし', errs.length === 0, errs.slice(0, 3));
   }
+  // ── 10. コンソールの「追加」ダイアログ：トーストが消えても入力が残る／設定で店舗を移せる（2026-09-19）──
+  {
+    const ctx = await newCtx(); const page = await ctx.newPage(); const errs = watch(page);
+    await page.addInitScript(() => { if (!localStorage.getItem('__fakeFbUser')) localStorage.setItem('__fakeFbUser', JSON.stringify({ email: 'egawa@midori-m.com', uid: 'uid_egawa' })); });
+    await page.goto(U('admin.html'), { waitUntil: 'domcontentloaded' });
+    t('追加：コンソールが開く', await seeText(page, '本人認証の進み具合', 20000));
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(e => e.innerText.includes('再読込')); if (b) b.click(); });
+    await page.waitForFunction(() => !!document.querySelector('.toast'), null, { timeout: 8000 }).catch(() => {});
+    await clickText(page, '＋ 追加');
+    await page.waitForSelector('#newuid', { timeout: 5000 });
+    await page.selectOption('#newuid', '__new__');
+    await page.click('#nsname'); await page.keyboard.type('山田太郎');
+    await page.waitForFunction(() => !document.querySelector('.toast'), null, { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    t('追加：トーストが消えた後もダイアログと入力が残る', await page.evaluate(() => !!document.querySelector('.dialog') && document.getElementById('nsname').value === '山田太郎' && !document.getElementById('newstaffwrap').hidden));
+    await page.selectOption('#nsstore', 'sanda');
+    await page.evaluate(() => { const b = document.querySelector('[data-dlg="ok"]'); if (b) b.click(); });
+    t('追加：新しいスタッフが三田店のスタッフ表に入る', await page.waitForFunction(k => (window.__fakeFb.get(k + 'sanda-staff-v2') || []).some(x => x.name === '山田太郎' && x.store === 'sanda'), STOR, { timeout: 8000 }).then(() => true).catch(() => false));
+    // 設定 → 所属店舗を三田店に → 本店の表から消え、三田店の表に入る。許可簿の店舗も変わる
+    await page.evaluate(() => { const b = document.querySelector('[data-edit="h7"]'); if (b) b.click(); });
+    await page.waitForSelector('#edstore', { timeout: 5000 });
+    t('設定：所属店舗の選択が今の店になっている', await page.evaluate(() => document.getElementById('edstore').value === 'honten'));
+    await page.selectOption('#edstore', 'sanda');
+    await page.evaluate(() => { const b = document.querySelector('[data-dlg="ok"]'); if (b) b.click(); });
+    t('設定：三田店に移した旨が出る', await seeText(page, '三田店に移しました', 8000));
+    const h = await page.evaluate(k => window.__fakeFb.get(k + 'honten-staff-v2') || [], STOR);
+    const sd = await page.evaluate(k => window.__fakeFb.get(k + 'sanda-staff-v2') || [], STOR);
+    const moved = sd.find(x => x.uid === 'h7');
+    t('設定：本店の表から消え、三田店の表に入る（メール・端末の設定はそのまま）', !h.some(x => x.uid === 'h7') && !!moved && moved.store === 'sanda' && moved.loginEmail === 'egawa@midori-m.com' && moved.badge === 'president', { h: h.map(x => x.name), sd: sd.map(x => x.name), moved });
+    t('設定：許可簿の店舗も三田店になる', (await page.evaluate(() => window.__fakeFb.get('allowed', 'meta'))).mail_egawa === undefined && (await page.evaluate(k => window.__fakeFb.get('allowed', 'meta')[k], ek('egawa@midori-m.com'))).store === 'sanda');
+    t('設定：一覧でも三田店で出る', await page.evaluate(() => { const tr = [...document.querySelectorAll('tr')].find(r => r.innerText.includes('江川京志')); return !!tr && tr.innerText.includes('三田店'); }));
+    t('追加：JSエラーなし', errs.length === 0, errs.slice(0, 3));
+    await ctx.close();
+  }
   await browser.close(); server.close();
   console.log(fail ? `\n${fail}件 不合格 / ${pass}件 合格` : `\n全${pass}件 PASS`);
   process.exit(fail ? 1 : 0);

@@ -200,7 +200,7 @@ td.act{text-align:right;white-space:nowrap}
   <span class="tag">DEV</span>
   <span>テスト環境の管理者コンソールです。<b>本番のデータには触れません</b>。</span>
 </div>
-<div id="app"><div class="gate"><div class="gate-card"><p class="hint">読み込んでいます…</p></div></div></div>
+<div id="toastbox"></div><div id="app"><div class="gate"><div class="gate-card"><p class="hint">読み込んでいます…</p></div></div></div>
 <!-- 保存先・本人認証は Firebase（2026-09-18）。読み込めなければ「繋がらない」と出す -->
 <script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore-compat.js"></script>
@@ -218,7 +218,7 @@ td.act{text-align:right;white-space:nowrap}
 //  この画面を開けるのは、許可簿（Firestore の meta/allowed）で role=admin の人だけ。
 //  ログインは Firebase Authentication のメールリンク（2026-09-18〜）。判定は Firestore のルールが行う。画面の申告は信用しない。
 // =====================================================================
-var APP_VERSION = '2.53';
+var APP_VERSION = '2.54';
 var GAS_URL     = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 // 環境の切り替え（2026-09-15）。この1ファイルで本番とDEVの両方を扱う。
 //   既定はDEV（安全側）。URLに ?env=prod が付いている時だけ本番のデータを扱う。
@@ -403,10 +403,18 @@ var DAY = 86400000;
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 function ymd(ms){ var d = new Date(ms); return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate(); }
+// トーストは #app の外（#toastbox）に描く。render() を呼ばない。
+//   以前は render() で画面ごと作り直していたため、トーストが消える5秒後に開いていたダイアログまで作り直され、
+//   打ち込んだ文字が消え「＋ 一覧にない（新しく登録する）」を選んでも入力欄が出なくなっていた（2026-09-19）。
+function renderToast(){
+  var el = document.getElementById('toastbox'); if (!el) return;
+  el.innerHTML = S.toast ? '<div class="toast" role="status">' + esc(S.toast.msg)
+    + (S.toast.sub ? '<small>' + esc(S.toast.sub) + '</small>' : '') + '</div>' : '';
+}
 function toast(msg, sub){
-  S.toast = {msg:msg, sub:sub||''}; render();
+  S.toast = {msg:msg, sub:sub||''}; renderToast();
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(function(){ S.toast = null; render(); }, 5000);
+  toastTimer = setTimeout(function(){ S.toast = null; renderToast(); }, 5000);
 }
 function allStaff(){
   return S.staffH.map(function(s){ return Object.assign({}, s, {store:'honten'}); })
@@ -723,12 +731,16 @@ function viewDialog(){
     + '<button class="btn' + (d.danger?' stop':'') + '" data-dlg="ok">' + esc(d.okLabel) + '</button></div></div></div>';
 }
 
+var dialogShown = null;   // 今画面に出ているダイアログ（S.dialog と同じものなら作り直さず、要素ごと残す）
 function render(){
+  var app = document.getElementById('app');
+  var keep = (S.dialog && S.dialog === dialogShown) ? app.querySelector('.scrim[data-scrim]') : null;
   var html = (S.view === 'gate') ? viewGate() : viewConsole();
-  html += viewDialog();
-  if (S.toast) html += '<div class="toast" role="status">' + esc(S.toast.msg)
-    + (S.toast.sub ? '<small>' + esc(S.toast.sub) + '</small>' : '') + '</div>';
-  document.getElementById('app').innerHTML = html;
+  if (!keep) html += viewDialog();
+  app.innerHTML = html;
+  if (keep) app.appendChild(keep);   // 同じ要素を戻す＝入力中の文字も、開いた側で付けたイベントもそのまま
+  dialogShown = S.dialog;
+  renderToast();
   bind();
 }
 
@@ -762,6 +774,48 @@ function loadAll(){
   });
 }
 
+// スタッフを別の店のスタッフ表へ移す（2026-09-19）。先に移り先へ足してから元の店から消す
+//   （途中で止まっても「両方に居る」で済み、「どこにも居ない」にはならない）。許可簿と台帳の店舗も合わせる。
+function moveStaff(uid, from, to, patch){
+  var kf = STOR + (from === 'sanda' ? 'sanda' : 'honten') + '-staff-v2';
+  var kt = STOR + (to === 'sanda' ? 'sanda' : 'honten') + '-staff-v2';
+  return Promise.all([gasRead(kf), gasRead(kt)]).then(function(r){
+    if (!(r[0] instanceof Array) || r[1] === GAS_FAIL) return {ok:false, why:'読めなかった'};
+    var src = r[0], dst = (r[1] instanceof Array) ? r[1] : [];
+    var rec = src.filter(function(x){ return x && x.uid === uid; })[0];
+    if (!rec) return {ok:false, why:'その方が見つからない'};
+    var moved = Object.assign({}, rec, patch || {}, { store: to });
+    Object.keys(moved).forEach(function(k){ if (moved[k] === undefined) delete moved[k]; });
+    // 移り先に同じ番号（myNumber）の人がいたら、空いている番号に付け替える（番号で人を引く箇所があるため）
+    var usedNo = {};
+    src.concat(dst).forEach(function(x){ if (x && x.uid !== uid) usedNo[Number(x.myNumber)] = 1; });
+    if (Number(moved.myNumber) !== 0 && usedNo[Number(moved.myNumber)]) { var n = 1; while (usedNo[n]) n++; moved.myNumber = n; }
+    var nextDst = dst.some(function(x){ return x && x.uid === uid; })
+      ? dst.map(function(x){ return (x && x.uid === uid) ? moved : x; })
+      : dst.concat([moved]);
+    var nextSrc = src.filter(function(x){ return !(x && x.uid === uid); });
+    return gasWrite(kt, nextDst).then(function(ok1){
+      if (!ok1) return {ok:false, why:'移り先の店に書き込めなかった'};
+      if (to === 'sanda') S.staffS = nextDst; else S.staffH = nextDst;
+      return gasWrite(kf, nextSrc).then(function(ok2){
+        if (!ok2) return {ok:false, why:'移り先には足しましたが、元の店から消せませんでした。「再読込」で確かめてください'};
+        if (from === 'sanda') S.staffS = nextSrc; else S.staffH = nextSrc;
+        // 許可簿（meta/allowed）と端末台帳の店舗も合わせる（どちらも表示用。失敗しても移動そのものは済んでいる）
+        var mail = String(moved.loginEmail || '').toLowerCase();
+        var jobs = [];
+        if (mail && S.allowed[fbEmailKey(mail)]) jobs.push(allowedUpsert(mail, {store: to, name: moved.name, uid: uid}).then(function(a){ S.allowed[fbEmailKey(mail)] = a; }));
+        Object.keys(S.devices || {}).forEach(function(id){
+          var d = S.devices[id];
+          if (d && d.env === STOR && String(d.e || '').toLowerCase() === mail && mail) {
+            jobs.push(fbDb.collection('devices').doc(id).update({ s: to }).then(function(){ d.s = to; }));
+          }
+        });
+        return Promise.all(jobs.map(function(p){ return p.then(function(){ return true; }, function(){ return false; }); }))
+          .then(function(rs){ return rs.every(Boolean) ? {ok:true} : {ok:true, warn:'許可簿か端末台帳の店舗表示は更新できませんでした（ログインには影響しません）。「再読込」で確かめてください。'}; });
+      });
+    });
+  });
+}
 // スタッフ表から1人を消す（登録解除のとき。過去の予約に書かれた氏名はそのまま残る）
 function removeStaff(uid, store){
   var key = STOR + (store === 'sanda' ? 'sanda' : 'honten') + '-staff-v2';
@@ -927,7 +981,13 @@ function bind(){
       + '自分のスマホ（個人端末）はここに登録しません。共有の端末だけです。</p></div>');
 
     var staffPicker = target
-      ? '<p style="font-size:13px;font-weight:700">' + esc(target.name) + ' さん</p>'
+      ? ('<p style="font-size:13px;font-weight:700">' + esc(target.name) + ' さん</p>'
+        + '<label class="f" for="edstore" style="margin-top:8px">所属店舗</label>'
+        + '<select id="edstore"><option value="honten"' + (target.store === 'sanda' ? '' : ' selected') + '>本店</option>'
+        + '<option value="sanda"' + (target.store === 'sanda' ? ' selected' : '') + '>三田店</option></select>'
+        + '<p style="font-size:12px;color:var(--ink-3);margin-top:6px;line-height:1.8">'
+        + '店舗を変えると、その店のスタッフ表に移ります（担当の選択肢・休日設定・頭数も移り先の店に）。'
+        + '過去の予約に書かれた名前はそのまま残ります。</p>')
       : ('<label class="f" for="newuid">スタッフ</label>'
         + '<select id="newuid">'
         + rest.map(function(x){
@@ -1091,8 +1151,16 @@ function bind(){
       var uid = target ? target.uid : (($$('newuid')||{}).value || '');
       if (!uid) { toast('追加しませんでした', 'スタッフを選んでください。'); return; }
       var s2 = findStaff(uid); if (!s2) return;
+      var toStore = (target && $$('edstore')) ? ($$('edstore').value === 'sanda' ? 'sanda' : 'honten') : s2.store;
+      var moving = toStore !== s2.store;
       S.dialog = null; render();
-      saveStaffField(uid, s2.store, patch).then(function(res){
+      (moving ? moveStaff(uid, s2.store, toStore, patch) : saveStaffField(uid, s2.store, patch)).then(function(res){
+        if (moving && res.ok) {
+          render();
+          toast(s2.name + ' さんを' + (toStore === 'sanda' ? '三田店' : '本店') + 'に移しました',
+            res.warn || 'スケジュール画面の「⚙️ スタッフ設定」で、バッジや対応可能業務を確かめてください。');
+          return;
+        }
         if (!res.ok) { toast('保存できませんでした', res.why + '。サーバーが混んでいた可能性があります。「再読込」で今の状態を確かめてから、もう一度お試しください。'); return; }
         render();
         toast(s2.name + ' さんを保存しました', role === 'none'
@@ -1414,6 +1482,7 @@ function bind(){
 
   // --- ダイアログ ---
   each('[data-dlg]', function(b){
+    if (b.hubBound) return; b.hubBound = true;
     b.onclick = function(){
       var d = S.dialog; S.dialog = null;
       if (b.dataset.dlg === 'ok' && d && d.onOk) d.onOk();
@@ -1421,6 +1490,7 @@ function bind(){
     };
   });
   each('[data-scrim]', function(el){
+    if (el.hubBound) return; el.hubBound = true;
     el.onclick = function(e){ if (e.target === el) { S.dialog = null; render(); } };
   });
 }
