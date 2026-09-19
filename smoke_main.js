@@ -114,7 +114,7 @@ async function loadProdStore() {
   await page.goto(`http://127.0.0.1:${PORT}/index_main.html`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(15000);
   await checkPage(page, '起動直後');
-  for (const view of ['カレンダー', 'スケジュール', '代車管理', '車両管理', '空き枠検索']) {
+  for (const view of ['カレンダー', 'スケジュール', '代車管理', '車両管理', '検索']) {
     try {
       // 代車管理など特殊ビューに遷移した後もナビを確実に押せるよう evaluate でクリック
       const ok = await page.evaluate((v) => {
