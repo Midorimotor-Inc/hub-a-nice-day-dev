@@ -218,7 +218,7 @@ td.act{text-align:right;white-space:nowrap}
 //  この画面を開けるのは、許可簿（Firestore の meta/allowed）で role=admin の人だけ。
 //  ログインは Firebase Authentication のメールリンク（2026-09-18〜）。判定は Firestore のルールが行う。画面の申告は信用しない。
 // =====================================================================
-var APP_VERSION = '2.52';
+var APP_VERSION = '2.53';
 var GAS_URL     = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 // 環境の切り替え（2026-09-15）。この1ファイルで本番とDEVの両方を扱う。
 //   既定はDEV（安全側）。URLに ?env=prod が付いている時だけ本番のデータを扱う。
@@ -315,7 +315,7 @@ function sendInvite(mail, info){
       .then(function(){ return { ok:true }; });
   }).catch(function(e){
     var c = fbErrCode(e);
-    return { ok:false, err: c.indexOf('permission-denied') >= 0 ? 'not_admin' : c.indexOf('too-many') >= 0 ? 'too_many'
+    return { ok:false, err: c.indexOf('permission-denied') >= 0 ? 'not_admin' : c.indexOf('quota') >= 0 ? 'quota' : c.indexOf('too-many') >= 0 ? 'too_many'
       : c.indexOf('unauthorized') >= 0 ? 'bad_domain' : c.indexOf('invalid-email') >= 0 ? 'bad_email' : (c || 'error') };
   });
 }
@@ -816,7 +816,8 @@ function bind(){
     }, function(e){
       S.busy = false;
       var c = fbErrCode(e);
-      S.err = c.indexOf('too-many') >= 0 ? '送信が続いています。しばらく待ってからお試しください。'
+      S.err = c.indexOf('quota') >= 0 ? '本日のメールリンクの送信上限（Firebase の無料枠）に達しました。管理者に招待コードを発行してもらい、アドレスとコードで登録してください。（コンソールに入れる管理者に発行してもらうか、node fb_seed_allowed.js --code で発行）'
+        : c.indexOf('too-many') >= 0 ? '送信が続いています。しばらく待ってからお試しください。'
         : c.indexOf('unauthorized') >= 0 ? 'この画面のアドレスが Firebase の承認済みドメインにありません（' + location.hostname + '）。'
         : c.indexOf('invalid-email') >= 0 ? 'メールアドレスの形式が正しくありません。'
         : 'メールを送れませんでした。通信の状態をご確認ください。（' + c + '）';
@@ -1429,6 +1430,7 @@ function bind(){
 function inviteErr(r){
   var e = r && r.err;
   return e === 'not_admin' ? '管理者としてログインしている必要があります（許可簿に書けませんでした）。'
+    : e === 'quota' ? '本日のメールリンクの送信上限（Firebase の無料枠）に達しました。この方は控えが無いためリンクでしか招待できません。明日以降にもう一度送るか、node fb_seed_allowed.js --code で発行してください。'
     : e === 'too_many' ? '送信が続いています。しばらく待ってからお試しください。'
     : e === 'bad_domain' ? 'アプリのアドレスが Firebase の承認済みドメインにありません。'
     : e === 'bad_email' ? 'メールアドレスの形式が正しくありません。'

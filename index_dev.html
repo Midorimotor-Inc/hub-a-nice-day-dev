@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789796111181';
+    window.__APP_BUILD='build-1789796981780';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.52';
+const APP_VERSION = '2.53';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -2232,6 +2232,7 @@ const hubAuthErr = e => {
   return c.indexOf('invalid-email') >= 0 ? 'bad_email' : c.indexOf('too-many') >= 0 ? 'too_many'
     : c.indexOf('unauthorized-continue-uri') >= 0 || c.indexOf('unauthorized-domain') >= 0 ? 'bad_domain'
     : c.indexOf('invalid-action-code') >= 0 || c.indexOf('expired-action-code') >= 0 ? 'expired'
+    : c.indexOf('quota') >= 0 ? 'quota'
     : c.indexOf('network') >= 0 ? 'offline' : (c || 'error');
 };
 // リンクを送る（招待・自分で登録するとき）。戻り先URLにアドレスを載せるので、開いた側で打ち直さなくてよい
@@ -3826,6 +3827,7 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
       : e==='bad_code' ? 'アドレスかコードが違います。'
       : e==='bad_domain' ? 'この画面のアドレスがまだ許可されていません（管理者：Firebase の承認済みドメインに追加してください）。'
       : e==='expired' ? 'このリンクは期限切れか、すでに使われています。メールアドレスを入れて、新しいリンクを受け取ってください。'
+      : e==='quota' ? '本日のメールリンクの送信上限（Firebase の無料枠）に達しました。管理者に招待コードを発行してもらい、アドレスとコードで登録してください。'
       : e==='offline' ? '通信の状態をご確認ください。'
       : 'うまくいきませんでした。もう一度お試しください。'+(r&&r.raw?'（'+r.raw+'）':'');
   };

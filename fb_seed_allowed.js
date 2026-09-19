@@ -4,6 +4,8 @@
 //   node fb_seed_allowed.js --admin a@x.com[,b@y]  … 管理者にする
 //   node fb_seed_allowed.js --off a@x.com          … 無効にする（active=false）
 //   node fb_seed_allowed.js --test-user add|remove … 検査用の利用者（fbtest@hub-test.invalid）を足す／消す
+//   node fb_seed_allowed.js --code a@x.com [--set 123456] … その人の招待コード（アカウントの合言葉）を発行して表示する。
+//       コンソールから発行できない時（リンクで登録した人で控えが無い／メールリンクの日次上限に当たった時）に使う。
 const fs = require('fs'), path = require('path');
 const KEY_FILE = process.env.HUB_FB_KEY || 'C:/Users/A/Documents/Hub重要書類/firebase-admin.json';
 const MOD = path.join(process.env.LOCALAPPDATA || '', 'Temp', 'hub-verify', 'node_modules');
@@ -39,6 +41,14 @@ const kv = async k => { const s = await db.collection('kv').doc(k).get(); return
   }
   if (val('--admin')) for (const m of val('--admin').split(',')) { const k = ekey(m); patch[k] = Object.assign({ email: m.trim().toLowerCase(), active: true, kind: 'staff', name: '', store: 'honten', uid: '' }, cur[k] || {}, patch[k] || {}, { role: 'admin' }); }
   if (val('--off')) { const k = ekey(val('--off')); patch[k] = Object.assign({}, cur[k] || {}, patch[k] || {}, { active: false }); }
+  if (val('--code')) {
+    const mail = val('--code').trim().toLowerCase();
+    const code = /^[0-9]{6}$/.test(val('--set') || '') ? val('--set') : String(Math.floor(100000 + Math.random() * 900000));
+    let u; try { u = await admin.auth().getUserByEmail(mail); await admin.auth().updateUser(u.uid, { password: code }); }
+    catch (e) { if (e.code === 'auth/user-not-found') u = await admin.auth().createUser({ email: mail, password: code }); else throw e; }
+    await db.collection('users').doc(u.uid).set({ email: mail, pw: code, inviteAt: Date.now() }, { merge: true });
+    console.log('招待コード（' + mail + '）: ' + code + '  ※アドレスと一緒に入れて「登録する」。同じコードで複数の端末に使えます');
+  }
   if (val('--test-user') === 'add') patch[ekey(TEST_EMAIL)] = { email: TEST_EMAIL, name: 'テスト', store: 'honten', uid: 'a1789107465703', role: 'staff', active: true, kind: 'staff', at: Date.now() };
   if (val('--test-user') === 'remove') patch[ekey(TEST_EMAIL)] = admin.firestore.FieldValue.delete();
   if (Object.keys(patch).length) { await ref.set(patch, { merge: true }); console.log('更新:', Object.keys(patch).map(k => k.replace(/,/g, '.')).join(', ')); }
