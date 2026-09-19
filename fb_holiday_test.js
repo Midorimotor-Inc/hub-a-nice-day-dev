@@ -1,0 +1,142 @@
+// スマホの「🏖 休日」タブ（2026-09-19・アイデア仕様書②）の検査。にせの firebase（fake_firebase.js）で本物には繋がない。
+//   ・タブが出る／今月のカレンダーに出勤人数が出る／日をタップすると休みの人と出勤人数が出る
+//   ・自分の休日を入れる → dayoff-{店} のサーバー値に氏名が足される（他の人の休日はそのまま）→ もう一度で外れる
+//   ・有給に切り替えると休日から外れて pleave に入る
+//   ・店休日は入力できない／他の店は閲覧のみ／管理者は他の人の分も入れられる／一般スタッフは自分だけ
+//   ・PC 側（他端末）で入れた休日が購読で届く
+//   実行: node fb_holiday_test.js
+const path = require('path'), fs = require('fs'), http = require('http');
+let chromium;
+for (const base of [__dirname, path.join(process.env.LOCALAPPDATA || '', 'Temp', 'hub-verify')]) {
+  try { chromium = require(path.join(base, 'node_modules', 'playwright')).chromium; break; } catch (e) {}
+}
+if (!chromium) { try { chromium = require('playwright').chromium; } catch (e) {} }
+if (!chromium) { console.error('playwright が見つかりません'); process.exit(1); }
+
+const DIR = __dirname, PORT = 8167, STOR = 'hub-v8-dev-';
+let pass = 0, fail = 0;
+const t = (label, ok, extra) => { if (ok) { pass++; console.log('  ✔ ' + label); } else { fail++; console.log('  ✖ ' + label, extra === undefined ? '' : JSON.stringify(extra).slice(0, 400)); } };
+const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction(x => document.body.innerText.includes(x), s, { timeout: ms }); return true; } catch (e) { return false; } };
+const clickText = (page, s) => page.evaluate(x => { const b = [...document.querySelectorAll('button')].find(e => e.innerText.includes(x)); if (b) { b.click(); return true; } return false; }, s);
+const now = new Date();
+const Y = now.getFullYear(), M = now.getMonth();
+// 今月の中で店休日（水曜・第2火曜・年末年始など）に当たらない平日を2つ選ぶ（月〜金・かつ 5日以降）
+const pick = (n) => { const out = []; for (let d = 5; d <= 28 && out.length < n; d++) { const w = new Date(Y, M, d).getDay(); if (w >= 1 && w <= 5 && w !== 2 && w !== 3) out.push(d); } return out; };
+const [D1, D2] = pick(2);
+const DK1 = `${Y}-${M + 1}-${D1}`, DK2 = `${Y}-${M + 1}-${D2}`;
+const FAKE_FB = fs.readFileSync(path.join(DIR, 'fake_firebase.js'), 'utf8');
+const ME = { email: 'egawa@midori-m.com', uid: 'uid_egawa', name: '江川京志', store: 'honten' };
+const signedInInit = ([k, me, stor]) => {
+  localStorage.setItem('__fakeFbUser', JSON.stringify({ email: me.email, uid: me.uid }));
+  const st = JSON.parse(localStorage.getItem('__fakeFbStore') || '{}');
+  st['meta/allowed'] = { [me.email.replace(/\./g, ',')]: { email: me.email, name: me.name, store: me.store, uid: 'h7', role: 'admin', active: true, kind: 'staff' } };
+  st['devices/dev-test'] = { env: stor, e: me.email, n: me.name, names: [me.name], s: me.store, k: 'shared', l: 'テストPC', ua: 'test', at: 1, last: Date.now() };
+  localStorage.setItem('__fakeFbStore', JSON.stringify(st));
+  localStorage.setItem(stor + 'auth-devid', 'dev-test');
+  localStorage.setItem(stor + 'auth-mine', JSON.stringify([{ uid: 'h7', name: me.name, store: me.store, email: me.email }]));
+  localStorage.setItem(stor + 'auth-kind', 'shared');
+};
+(async () => {
+  const server = http.createServer((req, res) => {
+    const p = decodeURIComponent(req.url.split('?')[0]).replace(/^\//, '');
+    if (p === 'mobile.html') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(fs.readFileSync(path.join(DIR, 'mobile.html'), 'utf8').replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = false;')); return; }
+    fs.readFile(path.join(DIR, p), (err, d) => { if (err) { res.writeHead(404); res.end('nf'); return; } res.writeHead(200); res.end(d); });
+  });
+  await new Promise(r => server.listen(PORT, r));
+  const browser = await chromium.launch({ headless: true });
+  const routeFakeFb = (ctx, seed) => ctx.route('https://www.gstatic.com/firebasejs/**', route => {
+    const u = route.request().url();
+    const body = (u.indexOf('firebase-app-compat') >= 0) ? FAKE_FB + '\n(function(){ const s=' + JSON.stringify(seed) + '; for (const k in s) window.__fakeFb.set(k, s[k]); })();' : '';
+    return route.fulfill({ status: 200, contentType: 'application/javascript', body });
+  });
+  const routeGas = ctx => ctx.route('https://script.google.com/**', route => route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: 'null' }));
+  const seed = {
+    [STOR + 'insp']: {},
+    [STOR + 'honten-sched']: {},
+    [STOR + 'honten-staff-v2']: [{ uid: 'h7', name: '江川京志', myNumber: 7, badge: 'bodywork', store: 'honten' }, { uid: 'h1', name: '見取大介', myNumber: 1, badge: 'inspector', store: 'honten' }, { uid: 'h3', name: '竹林直行', myNumber: 3, badge: 'inspector', store: 'honten' }],
+    [STOR + 'sanda-staff-v2']: [{ uid: 's10', name: '藤原昭人', myNumber: 10, badge: 'inspector', store: 'sanda' }],
+    [STOR + 'honten-dayoff']: { [DK1]: ['竹林直行'] },
+    [STOR + 'honten-pleave']: {},
+    [STOR + 'sanda-dayoff']: { [DK1]: ['藤原昭人'] },
+    [STOR + 'honten-cdate']: [], [STOR + 'sanda-cdate']: [], [STOR + 'honten-cdow']: [], [STOR + 'sanda-cdow-v2']: [3],
+    [STOR + 'mholidays']: { [`${Y}-${M + 1}`]: 9 },
+  };
+  const open = async (loginName) => {
+    const ctx = await browser.newContext({ viewport: { width: 400, height: 850 }, isMobile: true, hasTouch: true });
+    await ctx.addInitScript(signedInInit, [0, ME, STOR]);
+    await routeFakeFb(ctx, seed); await routeGas(ctx);
+    const page = await ctx.newPage();
+    const errs = []; page.on('pageerror', e => errs.push(String(e)));
+    page.on('console', m => { if (m.type() === 'error' && m.text().indexOf('[BABEL]') < 0) errs.push(m.text()); });
+    page.on('dialog', async d => { errs.push('dialog:' + d.message()); await d.accept().catch(() => {}); });
+    await page.goto('http://localhost:' + PORT + '/mobile.html', { waitUntil: 'domcontentloaded' });
+    await seeText(page, loginName, 20000);
+    await page.evaluate(n => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.includes(n)); if (b) b.click(); }, loginName);
+    await seeText(page, 'カレンダー', 20000);
+    return { ctx, page, errs };
+  };
+  const openTab = page => page.evaluate(() => { const el = [...document.querySelectorAll('div')].filter(e => e.textContent === '🏖休日' || (e.textContent.includes('休日') && e.textContent.length < 6)).pop(); if (el) el.click(); return !!el; });
+  const tapDay = (page, d) => page.evaluate(d => {
+    // カレンダーの日付セル（数字だけの div の親）をタップ
+    const cells = [...document.querySelectorAll('div')].filter(e => e.style && e.style.cursor === 'pointer' && e.firstElementChild && e.firstElementChild.textContent === String(d));
+    const c = cells[0]; if (c) c.click(); return !!c;
+  }, d);
+  const dayoff = page => page.evaluate(k => window.__fakeFb.get(k + 'honten-dayoff'), STOR);
+  const pleave = page => page.evaluate(k => window.__fakeFb.get(k + 'honten-pleave'), STOR);
+
+  // ── 1. 管理者（江川）：タブ・表示・自分の休日の入力 ──
+  {
+    const { ctx, page, errs } = await open('江川京志');
+    t('休日タブがある', await openTab(page));
+    t('タブを開くとスタッフ休日のカレンダーが出る', await seeText(page, 'スタッフ休日', 8000), await page.evaluate(() => document.body.innerText.slice(0, 300)));
+    t('会社の今月の休日数が出る', await seeText(page, `会社の${M + 1}月の休日 9日`, 3000));
+    t('各日に出勤人数が出る（3人中、竹林が休みの日は出2）', await page.evaluate(() => document.body.innerText.includes('出2')) && await page.evaluate(() => document.body.innerText.includes('出3')));
+    t(`${D1}日をタップすると休みの人と出勤人数が出る`, await tapDay(page, D1) && await seeText(page, '出勤 2人 / 3人', 3000) && (await page.evaluate(() => document.body.innerText)).includes('竹林直行'));
+    // 他端末（PC）で入れた休日が届く（自分が書く前に。書いた後70秒は writeGuard で反映を止める設計のため）
+    await page.evaluate(([k, dk]) => { const v = window.__fakeFb.get(k + 'honten-dayoff') || {}; v[dk] = ['見取大介']; window.__fakeFb.set(k + 'honten-dayoff', v); }, [STOR, DK2]);
+    t('PC で入れた休日が購読で届く（タップした日に見取が出る）', await tapDay(page, D2) && await seeText(page, '見取大介', 6000) && await seeText(page, '出勤 2人 / 3人', 3000));
+    await tapDay(page, D1);
+    await clickText(page, '🏖 休日');
+    t('自分を休日にすると dayoff に足される（竹林の分はそのまま）', await page.waitForFunction(([k, dk]) => { const v = window.__fakeFb.get(k + 'honten-dayoff'); return v && v[dk] && v[dk].includes('江川京志') && v[dk].includes('竹林直行'); }, [STOR, DK1], { timeout: 8000 }).then(() => true).catch(() => false), await dayoff(page));
+    t('画面が「出勤 1人」に変わり、解除の案内が出る', await seeText(page, '出勤 1人 / 3人', 5000) && await seeText(page, 'タップで解除', 3000));
+    t('今月の集計に自分の休日が数えられる', await page.evaluate(() => /江川京志：🏖 \d+日/.test(document.body.innerText)));
+    await clickText(page, '📋 有給');
+    t('有給に切り替えると dayoff から外れ pleave に入る', await page.waitForFunction(([k, dk]) => { const o = window.__fakeFb.get(k + 'honten-dayoff') || {}, l = window.__fakeFb.get(k + 'honten-pleave') || {}; return !(o[dk] || []).includes('江川京志') && (o[dk] || []).includes('竹林直行') && (l[dk] || []).includes('江川京志'); }, [STOR, DK1], { timeout: 8000 }).then(() => true).catch(() => false), { o: await dayoff(page), l: await pleave(page) });
+    await clickText(page, '📋 有給');
+    t('もう一度で有給が外れる', await page.waitForFunction(([k, dk]) => { const l = window.__fakeFb.get(k + 'honten-pleave') || {}; return !(l[dk] || []).includes('江川京志'); }, [STOR, DK1], { timeout: 8000 }).then(() => true).catch(() => false), await pleave(page));
+    await tapDay(page, D2);
+    // 管理者は他の人の分も入れられる
+    t('管理者には「設定する人」の選択がある', await page.evaluate(() => !!document.querySelector('select')));
+    await page.selectOption('select', '竹林直行');
+    await clickText(page, '🏖 休日');
+    t('管理者が竹林の休日を入れられる', await page.waitForFunction(([k, dk]) => { const v = window.__fakeFb.get(k + 'honten-dayoff') || {}; return (v[dk] || []).includes('竹林直行') && (v[dk] || []).includes('見取大介'); }, [STOR, DK2], { timeout: 8000 }).then(() => true).catch(() => false), await dayoff(page));
+    // 他の店は閲覧のみ
+    await clickText(page, '三田店');
+    await page.screenshot({ path: path.join(DIR, 'smoke-holiday.png'), fullPage: false });   // 見た目の控え
+    t('三田店に切り替えると三田店の休日が出る（閲覧のみ）', await tapDay(page, D1) && await seeText(page, '藤原昭人', 5000) && await seeText(page, '他の店は閲覧のみ', 3000));
+    t('JSエラー・alert なし', errs.length === 0, errs.slice(0, 3));
+    await ctx.close();
+  }
+  // ── 2. 一般スタッフ（竹林。見取は復旧4人＝管理者扱いなので使わない）：店休日は入れられない・自分だけ ──
+  {
+    const { ctx, page, errs } = await open('竹林直行');
+    await openTab(page);
+    await seeText(page, 'スタッフ休日', 8000);
+    t('一般スタッフには「設定する人」の選択が無い', !(await page.evaluate(() => !!document.querySelector('select'))));
+    // 店休日（本店の cdate に足す）→ 全員休み・入力ボタン無し
+    const closedBefore = await page.evaluate(() => (document.body.innerText.match(/休業日/g) || []).length);
+    await page.evaluate(([k, dk]) => { window.__fakeFb.set(k + 'honten-cdate', [dk]); }, [STOR, `${Y}-${String(M + 1).padStart(2, '0')}-${String(D1).padStart(2, '0')}`]);   // cdate はゼロ詰め（YYYY-MM-DD）
+    t('PC で決めた休業日が購読で届く', await page.waitForFunction(n => (document.body.innerText.match(/休業日/g) || []).length > n, closedBefore, { timeout: 8000 }).then(() => true).catch(() => false));
+    await tapDay(page, D1);
+    t('店休日は「全員休み」と出て入力ボタンが無い', await seeText(page, '店休日（全員休み）', 5000) && !(await page.evaluate(() => [...document.querySelectorAll('button')].some(b => b.innerText.includes('🏖 休日') && b.innerText.length < 20))), await page.evaluate(() => document.body.innerText.slice(-300)));
+    await tapDay(page, D2);
+    t('自分の名前で入力欄が出る', await seeText(page, '竹林直行（自分）', 5000), await page.evaluate(() => document.body.innerText.slice(-400)));
+    await clickText(page, '🏖 休日');
+    t('一般スタッフが自分の休日を入れられる', await page.waitForFunction(([k, dk]) => { const v = window.__fakeFb.get(k + 'honten-dayoff') || {}; return (v[dk] || []).includes('竹林直行'); }, [STOR, DK2], { timeout: 8000 }).then(() => true).catch(() => false), await dayoff(page));
+    t('JSエラー・alert なし', errs.length === 0, errs.slice(0, 3));
+    await ctx.close();
+  }
+  await browser.close(); server.close();
+  console.log(fail ? `\n${fail}件 不合格 / ${pass}件 合格` : `\n全${pass}件 PASS`);
+  process.exit(fail ? 1 : 0);
+})();

@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789798545227';
+  window.__APP_BUILD='build-1789805518299';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.54';
+const MOBILE_VERSION='2.55';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -134,7 +134,8 @@ const MOBILE_KEYS=()=>[STOR+'insp',storKey('sched','honten'),storKey('sched','sa
   storKey('cars','honten'),storKey('cars','sanda'),
   STOR+'inspLimits','schedRestrictions',
   storKey('dayoff','honten'),storKey('dayoff','sanda'),
-  storKey('staff-v2','honten'),storKey('staff-v2','sanda')];
+  storKey('staff-v2','honten'),storKey('staff-v2','sanda'),
+  storKey('pleave','honten'),storKey('pleave','sanda'),STOR+'mholidays'];   // 休日タブ（2026-09-19）
 
 // ── データ復旧（GAS v10スナップショット）。PC版と同じ4名のみ ──
 const RESTORE_ALLOWED=[{uid:'h0',name:'見取勇一'},{uid:'h1',name:'見取大介'},{uid:'s10',name:'藤原昭人'},{uid:'h7',name:'江川京志'}];
@@ -2373,6 +2374,174 @@ const LoanerView=({loanerResH,loanerResS,rentalResData,rentalCars,loanerCarsH,lo
 // ── 通知メール設定 ──
 // 保存失敗時の通知メール送信先（ログイン中スタッフごとに1件、通知専用・個人アドレス可）。
 // 登録先は共有キー ${STOR}notify-emails の {スタッフ名: アドレス} マップ。
+// ============================================
+//  休日タブ（2026-09-19・アイデア仕様書②）
+//   PC版「🏖 スタッフ休日・有給カレンダー」のスマホ版。同じキー（dayoff / pleave）を読み書きする。
+//   ・月のカレンダー：自分の休日／有給に色が付き、各日に「出勤 N人」を出す（店休日は全員休み）
+//   ・日をタップ → その日の休みの人と出勤人数を下に出し、そこで自分の休日／有給を入れる・外す
+//   ・店舗の切り替えで、もう一方の店の休日状況も見られる（入力は自分の店だけ）
+//   ・管理者（PC版と同じ4人）は「設定する人」を選んで他の人の分も入れられる
+// ============================================
+const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pleaveS,
+  closedDaysH,closedDaysS,closedDatesH,closedDatesS,overrideOpen,monthlyHolidays,onToggle})=>{
+  const today=new Date();
+  const [store,setStore]=useState(vsId);
+  const [cur,setCur]=useState(new Date(today.getFullYear(),today.getMonth(),1));
+  const [selDay,setSelDay]=useState(today.getDate());
+  const [who,setWho]=useState(user.name);   // 設定する人（管理者だけ変えられる）
+  const [busy,setBusy]=useState(false);
+  const cy=cur.getFullYear(),cm=cur.getMonth();
+  const dim=new Date(cy,cm+1,0).getDate();
+  const fdow=new Date(cy,cm,1).getDay();
+  const staff=(store==='honten'?staffH:staffS).filter(s=>s&&s.name&&s.badge!=='president'&&s.myNumber!==0);
+  const norm=o=>Object.fromEntries(Object.entries(o||{}).map(([k,v])=>[k,Array.isArray(v)?v:[]]));
+  const offs=norm(store==='honten'?dayOffH:dayOffS);
+  const leaves=norm(store==='honten'?pleaveH:pleaveS);
+  const cDays=Array.isArray(store==='honten'?closedDaysH:closedDaysS)?(store==='honten'?closedDaysH:closedDaysS):[];
+  const cDates=Array.isArray(store==='honten'?closedDatesH:closedDatesS)?(store==='honten'?closedDatesH:closedDatesS):[];
+  const closedOn=d=>calIsClosed(new Date(cy,cm,d),cDays,cDates,overrideOpen);
+  const dkOf=d=>`${cy}-${cm+1}-${d}`;
+  const canEditHere=store===vsId;                 // 入力は自分の店だけ
+  const target=adminMode?who:user.name;           // 誰の休日を入れるか
+  const targetInStore=staff.some(s=>s.name===target);
+  // 月の集計（PC版と同じく店休日はスタッフ休日に数える）
+  const mine=useMemo(()=>{let o=0,l=0;for(let d=1;d<=dim;d++){if(closedOn(d)){o++;continue;}if((offs[dkOf(d)]||[]).includes(target))o++;if((leaves[dkOf(d)]||[]).includes(target))l++;}return{o,l};},[offs,leaves,cy,cm,target,cDays,cDates,overrideOpen]);
+  const mhol=monthlyHolidays&&monthlyHolidays[`${cy}-${cm+1}`];
+  const weeks=[];let wk=Array(7).fill(null);
+  for(let d=1;d<=dim;d++){const dow=(fdow+d-1)%7;wk[dow]=d;if(dow===6||d===dim){weeks.push([...wk]);wk=Array(7).fill(null);}}
+  const selDk=selDay?dkOf(selDay):null;
+  const selClosed=selDay?closedOn(selDay):false;
+  const selOffs=selDk?(offs[selDk]||[]):[], selLeaves=selDk?(leaves[selDk]||[]):[];
+  const selWorking=selClosed?[]:staff.filter(s=>!selOffs.includes(s.name)&&!selLeaves.includes(s.name));
+  const myState=selDk?(selOffs.includes(target)?'dayoff':selLeaves.includes(target)?'leave':''):'';
+  const tap=async(type)=>{
+    if(!selDk||selClosed||busy||!canEditHere||!targetInStore)return;
+    setBusy(true);
+    try{ await onToggle(store,type,selDk,target); }finally{ setBusy(false); }
+  };
+  const Chip=({on,color,bg,children,onClick,disabled})=>(
+    <button onClick={onClick} disabled={disabled}
+      style={{flex:1,padding:'10px 6px',borderRadius:10,border:`2px solid ${on?color:'#e2e8f0'}`,background:on?bg:'white',color:on?color:'#64748b',fontWeight:on?900:600,fontSize:13,opacity:disabled?.5:1}}>
+      {children}
+    </button>
+  );
+  return(
+    <div style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',background:'#f8fafc'}}>
+      <div style={{padding:'8px 12px',background:'white',borderBottom:'1px solid #f1f5f9',borderTop:'3px solid #f97316',display:'flex',alignItems:'center',gap:8}}
+        onTouchStart={e=>{e.currentTarget._sx=e.touches[0].clientX;e.currentTarget._sy=e.touches[0].clientY;}}
+        onTouchEnd={e=>{
+          const dx=e.changedTouches[0].clientX-(e.currentTarget._sx||0);
+          const dy=e.changedTouches[0].clientY-(e.currentTarget._sy||0);
+          e.currentTarget._sx=null;
+          if(Math.abs(dx)<30||Math.abs(dy)>Math.abs(dx))return;
+          setCur(new Date(cy,cm+(dx<0?1:-1),1));setSelDay(null);
+        }}>
+        <button onClick={()=>{setCur(new Date(cy,cm-1,1));setSelDay(null);}} style={{width:36,height:36,borderRadius:10,border:'2px solid #e5e7eb',background:'white',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>&#8249;</button>
+        <div style={{flex:1,textAlign:'center'}}>
+          <div style={{fontWeight:900,fontSize:18}}>{cy}年 {cm+1}月</div>
+          <div style={{fontSize:10,color:'#94a3b8'}}>🏖 スタッフ休日　← スワイプで月移動 →</div>
+        </div>
+        <button onClick={()=>{setCur(new Date(cy,cm+1,1));setSelDay(null);}} style={{width:36,height:36,borderRadius:10,border:'2px solid #e5e7eb',background:'white',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>&#8250;</button>
+      </div>
+      {/* 店舗の切り替え＋今月の集計 */}
+      <div style={{display:'flex',alignItems:'center',gap:6,padding:'8px 12px 0'}}>
+        {[['honten','本店'],['sanda','三田店']].map(([id,l])=>(
+          <button key={id} onClick={()=>{setStore(id);}}
+            style={{padding:'5px 12px',borderRadius:8,border:`2px solid ${store===id?'#1d4ed8':'#e2e8f0'}`,background:store===id?'#dbeafe':'white',color:store===id?'#1e40af':'#64748b',fontWeight:store===id?800:600,fontSize:12}}>
+            {l}{id===vsId?'':'（閲覧）'}
+          </button>
+        ))}
+        <div style={{marginLeft:'auto',textAlign:'right',fontSize:10.5,color:'#475569',lineHeight:1.5}}>
+          <div><b style={{color:'#ea580c'}}>{target}</b>：🏖 {mine.o}日{mine.l?`・📋 有給 ${mine.l}日`:''}</div>
+          {mhol!=null&&mhol!==''&&<div style={{color:'#94a3b8'}}>会社の{cm+1}月の休日 {mhol}日</div>}
+        </div>
+      </div>
+      {adminMode&&(
+        <div style={{display:'flex',alignItems:'center',gap:6,padding:'8px 12px 0',fontSize:11,color:'#475569'}}>
+          <span style={{fontWeight:700,flexShrink:0}}>設定する人</span>
+          <select value={who} onChange={e=>setWho(e.target.value)} style={{flex:1,padding:'6px 8px',borderRadius:8,border:'2px solid #e2e8f0',fontSize:13,background:'white'}}>
+            {[...new Set([user.name,...staffH.map(s=>s.name),...staffS.map(s=>s.name)])].filter(Boolean).map(n=><option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+      )}
+      <div style={{padding:'8px 8px 4px'}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:4}}>
+          {DOW.map((d,i)=><div key={d} style={{textAlign:'center',fontSize:11,fontWeight:700,color:i===0?'#ef4444':i===6?'#3b82f6':'#64748b',padding:'4px 0'}}>{d}</div>)}
+        </div>
+        {weeks.map((wk,wi)=>(
+          <div key={wi} style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:2}}>
+            {wk.map((d,di)=>{
+              if(!d)return <div key={di}/>;
+              const dk=dkOf(d);
+              const closed=closedOn(d);
+              const isToday=d===today.getDate()&&cm===today.getMonth()&&cy===today.getFullYear();
+              const isSel=d===selDay;
+              const isSun=di===0,isSat=di===6,isHol=isHoliday(cy,cm,d);
+              const o=offs[dk]||[],l=leaves[dk]||[];
+              const meOff=o.includes(target),meLeave=l.includes(target);
+              const working=closed?0:staff.filter(s=>!o.includes(s.name)&&!l.includes(s.name)).length;
+              const bg=closed?CLOSED_BG:meOff?'#fff7ed':meLeave?'#d1fae5':'white';
+              const bd=isSel?'2px solid #1d4ed8':meOff?'2px solid #f97316':meLeave?'2px solid #10b981':isToday?'2px solid #93c5fd':'2px solid #f1f5f9';
+              return(
+                <div key={di} onClick={()=>setSelDay(d)}
+                  style={{borderRadius:10,background:bg,border:bd,boxShadow:closed?CLOSED_BAR:'none',minHeight:54,padding:'4px 2px',cursor:'pointer'}}>
+                  <div style={{textAlign:'center',fontWeight:800,fontSize:14,color:isToday?'#1e40af':closed?CLOSED_FG:isSun||isHol?'#ef4444':isSat?'#3b82f6':'#1e293b'}}>{d}</div>
+                  {closed
+                    ?<div style={{textAlign:'center',fontSize:11,color:CLOSED_FG,fontWeight:900,marginTop:4}}>{CLOSED_LABEL}</div>
+                    :<div style={{textAlign:'center',marginTop:2,lineHeight:1.2}}>
+                      {(meOff||meLeave)&&<div style={{fontSize:9,fontWeight:900,color:meOff?'#ea580c':'#059669'}}>{meOff?'🏖休':'📋有'}</div>}
+                      <div style={{fontSize:9,fontWeight:700,color:working<=Math.max(1,Math.floor(staff.length/2))?'#dc2626':'#64748b'}}>出{working}</div>
+                      {(o.length+l.length)>0&&<div style={{fontSize:8,color:'#94a3b8'}}>休{o.length+l.length}</div>}
+                    </div>}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      {/* 選んだ日の詳細＋自分の休日の入力 */}
+      {selDay&&(
+        <div style={{margin:'6px 8px 16px',background:'white',borderRadius:14,border:'1px solid #e2e8f0',boxShadow:'0 2px 8px rgba(0,0,0,.05)',padding:'12px 12px 14px'}}>
+          <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8}}>
+            <span style={{fontWeight:900,fontSize:16}}>{cm+1}/{selDay}（{DOW[new Date(cy,cm,selDay).getDay()]}）</span>
+            <span style={{fontSize:12,color:'#64748b'}}>{store==='honten'?'本店':'三田店'}</span>
+            {selClosed
+              ?<span style={{marginLeft:'auto',fontSize:12,fontWeight:800,color:CLOSED_FG}}>店休日（全員休み）</span>
+              :<span style={{marginLeft:'auto',fontSize:12,fontWeight:800,color:'#1e40af'}}>出勤 {selWorking.length}人 / {staff.length}人</span>}
+          </div>
+          {!selClosed&&(
+            <div style={{display:'flex',flexDirection:'column',gap:5,marginBottom:10,fontSize:12}}>
+              <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                <span style={{flexShrink:0,color:'#ea580c',fontWeight:800}}>🏖 休日</span>
+                {selOffs.length?selOffs.map(n=><span key={n} style={{padding:'2px 8px',borderRadius:6,background:'#fff7ed',border:'1px solid #fdba74',color:'#9a3412',fontWeight:700}}>{n}</span>):<span style={{color:'#94a3b8'}}>なし</span>}
+              </div>
+              {selLeaves.length>0&&<div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                <span style={{flexShrink:0,color:'#059669',fontWeight:800}}>📋 有給</span>
+                {selLeaves.map(n=><span key={n} style={{padding:'2px 8px',borderRadius:6,background:'#d1fae5',border:'1px solid #6ee7b7',color:'#065f46',fontWeight:700}}>{n}</span>)}
+              </div>}
+              <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                <span style={{flexShrink:0,color:'#475569',fontWeight:800}}>出勤</span>
+                {selWorking.length?selWorking.map(s=><span key={s.uid||s.name} style={{padding:'2px 8px',borderRadius:6,background:'#f1f5f9',color:'#334155'}}>{s.name}</span>):<span style={{color:'#dc2626',fontWeight:700}}>誰もいません</span>}
+              </div>
+            </div>
+          )}
+          {!selClosed&&canEditHere&&targetInStore&&(
+            <div>
+              <div style={{fontSize:11,color:'#64748b',marginBottom:5}}><b>{target}</b>{target===user.name?'（自分）':''}のこの日：</div>
+              <div style={{display:'flex',gap:6}}>
+                <Chip on={myState==='dayoff'} color="#ea580c" bg="#fff7ed" disabled={busy} onClick={()=>tap('dayoff')}>🏖 休日{myState==='dayoff'?'（タップで解除）':''}</Chip>
+                <Chip on={myState==='leave'} color="#059669" bg="#d1fae5" disabled={busy} onClick={()=>tap('leave')}>📋 有給{myState==='leave'?'（タップで解除）':''}</Chip>
+              </div>
+              <div style={{fontSize:10,color:'#94a3b8',marginTop:6}}>タップした瞬間に確定し、PC のスタッフ休日カレンダーにもすぐ出ます。</div>
+            </div>
+          )}
+          {!selClosed&&!canEditHere&&<div style={{fontSize:11,color:'#94a3b8'}}>他の店は閲覧のみです。休日の入力は自分の店（{vsId==='honten'?'本店':'三田店'}）で。</div>}
+          {!selClosed&&canEditHere&&!targetInStore&&<div style={{fontSize:11,color:'#94a3b8'}}>{target} さんは{store==='honten'?'本店':'三田店'}のスタッフ表にいないため、ここでは入力できません。</div>}
+        </div>
+      )}
+    </div>
+  );
+};
 const MailModal=({user,onClose,onSaveEmail})=>{
   const [email,setEmail]=useState('');
   const [loaded,setLoaded]=useState(false);
@@ -2583,6 +2752,9 @@ const App=()=>{
   const [schedRestrictions,setSchedRestrictions]=useState({}); // 入庫制限（PC版と同じくSTORなしの共有キー）
   const [dayOffH,setDayOffH]=useState({});
   const [dayOffS,setDayOffS]=useState({});
+  const [pleaveH,setPleaveH]=useState({});          // 有給（PC版 pleave-honten / pleave-sanda）
+  const [pleaveS,setPleaveS]=useState({});
+  const [monthlyHolidays,setMonthlyHolidays]=useState({}); // 会社が決めた月間休日数 {"2026-6":10}（表示のみ）
   const [staffH,setStaffH]=useState([]);
   const [staffS,setStaffS]=useState([]);
   // ── 本人認証：この端末に登録された人 ──
@@ -2677,7 +2849,7 @@ const App=()=>{
       // まとめ読み1リクエスト（GAS未対応の間は従来の並列GETへ自動フォールバック）
       let vals=await sGetMany(KEYS);
       if(!vals)vals=await Promise.all(KEYS.map(k=>sGet(k)));
-      const [insp,sh,ss,mh,ms,lh,ls,cdh,cds,cdateH,cdateS,ov,rcars,rres,carsH,carsS,limits,restr,doH,doS,stH,stS]=vals;
+      const [insp,sh,ss,mh,ms,lh,ls,cdh,cds,cdateH,cdateS,ov,rcars,rres,carsH,carsS,limits,restr,doH,doS,stH,stS,plH,plS,mhol]=vals;
       if(writeGuardRef.current>0&&!force){setLoading(false);return;} // 取得中に保存が始まった場合も反映しない
       if(isPlainObj(insp))setInspData(applyOverlays(STOR+'insp',insp));
       if(isPlainObj(sh))setSchedDataH(applyOverlays(storKey('sched','honten'),sh));
@@ -2701,6 +2873,9 @@ const App=()=>{
       if(isPlainObj(doS))setDayOffS(doS);
       if(Array.isArray(stH))setStaffH(stH);
       if(Array.isArray(stS))setStaffS(stS);
+      if(isPlainObj(plH))setPleaveH(plH);
+      if(isPlainObj(plS))setPleaveS(plS);
+      if(isPlainObj(mhol))setMonthlyHolidays(mhol);
       setGasOk(FB_ON?!(window.__hubGasDown||0):true);   // Firestore では購読の失敗（fbDown）を接続状態に反映
     }catch{setGasOk(false);}
     finally{fetchBusyRef.current=false;}
@@ -2807,6 +2982,33 @@ const App=()=>{
       if(isPlainObj(echo)&&verify(echo)){applyLocal(echo);return echo;} // 反映確認OK（他端末の変更も取り込む）
     }
     throw new Error('サーバーへの保存を確認できませんでした（通信または混雑）。もう一度お試しください');
+  };
+  // ── スタッフ休日（休日タブ）。PC版の StaffCalendarModal と同じデータ・同じ決まり ──
+  //   ・入力したら即確定（申請→承認は無し。PC版と同じ）
+  //   ・一般スタッフは自分の分だけ。管理者（canRestore の4人）は誰の分でも設定できる
+  //   ・休日(dayoff)と有給(pleave)は同じ日に両方入らない（片方を入れたらもう片方から外す）
+  //   ・サーバー最新値に対して氏名を足す／外すだけ（他の人の休日を巻き込まない）
+  const toggleDayOff=async(store,type,dk,name)=>{
+    const key=storKey(type==='leave'?'pleave':'dayoff',store);
+    const other=storKey(type==='leave'?'dayoff':'pleave',store);
+    const setOf=k=>k===storKey('dayoff','honten')?setDayOffH:k===storKey('dayoff','sanda')?setDayOffS:k===storKey('pleave','honten')?setPleaveH:setPleaveS;
+    const curOf=k=>k===storKey('dayoff','honten')?dayOffH:k===storKey('dayoff','sanda')?dayOffS:k===storKey('pleave','honten')?pleaveH:pleaveS;
+    const has=(Array.isArray(curOf(key)[dk])?curOf(key)[dk]:[]).includes(name);
+    const edit=(base,add)=>{
+      const arr=Array.isArray(base[dk])?base[dk]:[];
+      if(add){ if(arr.includes(name))return undefined; return {...base,[dk]:[...arr,name]}; }
+      if(!arr.includes(name))return undefined;
+      const rest=arr.filter(n=>n!==name);
+      const next={...base}; if(rest.length)next[dk]=rest; else delete next[dk];
+      return next;
+    };
+    try{
+      await writeShared(key,{},b=>edit(b,!has),v=>setOf(key)(v),null,true);
+      if(!has) await writeShared(other,{},b=>edit(b,false),v=>setOf(other)(v),null,true);
+    }catch(e){
+      alert('⚠️ 休日の保存がサーバーに反映されていません。\nもう一度お試しください。');
+      fetchAll(true);
+    }
   };
   // 検証ヘルパ: lres/rres に指定bookingKeyの予約が「ある」「ない」を確認
   const hasBk=(res,bk)=>Object.values(res||{}).some(days=>Object.values(days||{}).some(r=>r&&r.bookingKey===bk));
@@ -3315,7 +3517,7 @@ const App=()=>{
   if(!user)return <LoginScreen
     onLogin={u=>{hubUse(u.name);hubRenew(u.name);setUser(u);setFadeIn(true);}}
     onAddAuth={()=>setShowAuthAdd(true)}/>;
-  const TABS=[{id:'cal',label:'カレンダー',icon:'📅'},{id:'sched',label:'スケジュール',icon:'⏰'},{id:'loaner',label:'代車',icon:'🚙'}];
+  const TABS=[{id:'cal',label:'カレンダー',icon:'📅'},{id:'sched',label:'スケジュール',icon:'⏰'},{id:'loaner',label:'代車',icon:'🚙'},{id:'off',label:'休日',icon:'🏖'}];
   return(
     <div style={{height:'100%',display:'flex',flexDirection:'column',position:'relative'}}>
       {fadeIn&&<div style={{position:'absolute',inset:0,background:'white',zIndex:999,animation:'loginFadeIn 2.5s ease forwards',pointerEvents:'none'}} onAnimationEnd={()=>setFadeIn(false)}/>}
@@ -3395,6 +3597,11 @@ const App=()=>{
           onSelectDate={(dk,y,m,d)=>setDayDetail({dk,y,m,d})}/>}
         {tab==='loaner'&&<LoanerView loanerResH={loanerResH} loanerResS={loanerResS} rentalResData={rentalResData} rentalCars={rentalCars}
           loanerCarsH={loanerCarsH} loanerCarsS={loanerCarsS} vsId={vsId}/>}
+        {tab==='off'&&<HolidayView user={user} vsId={vsId} adminMode={canRestore(user)}
+          staffH={staffH.length?staffH:DEFAULT_STAFF.filter(s=>s.store==='honten')} staffS={staffS.length?staffS:DEFAULT_STAFF.filter(s=>s.store==='sanda')}
+          dayOffH={dayOffH} dayOffS={dayOffS} pleaveH={pleaveH} pleaveS={pleaveS}
+          closedDaysH={closedDaysH} closedDaysS={closedDaysS} closedDatesH={closedDatesH} closedDatesS={closedDatesS} overrideOpen={overrideOpen}
+          monthlyHolidays={monthlyHolidays} onToggle={toggleDayOff}/>}
       </div>
       {dayDetail&&<DayDetailModal {...dayDetail} inspData={inspData} schedDataH={schedDataH} schedDataS={schedDataS} memoDataH={memoDataH} memoDataS={memoDataS} vsId={vsId} onToggleArrived={toggleArrived} arrivedOv={arrivedOv}
         onClose={()=>setDayDetail(null)}

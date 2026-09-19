@@ -227,7 +227,7 @@ async function loadProdStore() {
     const mBody = await page3.locator('body').innerText().catch(() => '');
     if (mBody.includes('レンダリングエラー')) problems.push('mobile 起動直後: レンダリングエラー表示');
     if (mBody.includes('誰が操作しますか')) problems.push('mobile: ログインできていない');
-    for (const tab of ['カレンダー', 'スケジュール', '代車']) {
+    for (const tab of ['カレンダー', 'スケジュール', '代車', '休日']) {
       const ok = await page3.evaluate((t) => {
         // タブはbuttonではなく onClick付きdiv。最深のラベルdivをクリックすればReactイベントがバブルする
         const target = [...document.querySelectorAll('div')].filter(el => el.textContent.includes(t) && el.textContent.replace(/\s/g, '').length < 10).pop();
