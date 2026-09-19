@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789778770803';
+    window.__APP_BUILD='build-1789786245828';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.48';
+const APP_VERSION = '2.49';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -1595,7 +1595,7 @@ const BOOKING_STATUS_STRIPE = {
 };
 const BOOKING_STATUS_COLOR  = {new:'#166534',provisional:'#166534',confirmed:'#075985',cancelled:'#991b1b'};
 const BOOKING_STATUS_BORDER = {new:'#4ade80',provisional:'#4ade80',confirmed:'#38bdf8',cancelled:'#f87171'};
-const blankSched = () => ({name:'',staff:'',carType:'',work:'',loaner:'',loanerId:null,rentalLabel:'',rentalCarId:null,shimi:'',content:'',deliveryDate:'',deliveryTime:''});
+const blankSched = () => ({name:'',staff:'',carType:'',work:'',loaner:'',loanerId:null,rentalLabel:'',rentalCarId:null,shimi:'',content:'',entryDate:'',deliveryDate:'',deliveryTime:''});
 const blankMemo  = () => ({content:''});
 const dateKey    = (y,m,d) => `${y}-${m+1}-${d}`;
 const toNum      = (y,m,d) => y*10000+(m+1)*100+d;
@@ -5322,13 +5322,13 @@ const SetItemEditModal=memo(({isOpen,onClose,items,onSave,title})=>{
   if(!isOpen)return null;
 
   const startEdit=(idx)=>{setEditIdx(idx);setEditLabel(list[idx].label);setEditText(list[idx].text||'');};
-  const confirmEdit=()=>{if(!editLabel.trim())return;setList(p=>{const n=[...p];n[editIdx]={...n[editIdx],label:editLabel.trim(),text:editText};return n;});setEditIdx(null);};
+  const confirmEdit=()=>{if(!editLabel.trim())return;setList(p=>{const n=[...p];n[editIdx]={...n[editIdx],label:editLabel.trim(),text:(editText.trim()||editLabel.trim())};return n;});setEditIdx(null);};   // テキスト空なら表示名を入れる
   const moveUp=(i)=>{if(i===0)return;setList(p=>{const n=[...p];[n[i-1],n[i]]=[n[i],n[i-1]];return n;});};
   const moveDown=(i)=>{setList(p=>{if(i>=p.length-1)return p;const n=[...p];[n[i],n[i+1]]=[n[i+1],n[i]];return n;});};
   const deleteItem=(i)=>{setList(p=>p.filter((_,j)=>j!==i));};
   const addItem=()=>{
     if(!newLabel.trim())return;
-    setList(p=>[...p,{id:`si_${Date.now()}`,label:newLabel.trim(),text:newText}]);
+    setList(p=>[...p,{id:`si_${Date.now()}`,label:newLabel.trim(),text:(newText.trim()||newLabel.trim())}]);   // テキスト空なら表示名をそのまま挿入する
     setNewLabel('');setNewText('');
   };
 
@@ -5336,7 +5336,7 @@ const SetItemEditModal=memo(({isOpen,onClose,items,onSave,title})=>{
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:4800,display:'flex',alignItems:'center',justifyContent:'center',padding:12}} onClick={onClose}>
       <div onClick={e=>e.stopPropagation()} className="modal-box"
         style={{background:'white',borderRadius:16,width:'min(640px,96vw)',maxHeight:'90vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.4)'}}>
-        <div style={{padding:'16px 20px',background:'linear-gradient(135deg,#0e7490,#0891b2)',borderRadius:'16px 16px 0 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div style={{padding:'16px 20px',background:'linear-gradient(135deg,#0e7490,#0891b2)',borderRadius:'16px 16px 0 0',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
           <div>
             <div style={{color:'white',fontWeight:800,fontSize:15}}>⚡ {title||'クイックアイテム編集'}</div>
             <div style={{color:'rgba(255,255,255,0.75)',fontSize:11,marginTop:2}}>内容欄に挿入できる定型文を管理します</div>
@@ -5346,7 +5346,7 @@ const SetItemEditModal=memo(({isOpen,onClose,items,onSave,title})=>{
 
         <div style={{flex:1,overflowY:'auto',padding:'14px 20px',display:'flex',flexDirection:'column',gap:8}}>
           {list.map((item,i)=>(
-            <div key={item.id||i} style={{background:'#f8fafc',border:'2px solid #e5e7eb',borderRadius:9,overflow:'hidden'}}>
+            <div key={item.id||i} style={{background:'#f8fafc',border:'2px solid #e5e7eb',borderRadius:9,overflow:'hidden',flexShrink:0}}>
               {editIdx===i?(
                 <div style={{padding:'10px 12px',display:'flex',flexDirection:'column',gap:6}}>
                   <input value={editLabel} onChange={e=>setEditLabel(e.target.value)} placeholder="ボタン表示名"
@@ -5366,7 +5366,7 @@ const SetItemEditModal=memo(({isOpen,onClose,items,onSave,title})=>{
                   </div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontWeight:700,fontSize:13,color:'#0891b2'}}>{item.label}</div>
-                    <div style={{fontSize:11,color:'#6b7280',wordBreak:'break-all',lineHeight:1.5,marginTop:2}}>{item.text||'（テキストなし）'}</div>
+                    <div style={{fontSize:11,color:'#6b7280',wordBreak:'break-all',lineHeight:1.5,marginTop:2}}>{item.text||'（表示名をそのまま挿入）'}</div>
                   </div>
                   <button onClick={()=>startEdit(i)} style={{padding:'4px 10px',background:'#e0f2fe',border:'1px solid #7dd3fc',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer',color:'#0369a1',whiteSpace:'nowrap'}}>編集</button>
                   <button onClick={()=>deleteItem(i)} style={{padding:'4px 8px',background:'#fee2e2',border:'1px solid #fca5a5',borderRadius:6,fontSize:11,cursor:'pointer',color:'#dc2626'}}>✕</button>
@@ -5376,12 +5376,12 @@ const SetItemEditModal=memo(({isOpen,onClose,items,onSave,title})=>{
           ))}
 
           {/* 新規追加 */}
-          <div style={{background:'#f0fdf4',border:'2px dashed #86efac',borderRadius:9,padding:'10px 12px'}}>
+          <div style={{background:'#f0fdf4',border:'2px dashed #86efac',borderRadius:9,padding:'10px 12px',flexShrink:0}}>
             <div style={{fontWeight:700,fontSize:12,color:'#059669',marginBottom:8}}>＋ 新規追加</div>
             <div style={{display:'flex',flexDirection:'column',gap:6}}>
               <input value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="ボタン表示名（例：バッテリー交換）"
                 style={{...INP,fontSize:13}}/>
-              <input value={newText} onChange={e=>setNewText(e.target.value)} placeholder="挿入するテキスト（内容欄に入る文章）"
+              <input value={newText} onChange={e=>setNewText(e.target.value)} placeholder="挿入するテキスト（空なら表示名がそのまま入ります）"
                 style={{...INP,fontSize:12}}/>
               <button onClick={addItem} disabled={!newLabel.trim()}
                 style={{padding:'8px 0',background:newLabel.trim()?'#059669':'#d1d5db',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:newLabel.trim()?'pointer':'default'}}>
@@ -6093,8 +6093,8 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
               )}
             </div>
           )}
-          {/* 前日入庫の入庫日（車検作業日と別の日に車が入庫する場合。チェックすると入庫日のスケジュールに自動表示） */}
-          {isInsp&&(
+          {/* 前日入庫の入庫日（作業日と別の日に車が入庫する場合。チェックすると入庫日のスケジュールに自動表示）。2026-09-19 から整備でも */}
+          {(
             <div style={{position:'relative'}}>
               <label style={LBL}>入庫日 <span style={{fontWeight:400,color:'#9ca3af',fontSize:10}}>事前入庫（前日・前々日など）の場合にチェック</span></label>
               <button type="button"
@@ -6190,19 +6190,22 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
                 {(setItems||[]).map((si,i)=>{
                   const field=isInsp?'note':'content';
                   const cur=(isInsp?form.note:form.content)||'';
+                  // ★挿入するテキストが空のアイテムは表示名をそのまま入れる（2026-09-19 報告：「部品手配OK」がテキスト未入力で無反応だった）
+                  const txt=(si.text&&String(si.text).trim())?si.text:(si.label||'');
                   // 現在の内容にこのアイテムのテキストが含まれているか
                   const lines=cur.split('\n');
-                  const isActive=!!(si.text&&lines.includes(si.text));
+                  const isActive=!!(txt&&lines.includes(txt));
                   return(
                     <button key={si.id||i}
                       onClick={()=>{
                         if(isActive){
                           // 2回目：該当行を削除
-                          const next=lines.filter(l=>l!==si.text).join('\n');
+                          const next=lines.filter(l=>l!==txt).join('\n');
                           setForm(p=>({...p,[field]:next}));
                         }else{
                           // 1回目：末尾に追記
-                          setForm(p=>({...p,[field]:cur?cur+'\n'+si.text:si.text}));
+                          if(!txt)return;
+                          setForm(p=>({...p,[field]:cur?cur+'\n'+txt:txt}));
                         }
                       }}
                       style={{
@@ -8746,7 +8749,16 @@ function AppInner() {
     (async()=>{
       const ok=await withSaveBusy(()=>writeVerified(STOR+'insp',
         // ★土台に「手元の作りたての予約」を足してから変更を適用する（古いキャッシュ対策）
-        base=>{ const v=mutate(mergeInspFresh(hotInspRef.current,base,Date.now())); updateLocalInspData(v); return v; },
+        base=>{
+          const v=mutate(mergeInspFresh(hotInspRef.current,base,Date.now()));
+          // ★保険：1回の保存で土台より日付が3つ以上減ることは無い（消えるのは空になった日くらい）。
+          //   そうなったら土台か変更に異常があるので書かずに止める（2026-09-19「スケジュールが全部消えた」報告を受けて）。
+          const nb=Object.keys((base&&typeof base==='object'&&!Array.isArray(base))?base:{}).length, nv=Object.keys(v||{}).length;
+          if(nb>=3&&nv<nb-2){
+            try{ const lk=STOR+'insp-anomaly'; const arr=JSON.parse(localStorage.getItem(lk)||'[]'); arr.push({ts:new Date().toLocaleString('ja-JP'),base:nb,result:nv}); localStorage.setItem(lk,JSON.stringify(arr.slice(-20))); }catch(e){}
+            throw new Error('insp shrink '+nb+'→'+nv);
+          }
+          updateLocalInspData(v); return v; },
         back=>{ try{return !!confirmFn(back);}catch(e){return false;} },
         // 車検予約は取り返しがつかないので、GASが ok を返しても必ず読み返して検算する
         3,{requireBase:true,alwaysVerify:true}
@@ -9318,7 +9330,12 @@ function AppInner() {
     Object.keys(schedData||{}).forEach(wdk=>{
       Object.keys(schedData[wdk]||{}).forEach(sk=>{
         const r=schedData[wdk][sk];
-        if(!r||!r.name||r.deliveryDate!==dk)return;
+        if(!r||!r.name)return;
+        // 整備の事前入庫（2026-09-19）
+        if(wdk!==dk && r.entryDate===dk){
+          pushDerived(_slotOf(getBaseSlot(sk)),{kind:'事前入庫',cls:'d-pre',name:r.name,carType:r.carType||'',loaner:schedLoaner(r),note:`${_mmdd(wdk)} 作業の預かり`});
+        }
+        if(r.deliveryDate!==dk)return;
         if(wdk===dk&&getBaseSlot(sk)===_slotOf(r.deliveryTime))return; // 自分自身の枠と重なる時は出さない
         pushDerived(_slotOf(r.deliveryTime),{kind:'納車',cls:'d-dlv',name:r.name,carType:r.carType||'',
           loaner:schedLoaner(r),note:`${_mmdd(wdk)} 作業の納車`});
@@ -11909,7 +11926,16 @@ function AppInner() {
                         (inspData[wdk]||[]).forEach((r,ix)=>{ if(!r||!r.name||r.entryDate!==dk||r.bookingStatus==='cancelled')return;
                           if(!(r.store===vsId||(r.store==null&&vsId==='honten')))return;
                           const s=(r.time&&SCHED_SLOTS.includes(getBaseSlot(r.time)))?getBaseSlot(r.time):'未定';
-                          (_doBySlot[s]=_doBySlot[s]||[]).push({r,wdk,ix});
+                          (_doBySlot[s]=_doBySlot[s]||[]).push({r,wdk,ix,kind:'insp'});
+                        });
+                      });
+                      // 整備（タイムスケジュール）の事前入庫も同じく（2026-09-19）
+                      Object.keys(schedData||{}).forEach(wdk=>{ if(wdk===dk)return;
+                        Object.keys(schedData[wdk]||{}).forEach(sk=>{
+                          const r=schedData[wdk][sk];
+                          if(!r||!r.name||r.entryDate!==dk)return;
+                          const s=SCHED_SLOTS.includes(getBaseSlot(sk))?getBaseSlot(sk):'未定';   // 入庫時刻は作業枠の時刻と同じ
+                          (_doBySlot[s]=_doBySlot[s]||[]).push({r,wdk,sk,kind:'sched'});
                         });
                       });
                       // 納車：この日(dk)に納車する車検／タイムスケジュール（作業日は同日でも別日でもよい）を納車時間ごとに集める。
@@ -11978,18 +12004,19 @@ function AppInner() {
                               );
                             })}
                             {/* 前日入庫（この日に入庫する別日の車検）を読み取り専用で表示。クリックで車検を開く */}
-                            {(_doBySlot[slot]||[]).map(({r,wdk,ix})=>{
+                            {(_doBySlot[slot]||[]).map(({r,wdk,ix,sk,kind})=>{
                               const wl=wdk.split('-');
-                              const dl=getLoanerLabel(loanerRes,wdk,r.name,`insp-${wdk}-${ix}`);
-                              const loaner=r.rentalLabel||dl||'';
+                              const isSch=kind==='sched';
+                              const dl=isSch?'':getLoanerLabel(loanerRes,wdk,r.name,`insp-${wdk}-${ix}`);
+                              const loaner=r.rentalLabel||dl||(isSch?(r.loaner||''):'');
                               // ★事前入庫の日こそ実際に車が入る日。ここでもチェックできる。
-                              //   印は本体（車検日）の予約に付くので、両方の日で同じチェックが見える。
-                              const _ak=arrivedKey(wdk,r,ix);
+                              //   印は本体（作業日）の予約に付くので、両方の日で同じチェックが見える。
+                              const _ak=arrivedKey(wdk,r,isSch?sk:ix);
                               const _arr=arrivedOv[_ak]?!!arrivedOv[_ak].v:!!r.arrived;
                               return(
-                                <tr key={'do-'+wdk+'-'+ix} onClick={()=>handleOpenModal('insp',wdk,ix,null,false)}
-                                  style={{background:'#fff7ed',cursor:'pointer'}} title="事前入庫の車検（クリックで車検を編集）">
-                                  <td onClick={e=>{e.preventDefault();e.stopPropagation();toggleInspArrived(wdk,ix);}}
+                                <tr key={'do-'+wdk+'-'+(isSch?sk:ix)} onClick={()=>isSch?handleOpenModal('sched',wdk,null,sk,false):handleOpenModal('insp',wdk,ix,null,false)}
+                                  style={{background:'#fff7ed',cursor:'pointer'}} title={isSch?'事前入庫の整備（クリックで予定を編集）':'事前入庫の車検（クリックで車検を編集）'}>
+                                  <td onClick={e=>{e.preventDefault();e.stopPropagation();isSch?toggleSchedArrived(wdk,sk):toggleInspArrived(wdk,ix);}}
                                     title={_arr?'入庫済み（クリックで解除）':'入庫したらクリック'}
                                     style={{...TD,width:50,maxWidth:50,cursor:'pointer',textAlign:_arr?'center':undefined,background:_arr?'#fde047':undefined,paddingLeft:6,paddingRight:3,whiteSpace:isSpecialSlot(slot)?'normal':'nowrap',lineHeight:isSpecialSlot(slot)?1.12:undefined,color:'#9a3412',fontWeight:700,fontSize:isSpecialSlot(slot)?10:11,borderLeft:'3px solid #ea580c'}}>
                                     {_arr?<span style={{fontWeight:900,color:'#dc2626',fontSize:15,lineHeight:1}}>✓</span>:(isSpecialSlot(slot)?specialSlotLabel(slot):slot)}</td>
@@ -12006,12 +12033,12 @@ function AppInner() {
                                       従来はここだけ 🔑 を付けており、🔑 はレンタカーの記号なので紛らわしかった。
                                       （レンタカーはラベル自体に 🔑 が入っているので二重にならない） */}
                                   <td style={TD}>{loaner?<span style={{fontSize:11,color:'#065f46',fontWeight:700}}>
-                                    {!r.rentalLabel&&getLoanerLocked(loanerRes,wdk,r.name,`insp-${wdk}-${ix}`)&&<span title="限定：この代車は最適化で動かしません" style={{marginRight:3}}>🔒</span>}
+                                    {!r.rentalLabel&&!isSch&&getLoanerLocked(loanerRes,wdk,r.name,`insp-${wdk}-${ix}`)&&<span title="限定：この代車は最適化で動かしません" style={{marginRight:3}}>🔒</span>}
                                     {loaner}</span>:<span style={{color:'#9ca3af'}}>—</span>}</td>
                                   <td style={TD}><span style={{color:'#9ca3af'}}>—</span></td>
                                   <td style={TD}>
                                     <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-                                      <span style={{fontSize:10,color:'#9a3412',fontWeight:700,whiteSpace:'nowrap',background:'#ffedd5',border:'1px solid #fdba74',borderRadius:20,padding:'1px 7px'}}>→ {wl[1]}/{wl[2]} 車検</span>
+                                      <span style={{fontSize:10,color:'#9a3412',fontWeight:700,whiteSpace:'nowrap',background:'#ffedd5',border:'1px solid #fdba74',borderRadius:20,padding:'1px 7px'}}>→ {wl[1]}/{wl[2]} {isSch?'予定':'車検'}</span>
                                       {r.note&&<span style={{fontSize:12,color:'#374151'}}>{r.note}</span>}
                                     </div>
                                   </td>
@@ -12027,7 +12054,9 @@ function AppInner() {
                               const loaner=d.kind==='insp'
                                 ?(r.rentalLabel||getLoanerLabel(loanerRes,d.wdk,r.name,`insp-${d.wdk}-${d.ix}`)||r.loaner||'')
                                 :(r.rentalLabel||r.loaner||'');
-                              const srcLabel=`${wl[1]}/${wl[2]} ${d.kind==='insp'?'車検':'予定'}`;
+                              // ★事前入庫（入庫日）がある予約は「入庫日 入庫 → 納車」で示す（2026-09-19 ユーザー要望。作業日を出すと予約日と読まれる）
+                              const _el=(r.entryDate&&r.entryDate!==d.wdk)?r.entryDate.split('-'):null;
+                              const srcLabel=_el?`${_el[1]}/${_el[2]} 入庫`:`${wl[1]}/${wl[2]} ${d.kind==='insp'?'車検':'予定'}`;
                               return(
                                 <tr key={'dl-'+d.kind+'-'+d.wdk+'-'+(d.ix??d.sk)+'-'+di}
                                   onClick={()=>d.kind==='insp'?handleOpenModal('insp',d.wdk,d.ix,null,false):handleOpenModal('sched',d.wdk,null,d.sk,false)}

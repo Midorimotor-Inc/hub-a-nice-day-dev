@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789778770803';
+  window.__APP_BUILD='build-1789786245828';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.48';
+const MOBILE_VERSION='2.49';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -2126,7 +2126,7 @@ const ScheduleView=({inspData,schedDataH,schedDataS,memoDataH,memoDataS,loanerRe
                     <span style={{fontWeight:800,fontSize:13}}>{r.name}</span>
                     {r.carType&&<span style={{fontSize:11,color:'#64748b'}}>🚗{r.carType}</span>}
                     {loaner&&<span style={{fontSize:11,color:'#0284c7'}}>{!r.rentalLabel&&d.kind==='insp'&&getLoanerLocked(myLoanerRes,d.wdk,r.name,`insp-${d.wdk}-${d.ix}`)&&'🔒 '}{loaner}</span>}
-                    <span style={{marginLeft:'auto',fontSize:10,fontWeight:800,color:'#047857',whiteSpace:'nowrap'}}>{wl[1]}/{wl[2]}{d.kind==='insp'?'車検':'予定'} → 納車 ›</span>
+                    <span style={{marginLeft:'auto',fontSize:10,fontWeight:800,color:'#047857',whiteSpace:'nowrap'}}>{(r.entryDate&&r.entryDate!==d.wdk)?r.entryDate.split('-').slice(1).join('/')+'入庫':wl[1]+'/'+wl[2]+(d.kind==='insp'?'車検':'予定')} → 納車 ›</span>
                   </div>
                   );
                 })}
