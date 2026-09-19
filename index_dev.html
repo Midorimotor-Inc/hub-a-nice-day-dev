@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789794796997';
+    window.__APP_BUILD='build-1789796111181';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.51';
+const APP_VERSION = '2.52';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -3127,6 +3127,8 @@ function useShared(key, def, pollMs=60000) {
 
 const GCSS=`
   @keyframes modalIn{from{opacity:0;transform:scale(0.92) translateY(-16px)}to{opacity:1;transform:scale(1) translateY(0)}}
+  @keyframes hubBusyPulse{0%,100%{opacity:1}50%{opacity:.45}}
+  .hub-busy-chip{animation:hubBusyPulse 1.2s ease-in-out infinite}
   @keyframes slideIn{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
   @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
   .modal-box{animation:modalIn 0.26s cubic-bezier(0.34,1.56,0.64,1) both;}
@@ -4320,9 +4322,14 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
   );
 };
 
-const LockBadge=({lockedBy})=>(
-  <span style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 7px',borderRadius:20,background:'#fef2f2',border:'1px solid #fca5a5',color:'#dc2626',fontSize:10,fontWeight:700}}>
-    <Lock size={9}/>{lockedBy} 編集中
+// ★他の人が開いている行の印（2-B案・2026-09-19 ユーザー選択）。行は黄色＋左に太い縁、印は点滅。
+//   新規入力の空き行も同じ印が付く（「（新規入力）」を添える）。
+const LockBadge=({lockedBy,isNew})=>(
+  <span style={{display:'inline-flex',alignItems:'center',gap:4}}>
+    <span className="hub-busy-chip" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'2px 9px',borderRadius:20,background:'#f59e0b',color:'white',fontSize:11,fontWeight:800,whiteSpace:'nowrap'}}>
+      ✏️ {lockedBy} 入力中
+    </span>
+    {isNew&&<span style={{fontSize:10,color:'#92400e',fontWeight:700}}>（新規入力）</span>}
   </span>
 );
 
@@ -4541,7 +4548,130 @@ const HolidayModal=memo(({isOpen,onClose,closedDays,setClosedDays,closedDates,se
 });
 
 // ============================================
-//  空き枠検索
+//  検索（1-B案・2026-09-19）：氏名・車種・顧客No・電話で、車検予約（保管箱の過去分も）・整備予約・顧客ファイルを探す。
+//  「空き枠検索」の置き換え（車検はカレンダーで空きが分かり、整備は前後を見ないと決められないため使われなかった）。
+//  顧客ファイルは開いた時に1回だけ読む（Firestore の cf-index → 各ファイルの index → チャンク）。
+// ============================================
+const _hubNorm=s=>String(s==null?'':s).normalize('NFKC').toLowerCase().replace(/[\s\u3000\-‐ー－()（）]/g,'');
+const FindModal=memo(({isOpen,onClose,inspData,schedDataH,schedDataS,onGo,onGoCust})=>{
+  const [q,setQ]=useState('');
+  const [tab,setTab]=useState('all');
+  const [cust,setCust]=useState(null);       // null=未読込、[]=読込済み
+  const [custBusy,setCustBusy]=useState(false);
+  const inputRef=useRef(null);
+  useEffect(()=>{
+    if(!isOpen)return;
+    setQ('');setTab('all');
+    setTimeout(()=>{try{inputRef.current&&inputRef.current.focus();}catch(e){}},50);
+    if(cust!==null||custBusy)return;
+    // 顧客ファイルを読む（customers.html と同じ置き方：cf-index → cf-{name}-index → cf-{name}-chunk-i）
+    setCustBusy(true);
+    (async()=>{
+      const out=[];
+      try{
+        const safeName=n=>String(n).replace(/[^a-zA-Z0-9\u3000-\u9fff\u30a0-\u30ff\u3040-\u309f]/g,'_').slice(0,30);
+        const idx=await sGet(STOR+'cf-index');
+        const files=(Array.isArray(idx)?idx:[]).map(f=>f&&f.name).filter(Boolean).sort().reverse();
+        for(const fn of files){
+          const sn=safeName(fn);
+          const fi=await sGet(STOR+'cf-'+sn+'-index');
+          const n=(fi&&Number(fi.chunks))||0;
+          const chunks=await Promise.all(Array.from({length:n},(_,i)=>sGet(STOR+'cf-'+sn+'-chunk-'+i).catch(()=>null)));
+          chunks.forEach(c=>{ if(Array.isArray(c)) c.forEach(r=>{ if(r&&r.name) out.push({...r,_file:fn}); }); });
+        }
+      }catch(e){}
+      setCust(out); setCustBusy(false);
+    })();
+  },[isOpen]);
+  if(!isOpen)return null;
+  const nq=_hubNorm(q);
+  const hit=(...vals)=>!!nq&&vals.some(v=>v!=null&&_hubNorm(v).includes(nq));
+  const dkNum=dk=>{const p=String(dk).split('-').map(Number);return p.length===3?p[0]*10000+p[1]*100+p[2]:0;};
+  const dkLabel=dk=>{const p=String(dk).split('-').map(Number);if(p.length!==3)return dk;const d=new Date(p[0],p[1]-1,p[2]);const y=p[0]!==new Date().getFullYear()?p[0]+'/':'';return`${y}${p[1]}/${p[2]}（${['日','月','火','水','木','金','土'][d.getDay()]}）`;};
+  const storeName=st=>(st==='sanda'||st==='三田店')?'三田店':'本店';
+  // 車検
+  const inspHits=[];
+  if(nq) Object.keys(inspData||{}).forEach(dk=>{ (inspData[dk]||[]).forEach((r,ix)=>{
+    if(!r||!r.name)return;
+    if(hit(r.name,r.carType,r.no,r.custId&&String(r.custId).split('__')[2],r.note)) inspHits.push({kind:'insp',dk,ix,r,n:dkNum(dk)});
+  }); });
+  // 整備（両店）
+  const schedHits=[];
+  if(nq) [['honten',schedDataH],['sanda',schedDataS]].forEach(([st,sd])=>{ Object.keys(sd||{}).forEach(dk=>{ Object.keys(sd[dk]||{}).forEach(sk=>{
+    const r=sd[dk][sk]; if(!r||!r.name)return;
+    if(hit(r.name,r.carType,r.content,r.work)) schedHits.push({kind:'sched',dk,sk,r,store:st,n:dkNum(dk)});
+  }); }); });
+  // 顧客ファイル
+  const custHits=nq?(cust||[]).filter(r=>hit(r.name,r.carType,r.no,r.phoneHome,r.phoneMobile,r.address)):[];
+  const byDate=(a,b)=>b.n-a.n;
+  inspHits.sort(byDate); schedHits.sort(byDate);
+  const all=(tab==='all'||tab==='insp')?inspHits:[];
+  const all2=(tab==='all'||tab==='sched')?schedHits:[];
+  const all3=(tab==='all'||tab==='cust')?custHits:[];
+  const total=inspHits.length+schedHits.length+custHits.length;
+  const mark=text=>{
+    const t=String(text==null?'':text); if(!nq||!t)return t;
+    const i=_hubNorm(t).indexOf(nq); if(i<0)return t;
+    // 正規化で文字数が変わることがあるので、見つかった時だけ元の文字列で近い位置を強調する
+    const raw=t.toLowerCase().normalize('NFKC'); const j=raw.indexOf(nq); if(j<0)return t;
+    return <>{t.slice(0,j)}<mark style={{background:'#fef08a',padding:'0 2px',borderRadius:3}}>{t.slice(j,j+nq.length)}</mark>{t.slice(j+nq.length)}</>;
+  };
+  const Pill=({c,children})=><span style={{fontSize:10,fontWeight:800,borderRadius:20,padding:'1px 7px',color:'white',background:c,whiteSpace:'nowrap'}}>{children}</span>;
+  const Row=({onClick,children})=><div onClick={onClick} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderTop:'1px solid #f1f5f9',fontSize:13,cursor:'pointer'}}
+    onMouseEnter={e=>e.currentTarget.style.background='#fff7ed'} onMouseLeave={e=>e.currentTarget.style.background='white'}>{children}</div>;
+  const Tab=({id,label,n})=><button onClick={()=>setTab(id)} style={{padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:700,border:`1px solid ${tab===id?'#1d4ed8':'#cbd5e1'}`,background:tab===id?'#1d4ed8':'white',color:tab===id?'white':'#334155',cursor:'pointer'}}>{label} {n}</button>;
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.55)',zIndex:6000,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'40px 12px'}} onClick={onClose}>
+      <div className="modal-box" onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:14,width:'min(680px,96vw)',maxHeight:'86vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 70px rgba(0,0,0,0.4)',overflow:'hidden'}}>
+        <div style={{background:'linear-gradient(135deg,#9a3412,#ea580c)',color:'white',padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+          <span style={{fontSize:18}}>🔍</span>
+          <div style={{flex:1}}><div style={{fontSize:15,fontWeight:800}}>検索</div><div style={{fontSize:11,opacity:.85}}>氏名・車種・顧客No・電話で、予約と顧客ファイルから探します</div></div>
+          <button onClick={onClose} style={{background:'rgba(255,255,255,0.2)',border:'none',borderRadius:'50%',width:30,height:30,cursor:'pointer',color:'white',fontSize:15}}>×</button>
+        </div>
+        <div style={{display:'flex',gap:8,padding:12,borderBottom:'1px solid #e5e7eb',background:'#fafafa',flexShrink:0}}>
+          <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)} placeholder="例：セリエ / ハイエース / 1386 / 090"
+            style={{flex:1,padding:'10px 12px',border:'2px solid #fdba74',borderRadius:9,fontSize:15,outline:'none'}}/>
+          <span style={{alignSelf:'center',fontSize:12,color:'#64748b',whiteSpace:'nowrap'}}>{nq?total+'件':(custBusy?'顧客ファイル読込中…':'')}</span>
+        </div>
+        <div style={{display:'flex',gap:4,padding:'8px 12px 0',flexShrink:0}}>
+          <Tab id="all" label="すべて" n={nq?total:''}/><Tab id="insp" label="車検" n={nq?inspHits.length:''}/><Tab id="sched" label="整備" n={nq?schedHits.length:''}/><Tab id="cust" label="顧客ファイル" n={nq?custHits.length:''}/>
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'6px 0 12px'}}>
+          {!nq&&<div style={{padding:'28px 16px',textAlign:'center',color:'#94a3b8',fontSize:13}}>2文字以上入れると、その場で絞り込まれます</div>}
+          {nq&&total===0&&<div style={{padding:'28px 16px',textAlign:'center',color:'#94a3b8',fontSize:13}}>見つかりませんでした</div>}
+          {all.slice(0,80).map(h=>(
+            <Row key={'i'+h.dk+'-'+h.ix} onClick={()=>onGo({kind:'insp',dk:h.dk,ix:h.ix,store:(h.r.store==='sanda'||h.r.store==='三田店')?'sanda':'honten'})}>
+              <span style={{fontWeight:800,color:'#1d4ed8',width:92,flexShrink:0}}>{dkLabel(h.dk)}</span>
+              <Pill c={h.r.bookingStatus==='cancelled'?'#9ca3af':'#c2410c'}>{h.r.bookingStatus==='cancelled'?'取消':'車検'}</Pill>
+              <span style={{fontWeight:800}}>{mark(h.r.name)}</span>
+              <span style={{color:'#64748b',fontSize:12,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{mark(h.r.carType||'')}{h.r.carType?' ・ ':''}{storeName(h.r.store)}{h.r.time?' ・ '+h.r.time:''}{h.r.no?' ・ No.'+h.r.no:''}</span>
+            </Row>
+          ))}
+          {all2.slice(0,80).map(h=>(
+            <Row key={'s'+h.store+h.dk+'-'+h.sk} onClick={()=>onGo({kind:'sched',dk:h.dk,sk:h.sk,store:h.store})}>
+              <span style={{fontWeight:800,color:'#1d4ed8',width:92,flexShrink:0}}>{dkLabel(h.dk)}</span>
+              <Pill c="#0e7490">整備</Pill>
+              <span style={{fontWeight:800}}>{mark(h.r.name)}</span>
+              <span style={{color:'#64748b',fontSize:12,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{mark(h.r.carType||'')}{h.r.carType?' ・ ':''}{storeName(h.store)}{' ・ '+getBaseSlot(h.sk)}{h.r.work?' ・ '+h.r.work:''}</span>
+            </Row>
+          ))}
+          {all3.slice(0,120).map((r,i)=>(
+            <Row key={'c'+r._file+'-'+(r.custId||i)} onClick={()=>onGoCust({name:r.name,file:r._file})}>
+              <span style={{fontWeight:800,color:'#1d4ed8',width:92,flexShrink:0}}>{r._file}</span>
+              <Pill c="#059669">顧客</Pill>
+              <span style={{fontWeight:800}}>{mark(r.name)}</span>
+              <span style={{color:'#64748b',fontSize:12,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{mark(r.carType||'')}{r.no?' ・ No.'+mark(String(r.no)):''}{(r.phoneMobile||r.phoneHome)?' ・ '+mark(r.phoneMobile||r.phoneHome):''}{r.expiry?' ・ 満了 '+r.expiry:''}{r.status==='confirm'?' ・ 予約済':''}</span>
+            </Row>
+          ))}
+          {(tab==='all'||tab==='cust')&&nq&&custBusy&&<div style={{padding:'10px 16px',fontSize:12,color:'#94a3b8'}}>顧客ファイルを読み込んでいます…</div>}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// ============================================
+//  空き枠検索（2026-09-19 に「検索」へ置き換え。部品は残してある）
 // ============================================
 const SearchModal=memo(({isOpen,onClose,inspData,schedData,closedDays,closedDates,overrideOpenDates,onNavigate,inspLimits})=>{
   const [sType,setSType]=useState('insp');
@@ -6351,7 +6481,7 @@ const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,loanerResH
     : isCancelled ? BOOKING_STATUS_STRIPE.cancelled
     : pending ? BOOKING_STATUS_STRIPE.provisional
     : approved ? BOOKING_STATUS_STRIPE.confirmed
-    : locked ? '#fff7ed'
+    : locked ? '#fffbeb'
     : isEmpty ? (idx%2===0?'white':'#f8f7ff')
     : (row.bookingStatus&&BOOKING_STATUS_STRIPE[row.bookingStatus]) || (idx%2===0?'white':'#f8f7ff');
 
@@ -6363,7 +6493,7 @@ const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,loanerResH
         title={!isEmpty&&row.name?(row.arrived?'入庫済み（クリックで解除）':'入庫したらクリック'):undefined}
         style={{...TD,cursor:!isEmpty&&row.name?'pointer':undefined,textAlign:'center',
           background:row.arrived?'#fde047':undefined,
-          borderLeft:`3px solid ${isOverLimit?'#fca5a5':isCancelled?'#dc2626':pending?'#f59e0b':row.store==='honten'?'#2563eb':row.store==='sanda'?'#dc2626':'#e5e7eb'}`}}>
+          borderLeft:locked?'5px solid #f59e0b':`3px solid ${isOverLimit?'#fca5a5':isCancelled?'#dc2626':pending?'#f59e0b':row.store==='honten'?'#2563eb':row.store==='sanda'?'#dc2626':'#e5e7eb'}`}}>
         {row.arrived
           ? <span style={{fontWeight:900,color:'#dc2626',fontSize:15,lineHeight:1}}>✓</span>
           : <span style={{fontWeight:700,color:isOverLimit?'#dc2626':isCancelled?'#dc2626':pending?'#f59e0b':row.store==='honten'?'#2563eb':row.store==='sanda'?'#dc2626':'#6366f1',padding:'0 4px'}}>{dispNo!=null?dispNo:idx+1}</span>}
@@ -6384,7 +6514,7 @@ const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,loanerResH
               </button>
             </div>
           </div>
-         :locked?<div style={{padding:'3px 5px'}}><div style={{fontWeight:600}}>{row.name||'—'}</div><LockBadge lockedBy={lockInfo.lockedBy}/></div>
+         :locked?<div style={{padding:'3px 5px'}}>{row.name&&<div style={{fontWeight:600}}>{row.name}</div>}<LockBadge lockedBy={lockInfo.lockedBy} isNew={!row.name}/></div>
          :limitBlocked?<div style={{color:'#dc2626',fontSize:11,padding:'5px 7px',fontWeight:800,display:'flex',alignItems:'center',gap:4}}><span style={{fontSize:12}}>🚫</span>予約不可（台数制限 {limitFull}台に達しています）</div>
          :isEmpty?<div style={{color:'#475569',fontSize:11,padding:'5px 7px',fontStyle:'italic',fontWeight:600,display:'flex',alignItems:'center',gap:4}}><span style={{width:18,height:18,border:'2px dashed #94a3b8',borderRadius:3,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,color:'#475569',fontWeight:700}}>+</span>クリックして追加</div>
          :<div style={{padding:'3px 5px'}}>
@@ -6480,7 +6610,7 @@ const SchedRow=memo(({row,slot,baseSlot,isFirstSub,dk,onOpenModal,lockInfo,loane
   const restrExempt=isRestricted&&!!row.name&&Array.isArray(restriction.exemptWorks)&&restriction.exemptWorks.includes(row.work);
   const rowBgSched=restrExempt?'white'
     :isRestricted?'#fee2e2'
-    :locked?'#fff7ed':row.store==='sanda'?'#fff0f0':row.store==='honten'?'#eff6ff':isHour?'white':'#f0feff';
+    :locked?'#fffbeb':row.store==='sanda'?'#fff0f0':row.store==='honten'?'#eff6ff':isHour?'white':'#f0feff';
 
   return (
     <tr id={isFirstSub?'sched-slot-'+(baseSlot||slot).replace(':',''):undefined}
@@ -6499,7 +6629,7 @@ const SchedRow=memo(({row,slot,baseSlot,isFirstSub,dk,onOpenModal,lockInfo,loane
         {isRestricted&&showRestrTip&&<RestrictionTip r={restriction} style={{top:'100%',left:0,marginTop:2}}/>}
       </td>
       <td style={TD}>
-        {locked?<div style={{padding:'3px 5px'}}><div style={{fontWeight:600}}>{row.name||'—'}</div><LockBadge lockedBy={lockInfo.lockedBy}/></div>
+        {locked?<div style={{padding:'3px 5px',borderLeft:'5px solid #f59e0b',marginLeft:-8,paddingLeft:8}}>{row.name&&<div style={{fontWeight:600}}>{row.name}</div>}<LockBadge lockedBy={lockInfo.lockedBy} isNew={!row.name}/></div>
          :isEmpty?<div style={{color:'#475569',fontSize:11,padding:'5px 7px',fontStyle:'italic',fontWeight:600,display:'flex',alignItems:'center',gap:4}}><span style={{width:18,height:18,border:'2px dashed #94a3b8',borderRadius:3,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,color:'#475569',fontWeight:700}}>+</span>クリックして追加</div>
          :<div style={{padding:'3px 5px'}}>
               <div style={{display:'flex',alignItems:'center',gap:5,flexWrap:'nowrap'}}>
@@ -10768,6 +10898,21 @@ function AppInner() {
 
   const DOW=['日','月','火','水','木','金','土'];
 
+  // 検索（顧客・車両）→ その日のスケジュールを開く。顧客ファイルは顧客リストを開いて絞り込む
+  const [showFind,setShowFind]=useState(false);
+  const handleFindGo=(h)=>{
+    setShowFind(false);
+    const p=String(h.dk).split('-').map(Number);
+    if(p.length===3){ setSelDate(new Date(p[0],p[1]-1,p[2])); }
+    if(h.store) setViewStore(h.store);
+    setView('schedule');
+    setTimeout(()=>window.scrollTo({top:0,behavior:'instant'}),50);
+  };
+  const handleFindGoCust=(c)=>{
+    setShowFind(false);
+    try{ sessionStorage.setItem(STOR+'cust-find',JSON.stringify({q:c.name,file:c.file,ts:Date.now()})); }catch(e){}
+    setCustOverlay(true);
+  };
   // 空き枠検索 → 車検はemptyIdx（新規）で開く
   const handleSearchNavigate=(r)=>{
     setSelDate(new Date(r.y,r.m,r.d));setView('schedule');
@@ -11125,8 +11270,8 @@ function AppInner() {
                     </button>
                   );
                 })()}
-                <button onClick={()=>setShowSearch(true)} style={{display:'flex',alignItems:'center',gap:4,padding:'6px 14px',borderRadius:7,fontWeight:700,fontSize:12,border:'2px solid #ea580c',background:'#ea580c',color:'white',cursor:'pointer'}}>
-                  <Search size={12}/> 空き枠検索
+                <button onClick={()=>setShowFind(true)} style={{display:'flex',alignItems:'center',gap:4,padding:'6px 14px',borderRadius:7,fontWeight:700,fontSize:12,border:'2px solid #ea580c',background:'#ea580c',color:'white',cursor:'pointer'}}>
+                  <Search size={12}/> 検索
                 </button>
                 <a href="./customers.html" onClick={e=>{
                   // 顧客リストは常にページ内オーバーレイで開く（遷移しないので全画面が保たれる）。
@@ -11802,7 +11947,7 @@ function AppInner() {
                         const addDispNo=normalRows.length+waitingRows.length+1;
                         const _limitFull=(inspLimits[dk]!=null&&validRows.length>=dayInspLimit)?dayInspLimit:null;
                         rows.push(
-                          <InspRow key={`add-${addIdx}`} row={{...blankInsp()}} idx={addIdx} dispNo={addDispNo} dk={dk} onOpenModal={(type,dk2,idx2,slot)=>handleOpenModal(type,dk2,idx2,slot,true)} lockInfo={null} loanerRes={loanerRes} loanerResH={loanerResH} loanerResS={loanerResS} vsId={vsId} onApprove={handleApprove} isOverLimit={false} limitFull={_limitFull} setItems={setItems}/>
+                          <InspRow key={`add-${addIdx}`} row={{...blankInsp()}} idx={addIdx} dispNo={addDispNo} dk={dk} onOpenModal={(type,dk2,idx2,slot)=>handleOpenModal(type,dk2,idx2,slot,true)} lockInfo={getInspLock(dk,addIdx)} loanerRes={loanerRes} loanerResH={loanerResH} loanerResS={loanerResS} vsId={vsId} onApprove={handleApprove} isOverLimit={false} limitFull={_limitFull} setItems={setItems}/>
                         );
                         return rows;
                       })()}
@@ -12340,7 +12485,11 @@ function AppInner() {
           setShowDayOff(false);
         }}/>
 
-      {/* -- 空き枠検索 -- */}
+      {/* -- 検索（顧客・車両） -- */}
+      <FindModal isOpen={showFind} onClose={()=>setShowFind(false)}
+        inspData={inspData} schedDataH={schedDataH} schedDataS={schedDataS}
+        onGo={handleFindGo} onGoCust={handleFindGoCust}/>
+      {/* -- 空き枠検索（置き換え済み・ボタンは無い） -- */}
       <SearchModal isOpen={showSearch} onClose={()=>setShowSearch(false)}
         inspData={inspData} schedData={schedData}
         closedDays={closedDays} closedDates={closedDates}

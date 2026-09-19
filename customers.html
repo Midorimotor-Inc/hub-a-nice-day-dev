@@ -20,7 +20,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1789794796997';
+  window.__APP_BUILD='build-1789796111181';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -141,7 +141,7 @@ const hubRenew = async name => {};
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.51'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.52'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -2091,6 +2091,9 @@ const App=()=>{
   const [activeIdx,setActiveIdx]=useState(0);
   const [search,setSearch]=useState('');
   const [filterStatus,setFilterStatus]=useState('all');
+  // ★スケジュール画面の「検索」から開かれた時（2026-09-19）：sessionStorage の指示で、そのファイルを開いて名前で絞る
+  const findReqRef=useRef((()=>{try{const v=JSON.parse(sessionStorage.getItem(STOR+'cust-find')||'null');sessionStorage.removeItem(STOR+'cust-find');return(v&&v.q&&Date.now()-(v.ts||0)<60000)?v:null;}catch(e){return null;}})());
+  useEffect(()=>{ const req=findReqRef.current; if(!req||!Array.isArray(files)||!files.length)return; const i=files.findIndex(f=>f&&f.name===req.file); if(i<0)return; findReqRef.current=null; setActiveIdx(i); setSearch(req.q); },[files]);
   const [gasOk,setGasOk]=useState(null);
   const [gasLoading,setGasLoading]=useState(true);
   // サーバーから本体をまだ読み終えていない顧客ファイルの数。0になるまで「読み込み中」を出し続ける。
