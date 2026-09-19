@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789787110262';
+    window.__APP_BUILD='build-1789794796997';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.50';
+const APP_VERSION = '2.51';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -2081,7 +2081,7 @@ const fbParse = snap => {
 const fbWithTimeout = (p, label) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout: ' + label)), FB_TIMEOUT_MS))]);
 const fbGet = async k => {
   if (fbAuth) { await fbWhenReady(); if (!fbUser) return null; }   // 未サインインは「まだ読めない」（赤い帯は出さない）
-  try { const s = await fbWithTimeout(fbDoc(k).get(), 'get ' + k); markGasUp(); return fbParse(s); }
+  try { const s = await fbWithTimeout(fbDoc(k).get({ source: 'server' }), 'get ' + k); markGasUp(); return fbParse(s); }
   catch (e) { console.warn('[FB] 読めません', k, e && e.message); markGasDown(); return null; }
 };
 const fbSet = async (k, v) => {
@@ -3018,6 +3018,8 @@ function useShared(key, def, pollMs=60000) {
   const localRef     = useRef(def);
   const initialized  = useRef(false);
   const writeCount   = useRef(0);
+  const deferred     = useRef(null);   // 書き込み中に届いたサーバー値（終わってから当てる）
+  const deferTimer   = useRef(null);
 
   // ★形チェック: defと同種（配列/オブジェクト）でない応答は反映せず記録して無視する。
   //   GASの同時アクセス混線で異形のJSONが返るとタイムスケジュール等の表示が丸ごと消えるため
@@ -3052,11 +3054,29 @@ function useShared(key, def, pollMs=60000) {
         initialized.current = true;
       },
       onPoll: v => {
-        // ★書き込みがまだGASに届ききっていない間はサーバー値で上書きしない。
+        // ★書き込みがまだサーバーに届ききっていない間はサーバー値で上書きしない。
         //   GASの書き込みは1本10〜27秒かかり順番待ちもあるため、writeCountの70秒解除だけでは
         //   足りずに「保存したのに画面から消える」が起きる（2026-08-24）。
-        if (!mounted.current || !initialized.current || v === null || writeCount.current > 0) return;
-        if ((window.__hubWriteBusy||0) > 0) return;
+        if (!mounted.current || !initialized.current || v === null) return;
+        if (writeCount.current > 0 || (window.__hubWriteBusy||0) > 0) {
+          // ★捨てずに取っておき、書き込みが終わってから当てる（2026-09-19）。
+          //   Firestore は変化があった時にしか届かないので、ここで捨てると次の変化までその値を見損ねる
+          //   （＝保存したのに画面に出ない・他端末の予約が出ない。リロードで直る）。最新の値だけ覚えておけばよい。
+          deferred.current = v;
+          if (!deferTimer.current) deferTimer.current = setTimeout(function tick(){
+            deferTimer.current = null;
+            if (!mounted.current || deferred.current === null) return;
+            if (writeCount.current > 0 || (window.__hubWriteBusy||0) > 0) { deferTimer.current = setTimeout(tick, 1000); return; }
+            const dv = deferred.current; deferred.current = null;
+            try { applyPoll(dv); } catch (e) {}
+          }, 1000);
+          return;
+        }
+        applyPoll(v);
+      },
+    });
+    // ポーリング／購読で届いた値を画面に当てる（従来の onPoll の本体）
+    function applyPoll(v) {
         if (!shapeOk(v)) { logShapeAnomaly(v); return; } // 異形の応答は表示に反映しない
         const cur  = JSON.stringify(localRef.current);
         const next = JSON.stringify(v);
@@ -3073,9 +3093,8 @@ function useShared(key, def, pollMs=60000) {
             localRef.current = v; setVal(v);
           }
         }
-      },
-    });
-    return () => { mounted.current = false; __hubPollUnregister(id); };
+    }
+    return () => { mounted.current = false; __hubPollUnregister(id); if (deferTimer.current) { clearTimeout(deferTimer.current); deferTimer.current = null; } deferred.current = null; };
   }, [key, pollMs]);
 
   const update = useCallback((fn) => {

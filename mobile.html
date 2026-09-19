@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789787110262';
+  window.__APP_BUILD='build-1789794796997';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.50';
+const MOBILE_VERSION='2.51';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -322,7 +322,7 @@ const fbGet = async k => {
   const ent = fbLiveMap.get(k);
   if (ent && ent.loaded) return ent.value;   // 購読中＝手元が常に最新（自分の書き込みも即座に反映される）
   if (fbAuth) { await fbWhenReady(); if (!fbUser) return null; }   // 未サインインは「まだ読めない」（赤い帯は出さない）
-  try { const s = await fbWithTimeout(fbDoc(k).get(), 'get ' + k); fbUp(); return fbParse(s); }
+  try { const s = await fbWithTimeout(fbDoc(k).get({ source: 'server' }), 'get ' + k); fbUp(); return fbParse(s); }
   catch (e) { console.warn('[FB] 読めません', k, e && e.message); fbDown(); return null; }
 };
 const fbSet = async (k, v) => {

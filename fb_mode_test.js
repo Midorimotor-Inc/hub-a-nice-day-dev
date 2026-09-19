@@ -97,6 +97,13 @@ const signedInInit = ([k, me, stor]) => {
       // 他端末の変更 → onSnapshot で即反映（ポーリング周期を待たない）
       await page.evaluate(([k, dk]) => { const v = window.__fakeFb.get(k); v[dk].push({ name: '瀬川', course: 1, staff: '見取大介', store: 'honten', bookingStatus: 'confirmed', seq: Date.now() - 800000, id: 2 }); window.__fakeFb.set(k, v); }, [STOR + 'insp', DK]);
       t(label + '：他端末の予約が3秒以内に画面へ届く', await seeText(page, '瀬川', 3000));
+      // 書き込み中（__hubWriteBusy>0）に届いた変更は捨てず、書き込みが終わってから当たる（2026-09-19 の「保存後に反映されない」対策）
+      await page.evaluate(() => { window.__hubWriteBusy = 1; });
+      await page.evaluate(([k, dk]) => { const v = window.__fakeFb.get(k); v[dk].push({ name: '書込中到着', course: 1, staff: '見取大介', store: 'honten', bookingStatus: 'confirmed', seq: Date.now() - 700000, id: 3 }); window.__fakeFb.set(k, v); }, [STOR + 'insp', DK]);
+      await page.waitForTimeout(1500);
+      t(label + '：書き込み中は上書きしない', !(await page.evaluate(() => document.body.innerText)).includes('書込中到着'));
+      await page.evaluate(() => { window.__hubWriteBusy = 0; });
+      t(label + '：書き込みが終わると取っておいた値が当たる', await seeText(page, '書込中到着', 4000));
       // 未反映の控えを送り直す → runTransaction で insp に足される
       t(label + '：未反映の控えが出る', await seeText(page, 'サーバーに届いていない車検予約が 1 件', 10000));
       await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(e => e.innerText === '送り直す'); if (b) b.click(); });
@@ -105,7 +112,7 @@ const signedInInit = ([k, me, stor]) => {
       t(label + '：送り直しで Firestore の insp に行が足される', landed, await page.evaluate(() => window.__fakeFb.stats()));
       const st = await page.evaluate(() => window.__fakeFb.stats());
       t(label + '：書き込みはトランザクション経由', st.txns >= 1, st);
-      t(label + '：Firestore の insp に3件そろう（前村・瀬川・北前）', await page.evaluate(([k, dk]) => { const v = window.__fakeFb.get(k); return v[dk].map(r => r.name).sort().join(','); }, [STOR + 'insp', DK]) === '前村,北前,瀬川');
+      t(label + '：Firestore の insp に4件そろう（前村・瀬川・書込中到着・北前）', await page.evaluate(([k, dk]) => { const v = window.__fakeFb.get(k); return v[dk].map(r => r.name).sort().join(','); }, [STOR + 'insp', DK]) === ['前村','瀬川','北前','書込中到着'].sort().join(','));
       t(label + '：控えが空になる', await page.waitForFunction(k => JSON.parse(localStorage.getItem(k) || '[]').length === 0, STOR + 'insp-pending', { timeout: 8000 }).then(() => true).catch(() => false));
       t(label + '：GAS へのデータ書き込み（POST）が無い', gasPostBodies.filter(b => !b.action || b.action === 'setMany').length === 0, gasPostBodies.map(b => b.action || 'set'));
     } else {
