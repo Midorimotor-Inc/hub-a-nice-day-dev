@@ -20,7 +20,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1789915938895';
+  window.__APP_BUILD='build-1789917532513';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -141,7 +141,7 @@ const hubRenew = async name => {};
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.62'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.63'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -2003,9 +2003,9 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
 // ═══════════════════════════════════════════
 // 顧客リスト行
 // ═══════════════════════════════════════════
-// 連絡先の表示（2026-09-20）：氏名の下に住所、車種の横に電話（携帯→自宅）。見出しの 👁 で表示／非表示
+// 連絡先の表示（2026-09-20）：氏名の下に住所、車種の横に電話（携帯→自宅）。常時表示（👁 の切替は 2026-09-21 に廃止）
 const custPhones=c=>[c.phoneMobile,c.phoneHome].map(v=>String(v||'').trim()).filter(Boolean);
-const CustomerRow=memo(({customer,onBook,onRevive,pending,flash,showContact})=>{
+const CustomerRow=memo(({customer,onBook,onRevive,pending,flash})=>{
   const st=STATUS_DEF[customer.status]||STATUS_DEF.none;
   const courseObj=COURSES.find(c=>c.id===Number(customer.course));
   const isCancelled=customer.status==='cancel';
@@ -2035,13 +2035,13 @@ const CustomerRow=memo(({customer,onBook,onRevive,pending,flash,showContact})=>{
       </td>
       <td style={{padding:'7px 8px',fontWeight:700,verticalAlign:'middle'}}>
         {customer.name}
-        {showContact&&customer.address&&<div title={customer.address} style={{fontSize:10.5,fontWeight:400,color:'#64748b',marginTop:1,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>🏠 {customer.address}</div>}
+        {customer.address&&<div title={customer.address} style={{fontSize:10.5,fontWeight:400,color:'#64748b',marginTop:1,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>🏠 {customer.address}</div>}
       </td>
       <td style={{padding:'7px 8px',color:'#111827',verticalAlign:'middle'}}>{customer.no}</td>
       <td style={{padding:'7px 8px',verticalAlign:'middle'}}>
         <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
           <span>{customer.carType}</span>
-          {showContact&&custPhones(customer).map((p,i)=><span key={i} style={{fontSize:11,color:'#0369a1',fontWeight:600,whiteSpace:'nowrap'}}>📞{p}</span>)}
+          {custPhones(customer).map((p,i)=><span key={i} style={{fontSize:11,color:'#0369a1',fontWeight:600,whiteSpace:'nowrap'}}>📞{p}</span>)}
         </div>
       </td>
       <td style={{padding:'7px 8px',color:'#111827',verticalAlign:'middle',fontSize:11}}>{fmtDateShort(customer.dm1Date)}</td>
@@ -2101,9 +2101,6 @@ const App=()=>{
   const reconcileRef = useRef(null); // スケジュール→リスト突き合わせ（自己修復）
   const [activeIdx,setActiveIdx]=useState(0);
   const [search,setSearch]=useState('');
-  // 住所・電話の表示（👁）。端末ごとに記憶
-  const [showContact,setShowContactRaw]=useState(()=>{try{return localStorage.getItem(STOR+'list-contact')!=='off';}catch(e){return true;}});
-  const setShowContact=f=>setShowContactRaw(v=>{const n=typeof f==='function'?f(v):f;try{localStorage.setItem(STOR+'list-contact',n?'on':'off');}catch(e){}return n;});
   const [filterStatus,setFilterStatus]=useState('all');
   // ★スケジュール画面の「検索」から開かれた時（2026-09-19）：sessionStorage の指示で、そのファイルを開いて名前で絞る
   const findReqRef=useRef((()=>{try{const v=JSON.parse(sessionStorage.getItem(STOR+'cust-find')||'null');sessionStorage.removeItem(STOR+'cust-find');return(v&&v.q&&Date.now()-(v.ts||0)<60000)?v:null;}catch(e){return null;}})());
@@ -3475,10 +3472,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
             <thead>
               <tr>
                 {['予約 / 満期日','氏名','No.','車種','投函①','予約①','投函②','予約②','入庫日','特典','コース','店舗','担当','備考'].map(h=>(
-                  <th key={h} style={TH}>{h}{h==='氏名'&&(
-                    <span onClick={()=>setShowContact(v=>!v)} title={showContact?'住所・電話を隠す':'住所・電話を表示'}
-                      style={{marginLeft:6,cursor:'pointer',fontSize:13,opacity:showContact?1:.4,userSelect:'none'}}>{showContact?'👁':'👁‍🗨'}</span>
-                  )}</th>
+                  <th key={h} style={TH}>{h}{h==='車種'&&<span style={{marginLeft:10,fontWeight:600,color:'#64748b'}}>連絡先</span>}</th>
                 ))}
               </tr>
             </thead>
@@ -3488,7 +3482,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
                   {search||filterStatus!=='all'?'条件に一致する顧客がいません':'データがありません'}
                 </td></tr>
               ):filtered.map(c=>(
-                <CustomerRow key={c.custId} customer={c} onBook={openBookingModal} onRevive={handleRevive} showContact={showContact}
+                <CustomerRow key={c.custId} customer={c} onBook={openBookingModal} onRevive={handleRevive}
                   pending={pendingSync[c.custId]||pendingSync[`${c.name}__${c.no}`]||null}
                   flash={!!(recentApplied[c.custId]||recentApplied[`${c.name}__${c.no}`])}/>
               ))}

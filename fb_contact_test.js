@@ -1,5 +1,5 @@
 // 住所・電話（2026-09-20）の検査。にせの firebase で本物には繋がない。
-//   customers.html：取り込み済みの住所・電話が氏名の下／車種の横に出る。見出しの 👁 で隠せて、端末に記憶される
+//   customers.html：取り込み済みの住所・電話が氏名の下／車種の横（見出し「連絡先」）に常時出る
 //   index_dev.html：車検モーダルに電話・住所欄（整備は電話だけ）。保存すると insp に入り、行に 📞 が出る。既存の行の電話がモーダルに入る
 //   実行: node fb_contact_test.js
 const path = require('path'), fs = require('fs'), http = require('http');
@@ -72,15 +72,7 @@ const signedInInit = ([k, me, stor]) => {
     t('リスト：顧客が出る', await seeText(page, '前村太郎', 30000));
     t('リスト：氏名の下に住所、車種の横に電話（携帯・自宅）が出る', await seeText(page, '🏠 三田市けやき台1-1', 5000) && (await page.evaluate(() => document.body.innerText)).includes('📞090-1111-2222') && (await page.evaluate(() => document.body.innerText)).includes('📞079-000-1111'));
     t('リスト：連絡先の無い人には何も出ない', await page.evaluate(() => { const tr = [...document.querySelectorAll('tr')].find(r => r.innerText.includes('瀬川花子')); return !!tr && !tr.innerText.includes('📞') && !tr.innerText.includes('🏠'); }));
-    t('リスト：見出しの氏名に 👁 がある', await page.evaluate(() => [...document.querySelectorAll('th')].some(th => th.innerText.includes('氏名') && th.innerText.includes('👁'))));
-    await page.evaluate(() => { const th = [...document.querySelectorAll('th')].find(x => x.innerText.includes('氏名')); const s = th && th.querySelector('span'); if (s) s.click(); });
-    t('リスト：👁 で住所・電話が隠れる', await page.waitForFunction(() => !document.body.innerText.includes('三田市けやき台') && !document.body.innerText.includes('📞090-1111-2222'), null, { timeout: 5000 }).then(() => true).catch(() => false));
-    t('リスト：表示の切替は端末に記憶される', (await page.evaluate(k => localStorage.getItem(k + 'list-contact'), STOR)) === 'off');
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await seeText(page, '前村太郎', 30000);
-    t('リスト：開き直しても隠れたまま', !(await page.evaluate(() => document.body.innerText)).includes('三田市けやき台'));
-    await page.evaluate(() => { const th = [...document.querySelectorAll('th')].find(x => x.innerText.includes('氏名')); const s = th && th.querySelector('span'); if (s) s.click(); });
-    t('リスト：もう一度 👁 で戻る', await seeText(page, '🏠 三田市けやき台1-1', 5000));
+    t('リスト：見出しの車種の横に「連絡先」が出て、👁 の切替は無い', await page.evaluate(() => [...document.querySelectorAll('th')].some(th => th.innerText.includes('車種') && th.innerText.includes('連絡先')) && !document.body.innerText.includes('👁')));
     await page.screenshot({ path: path.join(DIR, 'smoke-contact-list.png') });
     t('リスト：JSエラーなし', errs.length === 0, errs.slice(0, 3));
     await ctx.close();
