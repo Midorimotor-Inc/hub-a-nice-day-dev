@@ -85,13 +85,14 @@ const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction
     await ctx.close();
   }
   {
-    // 「元に戻す」を押した端末（fs-pref='off'）は、次から入らない
+    // 「元に戻す」の記憶はタブの間だけ（sessionStorage）。古い localStorage の 'off' は無視され、開き直せば最初の操作で入る（2026-09-20）
     const { ctx, page } = await open('index_dev.html', { before: () => { try { localStorage.setItem('hub-v8-dev-fs-pref2', 'off'); } catch (e) {} } });
     await page.evaluate(spy);
     await seeText(page, '担当者を選択してください');
     await page.mouse.click(700, 500);
     await page.waitForTimeout(500);
-    t('「元に戻す」を押した端末：最初の操作でも全画面に入らない', (await page.evaluate(() => window.__fsCalls)) === 0);
+    t('古い localStorage の off が残っていても、開き直せば最初の操作で全画面に入る', (await page.evaluate(() => window.__fsCalls)) === 1, await page.evaluate(() => window.__fsCalls));
+    t('古い localStorage の off は消される', (await page.evaluate(() => localStorage.getItem('hub-v8-dev-fs-pref2'))) === null);
     await ctx.close();
   }
   {
@@ -106,7 +107,7 @@ const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction
   }
 
   {
-    // 全画面が外れた（Escなど）後も、次の操作でまた入る。外れたのを模擬するため fullscreenchange を投げる
+    // 全画面が外れた（Escなど）後は、この画面ではもう自動で入らない（B案・v2.50）。外れたのを模擬するため fullscreenchange を投げる
     const { ctx, page } = await open('index_dev.html');
     await page.evaluate(spy);
     await seeText(page, '担当者を選択してください');
@@ -116,7 +117,7 @@ const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction
     await page.waitForTimeout(300);
     await page.mouse.click(700, 500);
     await page.waitForTimeout(300);
-    t('外れた後も次の操作でまた全画面に入ろうとする', (await page.evaluate(() => window.__fsCalls)) >= 2, await page.evaluate(() => window.__fsCalls));
+    t('外れた後は次の操作でも自動では入らない（B案）', (await page.evaluate(() => window.__fsCalls)) === 1, await page.evaluate(() => window.__fsCalls));
     await ctx.close();
   }
   {
@@ -126,7 +127,7 @@ const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction
     await seeText(page, '担当者を選択してください');
     await page.mouse.click(700, 500);
     await page.waitForTimeout(300);
-    await page.evaluate(async () => { localStorage.setItem('hub-v8-dev-fs-pref2', 'off'); if (document.fullscreenElement) await document.exitFullscreen(); else document.dispatchEvent(new Event('fullscreenchange')); });
+    await page.evaluate(async () => { sessionStorage.setItem('hub-v8-dev-fs-pref2', 'off'); if (document.fullscreenElement) await document.exitFullscreen(); else document.dispatchEvent(new Event('fullscreenchange')); });
     await page.waitForTimeout(300);
     await page.mouse.click(700, 500);
     await page.waitForTimeout(300);
@@ -151,7 +152,7 @@ const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction
     if (btn) { await btn.click(); await page.waitForTimeout(600); }
     const after = await page.evaluate(() => window.__fsCalls);
     t('「全画面」ボタンで全画面に入ろうとする（1回だけ）', after === before + 1, { before, after });
-    t('「全画面」ボタンを押しても off を書かない', (await page.evaluate(() => localStorage.getItem('hub-v8-dev-fs-pref2'))) !== 'off');
+    t('「全画面」ボタンを押しても off を書かない', (await page.evaluate(() => sessionStorage.getItem('hub-v8-dev-fs-pref2'))) !== 'off');
     await ctx.close();
   }
   await browser.close(); server.close();

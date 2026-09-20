@@ -20,7 +20,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1789911380352';
+  window.__APP_BUILD='build-1789912989048';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -141,7 +141,7 @@ const hubRenew = async name => {};
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.60'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.61'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -2130,7 +2130,9 @@ const App=()=>{
     // ★既定は全画面（index_dev.html と同じ規則・2026-09-12）。「元に戻す」を押した端末(fs-pref='off')だけ外す。
     //   判定は fs-pref だけ（sessionStorage の fs-restore は見ない）。外れた時も次の操作でまた入る。
     //   埋め込み（IS_EMBED）の時は親が全画面を持つので触らない。
-    const fsWanted=()=>{ try{ return (localStorage.getItem(STOR+'fs-pref2')||'on')!=='off'; }catch(e){ return true; } };
+    // ★「元に戻す」の記憶はそのタブの間だけ（sessionStorage）。開き直せばまた最初の操作で全画面に入る（2026-09-20・index と同じ）
+    try{ localStorage.removeItem(STOR+'fs-pref2'); }catch(e){}
+    const fsWanted=()=>{ try{ return (sessionStorage.getItem(STOR+'fs-pref2')||'on')!=='off'; }catch(e){ return true; } };
     const arm=()=>{
       if(IS_EMBED||restore)return;
       if(document.fullscreenElement||document.webkitFullscreenElement)return;
@@ -2161,11 +2163,11 @@ const App=()=>{
       let fsDoc=document,fsEl=document.documentElement;
       try{ if(IS_EMBED&&window.parent&&window.parent!==window){fsDoc=window.parent.document;fsEl=window.parent.document.documentElement;} }catch(e){}
       if(fsDoc.fullscreenElement||fsDoc.webkitFullscreenElement){
-        try{localStorage.setItem(STOR+'fs-pref2','off');}catch(e){}   // 自分で「元に戻す」を押した端末は、次からも全画面にしない
+        try{sessionStorage.setItem(STOR+'fs-pref2','off');}catch(e){}   // 自分で「元に戻す」を押した端末は、次からも全画面にしない
         const ex=fsDoc.exitFullscreen||fsDoc.webkitExitFullscreen;
         if(ex)Promise.resolve(ex.call(fsDoc)).catch(()=>{});
       }else{
-        try{localStorage.setItem(STOR+'fs-pref2','on');}catch(e){}
+        try{sessionStorage.setItem(STOR+'fs-pref2','on');}catch(e){}
         const req=fsEl.requestFullscreen||fsEl.webkitRequestFullscreen;
         if(req)Promise.resolve(req.call(fsEl)).catch(()=>{});
       }

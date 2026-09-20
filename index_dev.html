@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789911380352';
+    window.__APP_BUILD='build-1789912989048';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.60';
+const APP_VERSION = '2.61';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -9251,7 +9251,11 @@ function AppInner() {
     //   判定は fs-pref だけ。sessionStorage の fs-restore は見ない（Esc や閉じる時にも '0' が書かれ、
     //   再読み込み・タブ復元で残るため、それを見ていると2回目以降に入らなかった＝2026-09-12 ユーザー報告）。
     //   Esc などで外れた時も、「元に戻す」を押したのでなければ次の操作でまた入る（下の h から arm を呼ぶ）。
-    const fsWanted=()=>{ try{ return (localStorage.getItem(STOR+'fs-pref2')||'on')!=='off'; }catch(e){ return true; } };
+    // ★「元に戻す」の記憶はそのタブの間だけ（sessionStorage）。タブを閉じて開き直せば、また最初の操作で全画面に入る
+    //   （2026-09-20 ユーザー報告「タブを閉じて新たに開いたが全画面ではなかった」。以前は localStorage に残り、
+    //   一度「元に戻す」を押した端末は二度と自動で入らなかった）。古い記憶は消しておく。
+    try{ localStorage.removeItem(STOR+'fs-pref2'); }catch(e){}
+    const fsWanted=()=>{ try{ return (sessionStorage.getItem(STOR+'fs-pref2')||'on')!=='off'; }catch(e){ return true; } };
     const arm=()=>{
       if(restore)return;
       if(document.fullscreenElement||document.webkitFullscreenElement)return;
@@ -9280,11 +9284,11 @@ function AppInner() {
   const toggleFullscreen=useCallback(()=>{
     try{
       if(document.fullscreenElement||document.webkitFullscreenElement){
-        try{localStorage.setItem(STOR+'fs-pref2','off');}catch(e){}   // 自分で「元に戻す」を押した端末は、次からも全画面にしない
+        try{sessionStorage.setItem(STOR+'fs-pref2','off');}catch(e){}   // 自分で「元に戻す」を押したら、このタブの間は自動で入らない（開き直せば入る）
         const ex=document.exitFullscreen||document.webkitExitFullscreen;
         if(ex)Promise.resolve(ex.call(document)).catch(()=>{});
       }else{
-        try{localStorage.setItem(STOR+'fs-pref2','on');}catch(e){}
+        try{sessionStorage.setItem(STOR+'fs-pref2','on');}catch(e){}
         const el=document.documentElement;
         const req=el.requestFullscreen||el.webkitRequestFullscreen;
         if(req)Promise.resolve(req.call(el)).catch(()=>{});
