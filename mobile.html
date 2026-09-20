@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789905841657';
+  window.__APP_BUILD='build-1789908841242';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.58';
+const MOBILE_VERSION='2.59';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -2393,7 +2393,10 @@ const LoanerView=({loanerResH,loanerResS,rentalResData,rentalCars,loanerCarsH,lo
 //       鍵は「ヒントに対する答え」から PBKDF2 で作る。答えは正規化（全角→半角・空白除去・小文字）してから使う。
 //       サーバーには暗号文とヒントだけが残るので、他のスタッフ・管理者・運営（サービスアカウント鍵を持つ人）も中身は読めない。
 //       ★答えを忘れると誰にも復元できない（リセット＝シークレット予定を全部消して作り直す）。
-//   ・開いた鍵はそのタブの sessionStorage に置く（タブを閉じれば消える。リロードでは聞き直さない）。
+//   ・開いた鍵は「自分専用の端末」ならそのタブの sessionStorage に置く（タブを閉じれば消える。リロードでは聞き直さない）。
+//     共有端末（店のPC・タブレット）では覚えない＝毎回答えを入れる。人が変わった時（ログアウト・別の人でログイン）は
+//     タブに残っている鍵を全部捨てる。→ 共有PCで他人が自分の名前でログインしてもシークレット予定は開けない（2026-09-20 ユーザー要望）。
+//   ・書庫は購読する（別端末で消した・足した予定がすぐ反映される）。
 // ============================================
 const HubSecret={
   ITER:150000,
@@ -2425,6 +2428,16 @@ const HubSecret={
     return {key,doc:{hint:String(hint||'').slice(0,60),salt,iter:HubSecret.ITER,checkIv:chk.iv,check:chk.data,iv:enc.iv,data:enc.data,u:Date.now()}};
   },
   sessKey:uid=>STOR+'mysec-key-'+uid,
+  canRemember:()=>{try{return localStorage.getItem(STOR+'auth-kind')==='own';}catch(e){return false;}},   // 自分専用の端末だけ
+  forgetOthers:uid=>{try{for(let i=sessionStorage.length-1;i>=0;i--){const k=sessionStorage.key(i);if(k&&k.indexOf(STOR+'mysec-key-')===0&&(!uid||k!==HubSecret.sessKey(uid)))sessionStorage.removeItem(k);}}catch(e){}},   // 今の人以外の鍵を捨てる（uid 無し＝全部）
+  // 書庫の購読（PC・mobile 共通。Firestore の onSnapshot。手元キャッシュ由来の値は使わない）
+  subscribe:(k,cb)=>{
+    if(typeof FB_ON==='undefined'||!FB_ON)return ()=>{};
+    let un=null,dead=false;
+    const start=()=>{ if(dead||un)return; try{ un=fbDoc(k).onSnapshot({includeMetadataChanges:false},snap=>{ if(snap.metadata&&snap.metadata.fromCache&&!snap.exists)return; try{cb(fbParse(snap));}catch(e){} },err=>{ console.warn('[mysec] 購読に失敗',k,err&&err.message); }); }catch(e){} };
+    if(typeof fbAuth!=='undefined'&&fbAuth)fbWhenUser(start); else start();
+    return ()=>{dead=true;try{un&&un();}catch(e){}};
+  },
 };
 // 予定の並び（時刻→作成順）
 const hubSchedSort=(a,b)=>((a.time||'99:99')<(b.time||'99:99')?-1:(a.time||'99:99')>(b.time||'99:99')?1:(a.at||0)-(b.at||0));
@@ -2441,10 +2454,16 @@ function useHubSecret(staffUid,sGetFn,saveKv){
     if(!key)return;
     try{const v=await sGetFn(key);setDoc(v&&typeof v==='object'&&v.salt?v:null);}catch(e){setDoc(null);}
   },[key]);
-  useEffect(()=>{setDoc(undefined);setCkey(null);setItems(null);reload();},[key]);
-  // 開いた鍵をタブ内から戻す
+  useEffect(()=>{setDoc(undefined);setCkey(null);setItems(null);HubSecret.forgetOthers(staffUid);reload();},[key]);   // 人が変わったら鍵を全部捨てる
+  // 書庫を購読：別端末で足した・消した予定がすぐ反映される（読込済みの値だけ。読込前の初回は reload が担当）
+  useEffect(()=>{
+    if(!key)return;
+    const un=HubSecret.subscribe(key,v=>{setDoc(v&&typeof v==='object'&&v.salt?v:null);});
+    return un;
+  },[key]);
+  // 開いた鍵をタブ内から戻す（自分専用の端末だけ）
   useEffect(()=>{(async()=>{
-    if(!staffUid||!HubSecret.ok())return;
+    if(!staffUid||!HubSecret.ok()||!HubSecret.canRemember())return;
     let raw=null;try{raw=sessionStorage.getItem(HubSecret.sessKey(staffUid));}catch(e){}
     if(raw){try{setCkey(await HubSecret.importKey(raw));}catch(e){}}
   })();},[staffUid]);
@@ -2456,7 +2475,7 @@ function useHubSecret(staffUid,sGetFn,saveKv){
       setItems(null);setCkey(null);try{sessionStorage.removeItem(HubSecret.sessKey(staffUid));}catch(x){}
     }
   })();},[ckey,doc]);
-  const remember=async k=>{try{sessionStorage.setItem(HubSecret.sessKey(staffUid),await HubSecret.exportKey(k));}catch(e){}};
+  const remember=async k=>{if(!HubSecret.canRemember())return;try{sessionStorage.setItem(HubSecret.sessKey(staffUid),await HubSecret.exportKey(k));}catch(e){}};
   const status=!HubSecret.ok()?'unsupported':doc===undefined?'loading':!doc?'none':(ckey&&items)?'open':'locked';
   const unlock=async answer=>{
     if(!doc)return false;

@@ -30,7 +30,7 @@ const signedInInit = ([k, me, stor]) => {
   localStorage.setItem('__fakeFbStore', JSON.stringify(st));
   localStorage.setItem(stor + 'auth-devid', 'dev-' + me.uid);
   localStorage.setItem(stor + 'auth-mine', JSON.stringify([{ uid: me.uid, name: me.name, store: me.store, email: me.email }]));
-  localStorage.setItem(stor + 'auth-kind', 'shared');
+  localStorage.setItem(stor + 'auth-kind', localStorage.getItem('__testKind') || 'shared');   // 検査中に own へ切り替えられるように
 };
 const EGAWA = { email: 'egawa@midori-m.com', fbuid: 'uid_egawa', uid: 'h7', name: '江川京志', store: 'honten', role: 'admin' };
 const TIKU = { email: 'tikurin@midori-m.com', fbuid: 'uid_tiku', uid: 'h3', name: '竹林直行', store: 'honten', role: 'staff' };
@@ -121,6 +121,36 @@ const TIKU = { email: 'tikurin@midori-m.com', fbuid: 'uid_tiku', uid: 'h3', name
     await page.waitForTimeout(500);
     t('PC：カレンダーのセルに公開予定と🔒予定が出る', await page.evaluate(() => { const c = [...document.querySelectorAll('div')].find(el => el.style && el.style.minHeight === '110px' && el.textContent.includes('本店会議')); return !!c && c.textContent.includes('🔒') && c.textContent.includes('歯医者'); }));
     await page.screenshot({ path: path.join(DIR, 'smoke-mysched-pc.png') });
+    // 別端末で消した予定が購読で届く（同じ鍵で空の書庫を書いて、外部の変更を模す）
+    await page.evaluate(async k => { const d = window.__fakeFb.get(k + 'mysec-h7'); const key = await HubSecret.derive('ポチ', d.salt, d.iter); const enc = await HubSecret.encrypt(key, {}); window.__fakeFb.set(k + 'mysec-h7', Object.assign({}, d, { iv: enc.iv, data: enc.data, u: Date.now() })); }, STOR);
+    t('PC：別端末で消した🔒予定が購読で消える（リロード不要）', await page.waitForFunction(() => !document.body.innerText.includes('歯医者'), null, { timeout: 8000 }).then(() => true).catch(() => false));
+    t('PC：購読で届いても開いたまま（施錠されない）', await page.evaluate(() => document.body.innerText.includes('シークレット表示中')));
+    // 共有端末（auth-kind=shared）：リロードすると答えを聞き直す（鍵を覚えない）
+    t('PC：共有端末では鍵を sessionStorage に覚えない', await page.evaluate(k => !sessionStorage.getItem(k + 'mysec-key-h7'), STOR));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await seeText(page, 'スケジュール', 20000);
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.includes('カレンダー') && el.offsetParent !== null && el.textContent.replace(/s/g, '').length < 16); if (b) b.click(); });
+    await page.waitForTimeout(800); await clickText(page, '予定');
+    t('PC：共有端末はリロード後に施錠されている', await seeText(page, 'シークレットは施錠中', 8000));
+    // 自分専用の端末（auth-kind=own）：開いた鍵をタブ内に覚え、リロードしても開いたまま。別の人でログインすると捨てる
+    await page.evaluate(k => { localStorage.setItem(k + 'auth-kind', 'own'); localStorage.setItem('__testKind', 'own'); }, STOR);
+    await pickToday(page); await seeText(page, 'ヒント：', 5000);
+    await page.fill('input[placeholder="答え"]', 'ポチ'); await clickText(page, '開く');
+    await seeText(page, 'シークレット予定を開いています', 8000);
+    // 消した🔒予定を入れ直す（後の検査で使う）
+    await clickText(page, '＋ 予定を追加'); await page.fill('input[placeholder*="件名"]', '歯医者'); await clickText(page, '🔒 シークレット'); await clickText(page, '追加');
+    await seeText(page, '歯医者', 8000);
+    t('PC：自分専用の端末では鍵をタブ内に覚える', await page.waitForFunction(k => !!sessionStorage.getItem(k + 'mysec-key-h7'), STOR, { timeout: 5000 }).then(() => true).catch(() => false));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await seeText(page, 'スケジュール', 20000);
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.includes('カレンダー') && el.offsetParent !== null && el.textContent.replace(/s/g, '').length < 16); if (b) b.click(); });
+    await page.waitForTimeout(800); await clickText(page, '予定');
+    t('PC：自分専用の端末はリロード後も開いたまま', await seeText(page, 'シークレット表示中', 8000), await page.evaluate(k => ({ txt: document.body.innerText.slice(0, 200), key: !!sessionStorage.getItem(k + 'mysec-key-h7'), kind: localStorage.getItem(k + 'auth-kind') }), STOR));
+    await page.evaluate(() => sessionStorage.setItem('hub_currentUser', JSON.stringify({ uid: 'h3', name: '竹林直行', store: { id: 'honten', name: '本店' } })));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await seeText(page, 'スケジュール', 20000);
+    t('PC：別の人でログインすると前の人の鍵は捨てられる', await page.waitForFunction(k => !sessionStorage.getItem(k + 'mysec-key-h7'), STOR, { timeout: 8000 }).then(() => true).catch(() => false));
+    await page.evaluate(k => { localStorage.setItem(k + 'auth-kind', 'shared'); localStorage.removeItem('__testKind'); }, STOR);
     t('PC：JSエラーなし', errs.length === 0, errs.slice(0, 3));
     storeJson = await rawStore(page);
     await ctx.close();
