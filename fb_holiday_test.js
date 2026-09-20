@@ -23,6 +23,7 @@ const Y = now.getFullYear(), M = now.getMonth();
 // 今月の中で店休日（水曜・第2火曜・年末年始など）に当たらない平日を2つ選ぶ（月〜金・かつ 5日以降）
 const pick = (n) => { const out = []; for (let d = 5; d <= 28 && out.length < n; d++) { const w = new Date(Y, M, d).getDay(); if (w >= 1 && w <= 5 && w !== 2 && w !== 3) out.push(d); } return out; };
 const [D1, D2] = pick(2);
+const PM = M === 0 ? 11 : M - 1, PY = M === 0 ? Y - 1 : Y;   // 前月
 const DK1 = `${Y}-${M + 1}-${D1}`, DK2 = `${Y}-${M + 1}-${D2}`;
 const FAKE_FB = fs.readFileSync(path.join(DIR, 'fake_firebase.js'), 'utf8');
 const ME = { email: 'egawa@midori-m.com', uid: 'uid_egawa', name: '江川京志', store: 'honten' };
@@ -39,6 +40,7 @@ const signedInInit = ([k, me, stor]) => {
 (async () => {
   const server = http.createServer((req, res) => {
     const p = decodeURIComponent(req.url.split('?')[0]).replace(/^\//, '');
+    if (p === 'index_dev.html') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(fs.readFileSync(path.join(DIR, 'index_dev.html'), 'utf8').replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = false;')); return; }
     if (p === 'mobile.html') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(fs.readFileSync(path.join(DIR, 'mobile.html'), 'utf8').replace(/const AUTH_REQUIRED = (true|false);/, 'const AUTH_REQUIRED = false;')); return; }
     fs.readFile(path.join(DIR, p), (err, d) => { if (err) { res.writeHead(404); res.end('nf'); return; } res.writeHead(200); res.end(d); });
   });
@@ -59,7 +61,8 @@ const signedInInit = ([k, me, stor]) => {
     [STOR + 'honten-pleave']: {},
     [STOR + 'sanda-dayoff']: { [DK1]: ['藤原昭人'] },
     [STOR + 'honten-cdate']: [], [STOR + 'sanda-cdate']: [], [STOR + 'honten-cdow']: [], [STOR + 'sanda-cdow-v2']: [3],
-    [STOR + 'mholidays']: { [`${Y}-${M + 1}`]: 9 },
+    [STOR + 'mholidays']: { [`${PY}-${PM + 1}`]: 8, [`${Y}-${M + 1}`]: 9 },
+    [STOR + 'honten-offnote']: {},
   };
   const open = async (loginName) => {
     const ctx = await browser.newContext({ viewport: { width: 400, height: 850 }, isMobile: true, hasTouch: true });
@@ -83,6 +86,7 @@ const signedInInit = ([k, me, stor]) => {
   }, d);
   const dayoff = page => page.evaluate(k => window.__fakeFb.get(k + 'honten-dayoff'), STOR);
   const pleave = page => page.evaluate(k => window.__fakeFb.get(k + 'honten-pleave'), STOR);
+  const offnote = page => page.evaluate(k => window.__fakeFb.get(k + 'honten-offnote') || {}, STOR);
 
   // ── 1. 管理者（江川）：タブ・表示・自分の休日の入力 ──
   {
@@ -99,11 +103,23 @@ const signedInInit = ([k, me, stor]) => {
     await clickText(page, '🏖 休日');
     t('自分を休日にすると dayoff に足される（竹林の分はそのまま）', await page.waitForFunction(([k, dk]) => { const v = window.__fakeFb.get(k + 'honten-dayoff'); return v && v[dk] && v[dk].includes('江川京志') && v[dk].includes('竹林直行'); }, [STOR, DK1], { timeout: 8000 }).then(() => true).catch(() => false), await dayoff(page));
     t('画面が「出勤 1人」に変わり、解除の案内が出る', await seeText(page, '出勤 1人 / 3人', 5000) && await seeText(page, 'タップで解除', 3000));
+    // 休日メモ（2026-09-20）
+    t('休みの日にメモ欄が出る', await clickText(page, 'メモを書く'));
+    await page.fill('input[placeholder*="午後休"]', '午後休');
+    await clickText(page, '保存');
+    t('メモが {店}-offnote に "日::氏名" で保存される', await page.waitForFunction(([k, dk]) => (window.__fakeFb.get(k + 'honten-offnote') || {})[dk + '::江川京志'] === '午後休', [STOR, DK1], { timeout: 8000 }).then(() => true).catch(() => false), await offnote(page));
+    t('休みの人の名前の横にメモが出る', await seeText(page, '江川京志（午後休）', 5000));
+    // 繰り越し（イ案）：今月の枠 = 会社9 + (前月の会社8 − 前月に取った休日数)。前月は休日を入れていないので店休日の数だけ
+    const prevClosed = await page.evaluate(([py, pm]) => { let n = 0; const dim = new Date(py, pm + 1, 0).getDate(); for (let d = 1; d <= dim; d++) if (calIsClosed(new Date(py, pm, d), [], [], [])) n++; return n; }, [PY, PM]);
+    const quota = 9 + (8 - prevClosed);
+    t(`繰り越し：今月の枠が 会社9＋前月の残り(8−${prevClosed}) = ${quota}日 と出る`, await seeText(page, `今月の枠 ${quota}日`, 5000), await page.evaluate(() => (document.body.innerText.match(/今月の枠[^\n]*/) || [''])[0]));
+    t('繰り越し：残り日数（翌月へ）が出る', await page.evaluate(() => /残り\d+日→翌月へ|日超過→翌月で調整|残り0日/.test(document.body.innerText)));
     t('今月の集計に自分の休日が数えられる', await page.evaluate(() => /江川京志：🏖 \d+日/.test(document.body.innerText)));
     await clickText(page, '📋 有給');
     t('有給に切り替えると dayoff から外れ pleave に入る', await page.waitForFunction(([k, dk]) => { const o = window.__fakeFb.get(k + 'honten-dayoff') || {}, l = window.__fakeFb.get(k + 'honten-pleave') || {}; return !(o[dk] || []).includes('江川京志') && (o[dk] || []).includes('竹林直行') && (l[dk] || []).includes('江川京志'); }, [STOR, DK1], { timeout: 8000 }).then(() => true).catch(() => false), { o: await dayoff(page), l: await pleave(page) });
     await clickText(page, '📋 有給');
     t('もう一度で有給が外れる', await page.waitForFunction(([k, dk]) => { const l = window.__fakeFb.get(k + 'honten-pleave') || {}; return !(l[dk] || []).includes('江川京志'); }, [STOR, DK1], { timeout: 8000 }).then(() => true).catch(() => false), await pleave(page));
+    t('休みを外すとメモも消える', await page.waitForFunction(([k, dk]) => !(window.__fakeFb.get(k + 'honten-offnote') || {})[dk + '::江川京志'], [STOR, DK1], { timeout: 8000 }).then(() => true).catch(() => false), await offnote(page));
     await tapDay(page, D2);
     // 管理者は他の人の分も入れられる
     t('管理者には「設定する人」の選択がある', await page.evaluate(() => !!document.querySelector('select')));
@@ -134,6 +150,42 @@ const signedInInit = ([k, me, stor]) => {
     await clickText(page, '🏖 休日');
     t('一般スタッフが自分の休日を入れられる', await page.waitForFunction(([k, dk]) => { const v = window.__fakeFb.get(k + 'honten-dayoff') || {}; return (v[dk] || []).includes('竹林直行'); }, [STOR, DK2], { timeout: 8000 }).then(() => true).catch(() => false), await dayoff(page));
     t('JSエラー・alert なし', errs.length === 0, errs.slice(0, 3));
+    await ctx.close();
+  }
+  // ── 3. PC（index_dev）：スタッフ休日カレンダーのメモ入力・繰り越し・個人表示で薄くならない ──
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } });
+    await ctx.addInitScript(signedInInit, [0, ME, STOR]);
+    await routeFakeFb(ctx, Object.assign({}, seed, { [STOR + 'honten-dayoff']: { [DK1]: ['竹林直行', '江川京志'] } })); await routeGas(ctx);
+    const page = await ctx.newPage();
+    const errs = []; page.on('pageerror', e => errs.push(String(e)));
+    page.on('console', m => { if (m.type() === 'error' && m.text().indexOf('[BABEL]') < 0 && m.text().indexOf('deoptimised') < 0) errs.push(m.text().slice(0, 200)); });
+    page.on('dialog', async d => { errs.push('dialog:' + d.message()); await d.accept().catch(() => {}); });
+    await page.goto('http://localhost:' + PORT + '/index_dev.html', { waitUntil: 'domcontentloaded' });
+    await seeText(page, '江川京志', 20000); await clickText(page, '江川京志'); await clickText(page, 'でログイン');
+    t('PC：ログインできる', await seeText(page, 'スケジュール', 20000));
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.includes('カレンダー') && el.offsetParent !== null && el.textContent.replace(/\s/g, '').length < 16); if (b) b.click(); });
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.trim() === '休日' || (el.textContent.includes('休日') && el.textContent.length < 5)); if (b) b.click(); });
+    await page.waitForTimeout(800);
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.trim() === '江川京志'); if (b) b.click(); });
+    await page.waitForTimeout(800);
+    t('PC：個人を選んでも他の日が薄くならない（opacity 0.28 のセルが無い）', await page.evaluate(() => ![...document.querySelectorAll('div')].some(el => el.style && (el.style.opacity === '0.28'))));
+    t('PC：個人の集計に繰り越し（今月の枠）が出る', await seeText(page, '枠', 5000) && await page.evaluate(() => /残り\d+日→翌月へ|日超過→翌月で調整|残り0日/.test(document.body.innerText)), await page.evaluate(() => (document.body.innerText.match(/月の集計[^]{0,200}/) || [''])[0]));
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.includes('設定') && el.textContent.length < 6 && el.offsetParent !== null); if (b) b.click(); });
+    await page.waitForTimeout(500);
+    await clickText(page, 'スタッフ休日設定');
+    t('PC：スタッフ休日カレンダーが開く', await seeText(page, 'スタッフ休日・有給カレンダー', 5000));
+    t('PC：休みの日に ✎ が出る', await page.evaluate(() => [...document.querySelectorAll('span')].some(el => el.textContent === '✎' && el.offsetParent !== null)));
+    await page.evaluate(d => { const pens = [...document.querySelectorAll('span')].filter(el => el.textContent === '✎' && el.offsetParent !== null); const pen = pens.find(el => { let c = el; for (let i = 0; i < 4 && c; i++) c = c.parentElement; return c && c.textContent.trim().startsWith(String(d)); }) || pens[0]; if (pen) pen.click(); }, D1);
+    t('PC：メモの入力欄が出る', await seeText(page, 'のメモ', 3000));
+    await page.fill('input[placeholder*="午後休"]', '前月分');
+    await clickText(page, '保存');
+    t('PC：メモが {店}-offnote に保存される', await page.waitForFunction(([k, dk]) => (window.__fakeFb.get(k + 'honten-offnote') || {})[dk + '::江川京志'] === '前月分', [STOR, DK1], { timeout: 8000 }).then(() => true).catch(() => false), await offnote(page));
+    t('PC：セルにメモが出る', await seeText(page, '📝 前月分', 3000));
+    await page.screenshot({ path: path.join(DIR, 'smoke-holiday-pc.png') });
+    t('PC：月次集計に枠と残りが出る', await page.evaluate(() => /枠\d+・/.test(document.body.innerText)));
+    t('PC：JSエラー・alert なし', errs.length === 0, errs.slice(0, 3));
     await ctx.close();
   }
   await browser.close(); server.close();

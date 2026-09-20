@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789805518299';
+  window.__APP_BUILD='build-1789869388399';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.55';
+const MOBILE_VERSION='2.56';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -135,7 +135,8 @@ const MOBILE_KEYS=()=>[STOR+'insp',storKey('sched','honten'),storKey('sched','sa
   STOR+'inspLimits','schedRestrictions',
   storKey('dayoff','honten'),storKey('dayoff','sanda'),
   storKey('staff-v2','honten'),storKey('staff-v2','sanda'),
-  storKey('pleave','honten'),storKey('pleave','sanda'),STOR+'mholidays'];   // 休日タブ（2026-09-19）
+  storKey('pleave','honten'),storKey('pleave','sanda'),STOR+'mholidays',
+  storKey('offnote','honten'),storKey('offnote','sanda')];   // 休日タブ（2026-09-19）・休日メモ（2026-09-20）
 
 // ── データ復旧（GAS v10スナップショット）。PC版と同じ4名のみ ──
 const RESTORE_ALLOWED=[{uid:'h0',name:'見取勇一'},{uid:'h1',name:'見取大介'},{uid:'s10',name:'藤原昭人'},{uid:'h7',name:'江川京志'}];
@@ -2382,8 +2383,33 @@ const LoanerView=({loanerResH,loanerResS,rentalResData,rentalCars,loanerCarsH,lo
 //   ・店舗の切り替えで、もう一方の店の休日状況も見られる（入力は自分の店だけ）
 //   ・管理者（PC版と同じ4人）は「設定する人」を選んで他の人の分も入れられる
 // ============================================
+// ── 休日の翌月繰り越し（2026-09-20 ユーザー決定・イ案）──
+//   会社の月間休日数（mholidays）より少なく取った分は翌月の枠に足す（多く取れば翌月の枠から引く）。
+//   その月の枠 = 会社の休日数 + 前月までの繰越、残り = 枠 − 取得（店休日を含む休日。有給は数えない）。
+//   mholidays が入っている最初の月から順に足し上げる。数字の無い月は枠なし（繰越はそのまま次の月へ）。
+//   PC のスタッフ休日カレンダー・閲覧カレンダー・スマホの休日タブで同じ計算を使う。
+const calcHolidayCarry=(name,cy,cm,dayOff,isClosed,mhol)=>{
+  const num=k=>{const v=(mhol||{})[k];return (v==null||v===''||isNaN(Number(v)))?null:Number(v);};
+  const months=Object.keys(mhol||{}).map(k=>{const p=k.split('-').map(Number);return (p.length===2&&p[0]>2000&&p[1]>=1&&p[1]<=12&&num(k)!=null)?{y:p[0],m:p[1]-1}:null;}).filter(Boolean).sort((a,b)=>a.y-b.y||a.m-b.m);
+  if(!months.length)return null;
+  const taken=(y,m)=>{const dim=new Date(y,m+1,0).getDate();let o=0;for(let d=1;d<=dim;d++){if(isClosed(y,m,d)){o++;continue;}if(((dayOff||{})[`${y}-${m+1}-${d}`]||[]).includes(name))o++;}return o;};
+  let carry=0,y=months[0].y,m=months[0].m,guard=0;
+  while((y<cy||(y===cy&&m<cm))&&guard++<240){
+    const c=num(`${y}-${m+1}`); if(c!=null)carry+=c-taken(y,m);
+    m++; if(m>11){m=0;y++;}
+  }
+  const company=num(`${cy}-${cm+1}`);
+  const t=taken(cy,cm);
+  return {carryIn:carry,company,taken:t,quota:company==null?null:company+carry,remain:company==null?null:company+carry-t};
+};
+const carryLabel=(c,long)=>{
+  if(!c||c.quota==null)return '';
+  const rem=c.remain>0?`残り${c.remain}日→翌月へ`:c.remain<0?`${-c.remain}日超過→翌月で調整`:'残り0日';
+  return long?`枠 ${c.quota}日（会社${c.company}${c.carryIn?`${c.carryIn>0?'＋':'−'}繰越${Math.abs(c.carryIn)}`:''}）・${rem}`:`枠${c.quota}・${rem}`;
+};
+const carryTitle=c=>c&&c.quota!=null?`今月の枠 ${c.quota}日 ＝ 会社の休日数 ${c.company}日 ${c.carryIn>=0?'＋':'−'} 前月までの繰越 ${Math.abs(c.carryIn)}日。取得 ${c.taken}日（店休日を含む・有給は数えない）`:'';
 const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pleaveS,
-  closedDaysH,closedDaysS,closedDatesH,closedDatesS,overrideOpen,monthlyHolidays,onToggle})=>{
+  closedDaysH,closedDaysS,closedDatesH,closedDatesS,overrideOpen,monthlyHolidays,onToggle,offNoteH,offNoteS,onSaveNote})=>{
   const today=new Date();
   const [store,setStore]=useState(vsId);
   const [cur,setCur]=useState(new Date(today.getFullYear(),today.getMonth(),1));
@@ -2407,6 +2433,11 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
   // 月の集計（PC版と同じく店休日はスタッフ休日に数える）
   const mine=useMemo(()=>{let o=0,l=0;for(let d=1;d<=dim;d++){if(closedOn(d)){o++;continue;}if((offs[dkOf(d)]||[]).includes(target))o++;if((leaves[dkOf(d)]||[]).includes(target))l++;}return{o,l};},[offs,leaves,cy,cm,target,cDays,cDates,overrideOpen]);
   const mhol=monthlyHolidays&&monthlyHolidays[`${cy}-${cm+1}`];
+  const offNote=(store==='honten'?offNoteH:offNoteS)||{};
+  const noteOf=(dk,name)=>{const v=offNote[dk+'::'+name];return typeof v==='string'?v:(v&&v.memo)||'';};
+  const [memoOpen,setMemoOpen]=useState(false);
+  const [memoText,setMemoText]=useState('');
+  const carry=useMemo(()=>calcHolidayCarry(target,cy,cm,offs,(y,m,d)=>calIsClosed(new Date(y,m,d),cDays,cDates,overrideOpen),monthlyHolidays),[target,cy,cm,offs,cDays,cDates,overrideOpen,monthlyHolidays]);
   const weeks=[];let wk=Array(7).fill(null);
   for(let d=1;d<=dim;d++){const dow=(fdow+d-1)%7;wk[dow]=d;if(dow===6||d===dim){weeks.push([...wk]);wk=Array(7).fill(null);}}
   const selDk=selDay?dkOf(selDay):null;
@@ -2456,6 +2487,15 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
           {mhol!=null&&mhol!==''&&<div style={{color:'#94a3b8'}}>会社の{cm+1}月の休日 {mhol}日</div>}
         </div>
       </div>
+      {carry&&carry.quota!=null&&(
+        <div style={{margin:'6px 12px 0',padding:'6px 10px',borderRadius:8,background:'white',border:'1px solid #e2e8f0',fontSize:11,color:'#334155',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          <span style={{fontWeight:800}}>今月の枠 {carry.quota}日</span>
+          <span style={{color:'#94a3b8'}}>（会社{carry.company}{carry.carryIn?(carry.carryIn>0?'＋':'−')+'繰越'+Math.abs(carry.carryIn):''}）</span>
+          <span style={{marginLeft:'auto',fontWeight:800,color:carry.remain>0?'#1d4ed8':carry.remain<0?'#dc2626':'#64748b'}}>
+            {carry.remain>0?`残り${carry.remain}日→翌月へ`:carry.remain<0?`${-carry.remain}日超過→翌月で調整`:'残り0日'}
+          </span>
+        </div>
+      )}
       {adminMode&&(
         <div style={{display:'flex',alignItems:'center',gap:6,padding:'8px 12px 0',fontSize:11,color:'#475569'}}>
           <span style={{fontWeight:700,flexShrink:0}}>設定する人</span>
@@ -2483,7 +2523,7 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
               const bg=closed?CLOSED_BG:meOff?'#fff7ed':meLeave?'#d1fae5':'white';
               const bd=isSel?'2px solid #1d4ed8':meOff?'2px solid #f97316':meLeave?'2px solid #10b981':isToday?'2px solid #93c5fd':'2px solid #f1f5f9';
               return(
-                <div key={di} onClick={()=>setSelDay(d)}
+                <div key={di} onClick={()=>{setSelDay(d);setMemoOpen(false);}}
                   style={{borderRadius:10,background:bg,border:bd,boxShadow:closed?CLOSED_BAR:'none',minHeight:54,padding:'4px 2px',cursor:'pointer'}}>
                   <div style={{textAlign:'center',fontWeight:800,fontSize:14,color:isToday?'#1e40af':closed?CLOSED_FG:isSun||isHol?'#ef4444':isSat?'#3b82f6':'#1e293b'}}>{d}</div>
                   {closed
@@ -2513,11 +2553,11 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
             <div style={{display:'flex',flexDirection:'column',gap:5,marginBottom:10,fontSize:12}}>
               <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
                 <span style={{flexShrink:0,color:'#ea580c',fontWeight:800}}>🏖 休日</span>
-                {selOffs.length?selOffs.map(n=><span key={n} style={{padding:'2px 8px',borderRadius:6,background:'#fff7ed',border:'1px solid #fdba74',color:'#9a3412',fontWeight:700}}>{n}</span>):<span style={{color:'#94a3b8'}}>なし</span>}
+                {selOffs.length?selOffs.map(n=><span key={n} style={{padding:'2px 8px',borderRadius:6,background:'#fff7ed',border:'1px solid #fdba74',color:'#9a3412',fontWeight:700}}>{n}{noteOf(selDk,n)&&<span style={{fontWeight:400,fontSize:10.5}}>（{noteOf(selDk,n)}）</span>}</span>):<span style={{color:'#94a3b8'}}>なし</span>}
               </div>
               {selLeaves.length>0&&<div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
                 <span style={{flexShrink:0,color:'#059669',fontWeight:800}}>📋 有給</span>
-                {selLeaves.map(n=><span key={n} style={{padding:'2px 8px',borderRadius:6,background:'#d1fae5',border:'1px solid #6ee7b7',color:'#065f46',fontWeight:700}}>{n}</span>)}
+                {selLeaves.map(n=><span key={n} style={{padding:'2px 8px',borderRadius:6,background:'#d1fae5',border:'1px solid #6ee7b7',color:'#065f46',fontWeight:700}}>{n}{noteOf(selDk,n)&&<span style={{fontWeight:400,fontSize:10.5}}>（{noteOf(selDk,n)}）</span>}</span>)}
               </div>}
               <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
                 <span style={{flexShrink:0,color:'#475569',fontWeight:800}}>出勤</span>
@@ -2533,6 +2573,22 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
                 <Chip on={myState==='leave'} color="#059669" bg="#d1fae5" disabled={busy} onClick={()=>tap('leave')}>📋 有給{myState==='leave'?'（タップで解除）':''}</Chip>
               </div>
               <div style={{fontSize:10,color:'#94a3b8',marginTop:6}}>タップした瞬間に確定し、PC のスタッフ休日カレンダーにもすぐ出ます。</div>
+              {myState&&(
+                <div style={{marginTop:8}}>
+                  {memoOpen
+                    ?<div style={{display:'flex',gap:6,alignItems:'center'}}>
+                      <input value={memoText} onChange={e=>setMemoText(e.target.value)} maxLength={30} placeholder="例：午後休・前月分・病院" autoFocus
+                        style={{flex:1,padding:'8px 10px',border:'1.5px solid #fcd34d',borderRadius:8,fontSize:14,background:'#fffbeb'}}/>
+                      <button onClick={async()=>{setBusy(true);try{await onSaveNote(store,selDk,target,memoText);}finally{setBusy(false);setMemoOpen(false);}}} disabled={busy}
+                        style={{padding:'8px 12px',borderRadius:8,border:'none',background:'#f97316',color:'white',fontWeight:800,fontSize:12}}>保存</button>
+                      <button onClick={()=>setMemoOpen(false)} style={{padding:'8px 8px',borderRadius:8,border:'none',background:'transparent',color:'#94a3b8',fontSize:12}}>やめる</button>
+                    </div>
+                    :<button onClick={()=>{setMemoText(noteOf(selDk,target));setMemoOpen(true);}}
+                      style={{width:'100%',textAlign:'left',padding:'7px 10px',borderRadius:8,border:'1px dashed #fcd34d',background:noteOf(selDk,target)?'#fffbeb':'white',color:noteOf(selDk,target)?'#92400e':'#94a3b8',fontSize:12}}>
+                      📝 {noteOf(selDk,target)||'メモを書く（午後休・前月分 など）'}
+                    </button>}
+                </div>
+              )}
             </div>
           )}
           {!selClosed&&!canEditHere&&<div style={{fontSize:11,color:'#94a3b8'}}>他の店は閲覧のみです。休日の入力は自分の店（{vsId==='honten'?'本店':'三田店'}）で。</div>}
@@ -2755,6 +2811,8 @@ const App=()=>{
   const [pleaveH,setPleaveH]=useState({});          // 有給（PC版 pleave-honten / pleave-sanda）
   const [pleaveS,setPleaveS]=useState({});
   const [monthlyHolidays,setMonthlyHolidays]=useState({}); // 会社が決めた月間休日数 {"2026-6":10}（表示のみ）
+  const [offNoteH,setOffNoteH]=useState({});        // 休日メモ {"YYYY-M-D::氏名":"メモ"}（PC版と同じキー {店}-offnote）
+  const [offNoteS,setOffNoteS]=useState({});
   const [staffH,setStaffH]=useState([]);
   const [staffS,setStaffS]=useState([]);
   // ── 本人認証：この端末に登録された人 ──
@@ -2849,7 +2907,7 @@ const App=()=>{
       // まとめ読み1リクエスト（GAS未対応の間は従来の並列GETへ自動フォールバック）
       let vals=await sGetMany(KEYS);
       if(!vals)vals=await Promise.all(KEYS.map(k=>sGet(k)));
-      const [insp,sh,ss,mh,ms,lh,ls,cdh,cds,cdateH,cdateS,ov,rcars,rres,carsH,carsS,limits,restr,doH,doS,stH,stS,plH,plS,mhol]=vals;
+      const [insp,sh,ss,mh,ms,lh,ls,cdh,cds,cdateH,cdateS,ov,rcars,rres,carsH,carsS,limits,restr,doH,doS,stH,stS,plH,plS,mhol,onH,onS]=vals;
       if(writeGuardRef.current>0&&!force){setLoading(false);return;} // 取得中に保存が始まった場合も反映しない
       if(isPlainObj(insp))setInspData(applyOverlays(STOR+'insp',insp));
       if(isPlainObj(sh))setSchedDataH(applyOverlays(storKey('sched','honten'),sh));
@@ -2876,6 +2934,8 @@ const App=()=>{
       if(isPlainObj(plH))setPleaveH(plH);
       if(isPlainObj(plS))setPleaveS(plS);
       if(isPlainObj(mhol))setMonthlyHolidays(mhol);
+      if(isPlainObj(onH))setOffNoteH(onH);
+      if(isPlainObj(onS))setOffNoteS(onS);
       setGasOk(FB_ON?!(window.__hubGasDown||0):true);   // Firestore では購読の失敗（fbDown）を接続状態に反映
     }catch{setGasOk(false);}
     finally{fetchBusyRef.current=false;}
@@ -3005,10 +3065,23 @@ const App=()=>{
     try{
       await writeShared(key,{},b=>edit(b,!has),v=>setOf(key)(v),null,true);
       if(!has) await writeShared(other,{},b=>edit(b,false),v=>setOf(other)(v),null,true);
+      if(has) await saveOffNote(store,dk,name,'');   // 休みを外したらメモも消す
     }catch(e){
       alert('⚠️ 休日の保存がサーバーに反映されていません。\nもう一度お試しください。');
       fetchAll(true);
     }
+  };
+  // 休日メモ（2026-09-20）：{店}-offnote の "dk::氏名" に文字列。空なら消す
+  const saveOffNote=async(store,dk,name,text)=>{
+    const key=storKey('offnote',store), k=dk+'::'+name, t=String(text||'').trim().slice(0,30);
+    const set=store==='honten'?setOffNoteH:setOffNoteS;
+    try{
+      await writeShared(key,{},b=>{
+        const cur=typeof b[k]==='string'?b[k]:(b[k]&&b[k].memo)||'';
+        if(cur===t)return undefined;
+        const n={...b}; if(t)n[k]=t; else delete n[k]; return n;
+      },v=>set(v),null,true);
+    }catch(e){ alert('⚠️ メモの保存がサーバーに反映されていません。\nもう一度お試しください。'); fetchAll(true); }
   };
   // 検証ヘルパ: lres/rres に指定bookingKeyの予約が「ある」「ない」を確認
   const hasBk=(res,bk)=>Object.values(res||{}).some(days=>Object.values(days||{}).some(r=>r&&r.bookingKey===bk));
@@ -3601,7 +3674,8 @@ const App=()=>{
           staffH={staffH.length?staffH:DEFAULT_STAFF.filter(s=>s.store==='honten')} staffS={staffS.length?staffS:DEFAULT_STAFF.filter(s=>s.store==='sanda')}
           dayOffH={dayOffH} dayOffS={dayOffS} pleaveH={pleaveH} pleaveS={pleaveS}
           closedDaysH={closedDaysH} closedDaysS={closedDaysS} closedDatesH={closedDatesH} closedDatesS={closedDatesS} overrideOpen={overrideOpen}
-          monthlyHolidays={monthlyHolidays} onToggle={toggleDayOff}/>}
+          monthlyHolidays={monthlyHolidays} onToggle={toggleDayOff}
+          offNoteH={offNoteH} offNoteS={offNoteS} onSaveNote={saveOffNote}/>}
       </div>
       {dayDetail&&<DayDetailModal {...dayDetail} inspData={inspData} schedDataH={schedDataH} schedDataS={schedDataS} memoDataH={memoDataH} memoDataS={memoDataS} vsId={vsId} onToggleArrived={toggleArrived} arrivedOv={arrivedOv}
         onClose={()=>setDayDetail(null)}

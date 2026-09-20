@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789805518299';
+    window.__APP_BUILD='build-1789869388399';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.55';
+const APP_VERSION = '2.56';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -337,6 +337,31 @@ const ClosedMark = ({small,topOffset=26})=>(
     justifyContent:'center',fontSize:small?14:18,fontWeight:900,color:CLOSED_FG,letterSpacing:small?1:2,
     pointerEvents:'none'}}>{CLOSED_LABEL}</div>
 );
+// ── 休日の翌月繰り越し（2026-09-20 ユーザー決定・イ案）──
+//   会社の月間休日数（mholidays）より少なく取った分は翌月の枠に足す（多く取れば翌月の枠から引く）。
+//   その月の枠 = 会社の休日数 + 前月までの繰越、残り = 枠 − 取得（店休日を含む休日。有給は数えない）。
+//   mholidays が入っている最初の月から順に足し上げる。数字の無い月は枠なし（繰越はそのまま次の月へ）。
+//   PC のスタッフ休日カレンダー・閲覧カレンダー・スマホの休日タブで同じ計算を使う。
+const calcHolidayCarry=(name,cy,cm,dayOff,isClosed,mhol)=>{
+  const num=k=>{const v=(mhol||{})[k];return (v==null||v===''||isNaN(Number(v)))?null:Number(v);};
+  const months=Object.keys(mhol||{}).map(k=>{const p=k.split('-').map(Number);return (p.length===2&&p[0]>2000&&p[1]>=1&&p[1]<=12&&num(k)!=null)?{y:p[0],m:p[1]-1}:null;}).filter(Boolean).sort((a,b)=>a.y-b.y||a.m-b.m);
+  if(!months.length)return null;
+  const taken=(y,m)=>{const dim=new Date(y,m+1,0).getDate();let o=0;for(let d=1;d<=dim;d++){if(isClosed(y,m,d)){o++;continue;}if(((dayOff||{})[`${y}-${m+1}-${d}`]||[]).includes(name))o++;}return o;};
+  let carry=0,y=months[0].y,m=months[0].m,guard=0;
+  while((y<cy||(y===cy&&m<cm))&&guard++<240){
+    const c=num(`${y}-${m+1}`); if(c!=null)carry+=c-taken(y,m);
+    m++; if(m>11){m=0;y++;}
+  }
+  const company=num(`${cy}-${cm+1}`);
+  const t=taken(cy,cm);
+  return {carryIn:carry,company,taken:t,quota:company==null?null:company+carry,remain:company==null?null:company+carry-t};
+};
+const carryLabel=(c,long)=>{
+  if(!c||c.quota==null)return '';
+  const rem=c.remain>0?`残り${c.remain}日→翌月へ`:c.remain<0?`${-c.remain}日超過→翌月で調整`:'残り0日';
+  return long?`枠 ${c.quota}日（会社${c.company}${c.carryIn?`${c.carryIn>0?'＋':'−'}繰越${Math.abs(c.carryIn)}`:''}）・${rem}`:`枠${c.quota}・${rem}`;
+};
+const carryTitle=c=>c&&c.quota!=null?`今月の枠 ${c.quota}日 ＝ 会社の休日数 ${c.company}日 ${c.carryIn>=0?'＋':'−'} 前月までの繰越 ${Math.abs(c.carryIn)}日。取得 ${c.taken}日（店休日を含む・有給は数えない）`:'';
 // ── 月間休日数バッジ（スタッフ休日カレンダーの上部）──
 //   会社が月ごとに決める休日数を出すだけの表示。スタッフが自分で数えなくて済むようにするもので、
 //   休業日データや集計には影響しない。鉛筆が出るのは編集権限のある4人だけ。
@@ -5005,12 +5030,15 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
   dynStaffH,dynStaffS,
   dayOffDataH,setDayOffDataH,dayOffDataS,setDayOffDataS,
   paidLeaveDataH,setPaidLeaveDataH,paidLeaveDataS,setPaidLeaveDataS,
+  offNoteH,setOffNoteH,offNoteS,setOffNoteS,
   closedDaysH,closedDaysS,closedDatesH,closedDatesS,overrideOpenDates,
   monthlyHolidays,onSaveMonthlyHoliday})=>{
   const [calStore,setCalStore]=useState('honten');
   const [selStaff,setSelStaff]=useState(null);
   const [selType,setSelType]=useState('dayoff');
   const [calMonth,setCalMonth]=useState(null);
+  const [memoEdit,setMemoEdit]=useState(null);   // {dkk} 休日メモを編集中の日（選んだスタッフの分）
+  const [memoText,setMemoText]=useState('');
 
   useEffect(()=>{
     if(isOpen){
@@ -5037,6 +5065,15 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
   const setDayOffData=calStore==='honten'?setDayOffDataH:setDayOffDataS;
   const pleaveData = Object.fromEntries(Object.entries(_rawPleave||{}).map(([k,v])=>[k,Array.isArray(v)?v:[]]));
   const setPleaveData=calStore==='honten'?setPaidLeaveDataH:setPaidLeaveDataS;
+  const offNote=(calStore==='honten'?offNoteH:offNoteS)||{};
+  const setOffNote=calStore==='honten'?setOffNoteH:setOffNoteS;
+  const noteOf=(dkk,name)=>{const v=offNote[dkk+'::'+name];return typeof v==='string'?v:(v&&v.memo)||'';};
+  const canEditStaff=name=>adminMode||name===(currentUser&&currentUser.name);
+  const saveMemo=(dkk,name,text)=>{
+    const k=dkk+'::'+name, t=String(text||'').trim().slice(0,30);
+    if((noteOf(dkk,name)||'')===t)return;
+    setOffNote(p=>{const n={...(p||{})};if(t)n[k]=t;else delete n[k];return n;});
+  };
 
   // 店舗休業日判定（店舗別closedDays + 両店共通closedDates + 第2火曜）
   const storeCDays = Array.isArray(calStore==='honten'?closedDaysH:closedDaysS)
@@ -5062,6 +5099,7 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
       const cur=dayOffData[dkk]||[];
       if(cur.includes(selStaff)){
         setDayOffData(p=>({...p,[dkk]:(p[dkk]||[]).filter(n=>n!==selStaff)}));
+        saveMemo(dkk,selStaff,''); if(memoEdit&&memoEdit.dkk===dkk)setMemoEdit(null);   // 休みを外したらメモも消す
       }else{
         setPleaveData(p=>({...p,[dkk]:(p[dkk]||[]).filter(n=>n!==selStaff)}));
         setDayOffData(p=>({...p,[dkk]:[...(p[dkk]||[]),selStaff]}));
@@ -5070,6 +5108,7 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
       const cur=pleaveData[dkk]||[];
       if(cur.includes(selStaff)){
         setPleaveData(p=>({...p,[dkk]:(p[dkk]||[]).filter(n=>n!==selStaff)}));
+        saveMemo(dkk,selStaff,''); if(memoEdit&&memoEdit.dkk===dkk)setMemoEdit(null);
       }else{
         setDayOffData(p=>({...p,[dkk]:(p[dkk]||[]).filter(n=>n!==selStaff)}));
         setPleaveData(p=>({...p,[dkk]:[...(p[dkk]||[]),selStaff]}));
@@ -5096,8 +5135,9 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
       if((dayOffData[dkk]||[]).includes(s.name))offs++;
       if((pleaveData[dkk]||[]).includes(s.name))leaves++;
     }
-    return{name:s.name,offs,leaves};
-  }).filter(s=>s.offs>0||s.leaves>0);
+    const carry=calcHolidayCarry(s.name,cy,cm,dayOffData,isStoreClosed,monthlyHolidays);
+    return{name:s.name,offs,leaves,carry};
+  }).filter(s=>s.offs>0||s.leaves>0||(s.carry&&s.carry.quota!=null));
 
   const today=new Date();
 
@@ -5175,7 +5215,20 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
                   fontWeight:selType==='leave'?800:500,fontSize:12,cursor:'pointer'}}>
                 📋 有給
               </button>
-              <span style={{fontSize:11,color:'#9ca3af',marginLeft:4}}>日付をクリックで設定・解除</span>
+              <span style={{fontSize:11,color:'#9ca3af',marginLeft:4}}>日付をクリックで設定・解除。休みの日の ✎ でメモ</span>
+            </div>
+          )}
+          {memoEdit&&selStaff&&(
+            <div style={{display:'flex',alignItems:'center',gap:8,marginTop:8,padding:'8px 12px',background:'#fffbeb',border:'1.5px solid #fcd34d',borderRadius:8}}>
+              <span style={{fontSize:12,fontWeight:800,color:'#92400e',flexShrink:0}}>📝 {cm+1}/{memoEdit.dkk.split('-')[2]} {selStaff} のメモ</span>
+              <input value={memoText} onChange={e=>setMemoText(e.target.value)} maxLength={30} autoFocus placeholder="例：午後休・前月分・病院"
+                onKeyDown={e=>{if(e.key==='Enter'){saveMemo(memoEdit.dkk,selStaff,memoText);setMemoEdit(null);}if(e.key==='Escape')setMemoEdit(null);}}
+                style={{flex:1,padding:'6px 10px',border:'1.5px solid #d1d5db',borderRadius:6,fontSize:13}}/>
+              <button onClick={()=>{saveMemo(memoEdit.dkk,selStaff,memoText);setMemoEdit(null);}}
+                style={{padding:'6px 14px',borderRadius:6,border:'none',background:'#f97316',color:'white',fontWeight:800,fontSize:12,cursor:'pointer'}}>保存</button>
+              {noteOf(memoEdit.dkk,selStaff)&&<button onClick={()=>{saveMemo(memoEdit.dkk,selStaff,'');setMemoEdit(null);}}
+                style={{padding:'6px 10px',borderRadius:6,border:'1.5px solid #d1d5db',background:'white',color:'#6b7280',fontWeight:700,fontSize:12,cursor:'pointer'}}>消す</button>}
+              <button onClick={()=>setMemoEdit(null)} style={{padding:'6px 10px',borderRadius:6,border:'none',background:'transparent',color:'#9ca3af',fontSize:12,cursor:'pointer'}}>やめる</button>
             </div>
           )}
         </div>
@@ -5236,17 +5289,27 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
                           {isCl&&<span style={{fontSize:13,color:CLOSED_FG,fontWeight:900,letterSpacing:1}}>{CLOSED_LABEL}</span>}
                           {selDayoff&&<span style={{fontSize:11}}>🏖</span>}
                           {selLeave&&<span style={{fontSize:11}}>📋</span>}
+                          {(selDayoff||selLeave)&&canEditStaff(selStaff)&&(
+                            <span onClick={e=>{e.stopPropagation();setMemoText(noteOf(dkk,selStaff));setMemoEdit({dkk});}} title="メモを書く"
+                              style={{fontSize:11,cursor:'pointer',color:noteOf(dkk,selStaff)?'#b45309':'#9ca3af',padding:'0 2px'}}>✎</span>
+                          )}
                         </span>
                       </div>
+                      {(selDayoff||selLeave)&&noteOf(dkk,selStaff)&&(
+                        <div onClick={e=>{if(!canEditStaff(selStaff))return;e.stopPropagation();setMemoText(noteOf(dkk,selStaff));setMemoEdit({dkk});}}
+                          style={{fontSize:10,color:'#92400e',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:4,padding:'1px 5px',marginBottom:3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                          📝 {noteOf(dkk,selStaff)}
+                        </div>
+                      )}
                       <div style={{display:'flex',flexWrap:'wrap',gap:2}}>
                         {othersOff.slice(0,5).map((name,i)=>(
-                          <span key={`o${i}`} title={`${name}（休日）`}
+                          <span key={`o${i}`} title={`${name}（休日）${noteOf(dkk,name)?'：'+noteOf(dkk,name):''}`}
                             style={{width:15,height:15,borderRadius:3,background:'#f97316',color:'white',display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:7,fontWeight:800,lineHeight:1,flexShrink:0}}>
                             {name.charAt(0)}
                           </span>
                         ))}
                         {othersLeave.slice(0,5).map((name,i)=>(
-                          <span key={`l${i}`} title={`${name}（有給）`}
+                          <span key={`l${i}`} title={`${name}（有給）${noteOf(dkk,name)?'：'+noteOf(dkk,name):''}`}
                             style={{width:15,height:15,borderRadius:3,background:'#10b981',color:'white',display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:7,fontWeight:800,lineHeight:1,flexShrink:0}}>
                             {name.charAt(0)}
                           </span>
@@ -5265,12 +5328,13 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
             <div style={{marginTop:14,padding:'11px 14px',background:'#f8fafc',borderRadius:9,border:'1px solid #e5e7eb'}}>
               <div style={{fontWeight:700,fontSize:12,color:'#374151',marginBottom:8}}>📊 {cy}年{cm+1}月 集計</div>
               <div style={{display:'flex',flexWrap:'wrap',gap:7}}>
-                {monthlySummary.map(({name,offs,leaves})=>(
+                {monthlySummary.map(({name,offs,leaves,carry})=>(
                   <span key={name} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'4px 10px',background:'white',border:'1px solid #e5e7eb',borderRadius:20,fontSize:11}}>
                     <span style={{fontWeight:700,color:'#374151'}}>{name}</span>
                     {offs>0&&<span style={{color:'#ea580c',fontWeight:700,display:'flex',alignItems:'center',gap:2}}><span style={{width:8,height:8,borderRadius:2,background:'#f97316',display:'inline-block'}}/>休{offs}日</span>}
                     {leaves>0&&<span style={{color:'#059669',fontWeight:700,display:'flex',alignItems:'center',gap:2}}><span style={{width:8,height:8,borderRadius:2,background:'#10b981',display:'inline-block'}}/>有{leaves}日</span>}
                     <span style={{color:'#c2410c',fontWeight:800,fontSize:10}}>計{offs+leaves}日</span>
+                    {carry&&carry.quota!=null&&<span title={carryTitle(carry)} style={{fontSize:10,fontWeight:700,color:carry.remain>0?'#1d4ed8':carry.remain<0?'#dc2626':'#6b7280',borderLeft:'1px solid #e5e7eb',paddingLeft:6}}>{carryLabel(carry)}</span>}
                   </span>
                 ))}
               </div>
@@ -8959,6 +9023,9 @@ function AppInner() {
   const [dayOffDataS, setDayOffDataS] =useShared(storKey('dayoff','sanda'),{},60000);
   const [paidLeaveDataH,setPaidLeaveDataH]=useShared(storKey('pleave','honten'),{},30000);
   const [paidLeaveDataS,setPaidLeaveDataS]=useShared(storKey('pleave','sanda'),{},30000);
+  // 休日メモ（2026-09-20）：休日・有給を入れた日に、その人のひとことメモ。{"YYYY-M-D::氏名": "メモ"}。dayoff/pleave とは別キー
+  const [offNoteH,setOffNoteH]=useShared(storKey('offnote','honten'),{},60000);
+  const [offNoteS,setOffNoteS]=useShared(storKey('offnote','sanda'),{},60000);
   // -- 動的スタッフリスト --
   const [staffListH,setStaffListH]=useShared(storKey('staff-v2','honten'),DEFAULT_STAFF_HONTEN,60000);
   const [staffListS,setStaffListS]=useShared(storKey('staff-v2','sanda'),DEFAULT_STAFF_SANDA,60000);
@@ -11522,6 +11589,8 @@ function AppInner() {
                 const staffList=(vsId==='honten'?dynStaffH:dynStaffS).filter(s=>s.badge!=='president'&&s.myNumber!==0);
                 const dayOffCur=vsId==='honten'?dayOffDataH:dayOffDataS;
                 const pleaveCur=vsId==='honten'?paidLeaveDataH:paidLeaveDataS;
+                const offNoteCur=(vsId==='honten'?offNoteH:offNoteS)||{};
+                const noteOfCur=(dkk,name)=>{const v=offNoteCur[dkk+'::'+name];return typeof v==='string'?v:(v&&v.memo)||'';};
                 // 店舗休業日判定（メインカレンダーのovOpenはすでに定義済み）
                 const storeClosedDays=Array.isArray(closedDays)?closedDays:[];
                 const storeClosedDates=Array.isArray(closedDates)?closedDates:[];
@@ -11543,7 +11612,7 @@ function AppInner() {
                     if((dayOffCur[dkk]||[]).includes(calStaffFilter))offs++;
                     if((pleaveCur[dkk]||[]).includes(calStaffFilter))leaves++;
                   }
-                  return{offs,leaves};
+                  return{offs,leaves,carry:calcHolidayCarry(calStaffFilter,cy,cm,dayOffCur,isStoreClosedDay,monthlyHolidays)};
                 })():null;
                 return(
                   <div style={{display:'flex',flexDirection:'column',flex:1,minHeight:0,overflow:'hidden',margin:'0 18px 18px',border:'2px solid #e5e7eb',borderRadius:9}}>
@@ -11572,7 +11641,6 @@ function AppInner() {
                             const filteredOffs=calStaffFilter?offs.filter(n=>n===calStaffFilter):offs;
                             const filteredLeaves=calStaffFilter?leaves.filter(n=>n===calStaffFilter):leaves;
                             const hasAny=filteredOffs.length>0||filteredLeaves.length>0;
-                            const dimmed=calStaffFilter&&!hasAny;
                             // 個人フィルター時：セル背景ハイライト
                             const cellIsOff=calStaffFilter&&filteredOffs.length>0;
                             const cellIsLeave=calStaffFilter&&filteredLeaves.length>0;
@@ -11581,7 +11649,7 @@ function AppInner() {
                             const highlightBg=cellIsOff?'#fff7ed':cellIsLeave?'#f0fdf4':baseBg;
                             const highlightOutline=cellIsOff?'2px solid #f97316':cellIsLeave?'2px solid #10b981':'none';
                             return(
-                              <div key={di} style={{minHeight:120,padding:'5px 4px',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:highlightBg,boxShadow:isCl?CLOSED_BAR:'none',outline:highlightOutline,position:'relative',opacity:dimmed?0.28:1,transition:'opacity 0.15s,background 0.15s'}}>
+                              <div key={di} style={{minHeight:120,padding:'5px 4px',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:highlightBg,boxShadow:isCl?CLOSED_BAR:'none',outline:highlightOutline,position:'relative',transition:'background 0.15s'}}>
                                 {isCl&&<ClosedMark/>}
                                 <div style={{fontWeight:800,fontSize:14,marginBottom:4,color:isCl?CLOSED_FG:numCol,display:'flex',alignItems:'center',gap:3}}>
                                   <span style={isToday?{background:'#c2410c',color:'white',borderRadius:'50%',width:21,height:21,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,flexShrink:0}:{flexShrink:0}}>{day}</span>
@@ -11597,6 +11665,7 @@ function AppInner() {
                                         <span style={{width:14,height:14,borderRadius:3,background:'#f97316',color:'white',display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:8,fontWeight:800,flexShrink:0}}>{name.charAt(0)}</span>
                                         <span style={{fontSize:10,fontWeight:isFiltered?800:600,color:'#92400e',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:56}}>{name}</span>
                                         <span style={{fontSize:8,color:'#ea580c',flexShrink:0}}>休</span>
+                                        {noteOfCur(dkk,name)&&<span title={noteOfCur(dkk,name)} style={{fontSize:9,color:'#b45309',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:70}}>📝{noteOfCur(dkk,name)}</span>}
                                       </div>
                                     );
                                   })}
@@ -11607,6 +11676,7 @@ function AppInner() {
                                         <span style={{width:14,height:14,borderRadius:3,background:'#10b981',color:'white',display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:8,fontWeight:800,flexShrink:0}}>{name.charAt(0)}</span>
                                         <span style={{fontSize:10,fontWeight:isFiltered?800:600,color:'#065f46',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:56}}>{name}</span>
                                         <span style={{fontSize:8,color:'#059669',flexShrink:0}}>有</span>
+                                        {noteOfCur(dkk,name)&&<span title={noteOfCur(dkk,name)} style={{fontSize:9,color:'#047857',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:70}}>📝{noteOfCur(dkk,name)}</span>}
                                       </div>
                                     );
                                   })}
@@ -11636,6 +11706,11 @@ function AppInner() {
                           <span style={{fontSize:12,color:'#c2410c',fontWeight:800,padding:'5px 10px',background:'#eef2ff',border:'1px solid #a5b4fc',borderRadius:16}}>
                             合計 {staffMonthStats.offs+staffMonthStats.leaves} 日
                           </span>
+                          {staffMonthStats.carry&&staffMonthStats.carry.quota!=null&&(
+                            <span title={carryTitle(staffMonthStats.carry)} style={{fontSize:12,fontWeight:800,padding:'5px 12px',background:'white',border:'2px solid #93c5fd',borderRadius:16,color:staffMonthStats.carry.remain>0?'#1d4ed8':staffMonthStats.carry.remain<0?'#dc2626':'#374151'}}>
+                              {carryLabel(staffMonthStats.carry,true)}
+                            </span>
+                          )}
                         </div>
                       </div>
                     )}
@@ -11733,11 +11808,14 @@ function AppInner() {
                           background:'repeating-linear-gradient(45deg,#f5f5f5,#f5f5f5 3px,#ebebeb 3px,#ebebeb 6px)',
                           borderLeft:'1px solid #e5e7eb',cursor:storeHoliday?'default':'pointer',flexWrap:'wrap',justifyContent:'flex-end',minWidth:'fit-content',maxWidth:'45%'}}>
                         {dayoff.length>0
-                          ? dayoff.map(s=>(
-                              <span key={s.id} style={{padding:'2px 9px',borderRadius:20,background:'#9ca3af',color:'white',fontWeight:700,fontSize:11,whiteSpace:'nowrap'}}>
-                                {s.name}
+                          ? dayoff.map(s=>{
+                              const nv=((vsId==='honten'?offNoteH:offNoteS)||{})[dk+'::'+s.name];
+                              const note=storeHoliday?'':(typeof nv==='string'?nv:(nv&&nv.memo)||'');
+                              return(
+                              <span key={s.id} title={note||undefined} style={{padding:'2px 9px',borderRadius:20,background:'#9ca3af',color:'white',fontWeight:700,fontSize:11,whiteSpace:'nowrap'}}>
+                                {s.name}{note&&<span style={{fontWeight:400,opacity:.9}}>（{note.length>8?note.slice(0,8)+'…':note}）</span>}
                               </span>
-                            ))
+                              );})
                           : <span style={{fontSize:11,color:'#9ca3af',fontStyle:'italic',whiteSpace:'nowrap'}}>休日なし</span>
                         }
                         <span style={{fontSize:11,color:'#9ca3af',flexShrink:0}}>🏖</span>
@@ -12432,6 +12510,7 @@ function AppInner() {
         dayOffDataS={dayOffDataS}   setDayOffDataS={setDayOffDataS}
         paidLeaveDataH={paidLeaveDataH} setPaidLeaveDataH={setPaidLeaveDataH}
         paidLeaveDataS={paidLeaveDataS} setPaidLeaveDataS={setPaidLeaveDataS}
+        offNoteH={offNoteH} setOffNoteH={setOffNoteH} offNoteS={offNoteS} setOffNoteS={setOffNoteS}
         closedDaysH={closedDaysH} closedDaysS={closedDaysS}
         closedDatesH={closedDatesH} closedDatesS={closedDatesS}
         overrideOpenDates={Array.isArray(overrideOpenDates)?overrideOpenDates:[]}
