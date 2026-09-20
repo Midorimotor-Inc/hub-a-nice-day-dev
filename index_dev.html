@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789912989048';
+    window.__APP_BUILD='build-1789915938895';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.61';
+const APP_VERSION = '2.62';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -1947,7 +1947,7 @@ const CustomerListView = memo(({custFiles, setCustFiles, currentUser}) => {
 });
 
 
-const blankInsp  = () => ({name:'',staff:'',carType:'',course:0,loaner:'',loanerId:null,rentalLabel:'',rentalCarId:null,tokuten:'-',time:'',note:'',bookingStatus:'provisional',entryDate:'',deliveryDate:'',deliveryTime:''});
+const blankInsp  = () => ({name:'',staff:'',carType:'',phone:'',address:'',course:0,loaner:'',loanerId:null,rentalLabel:'',rentalCarId:null,tokuten:'-',time:'',note:'',bookingStatus:'provisional',entryDate:'',deliveryDate:'',deliveryTime:''});
 
 // ── 「この保存で日付が変わったか」の判定（必ずこれを使う）──────────────
 //   モーダルは日付を触らないと _targetDk を【空文字】で返す。生の値のまま
@@ -2006,7 +2006,7 @@ const BOOKING_STATUS_STRIPE = {
 };
 const BOOKING_STATUS_COLOR  = {new:'#166534',provisional:'#166534',confirmed:'#075985',cancelled:'#991b1b'};
 const BOOKING_STATUS_BORDER = {new:'#4ade80',provisional:'#4ade80',confirmed:'#38bdf8',cancelled:'#f87171'};
-const blankSched = () => ({name:'',staff:'',carType:'',work:'',loaner:'',loanerId:null,rentalLabel:'',rentalCarId:null,shimi:'',content:'',entryDate:'',deliveryDate:'',deliveryTime:''});
+const blankSched = () => ({name:'',staff:'',carType:'',phone:'',work:'',loaner:'',loanerId:null,rentalLabel:'',rentalCarId:null,shimi:'',content:'',entryDate:'',deliveryDate:'',deliveryTime:''});
 const blankMemo  = () => ({content:''});
 const dateKey    = (y,m,d) => `${y}-${m+1}-${d}`;
 const toNum      = (y,m,d) => y*10000+(m+1)*100+d;
@@ -6504,6 +6504,17 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
               onKeyDown={e=>onKbNav(e,'car')}
               placeholder="例：プリウス" style={{...INP,...KB('car')}}/>
           </div>
+          {/* 電話・住所（任意・2026-09-20）：リストから予約した場合はリストの値が自動で入る。整備は電話だけ */}
+          <div style={{display:'grid',gridTemplateColumns:isInsp?'1fr 1.5fr':'1fr',gap:8}}>
+            <div>
+              <label style={LBL}>電話 <span style={{fontWeight:400,color:'#9ca3af',fontSize:10}}>任意</span></label>
+              <input value={form.phone||''} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="090-0000-0000" inputMode="tel" style={INP}/>
+            </div>
+            {isInsp&&<div>
+              <label style={LBL}>住所 <span style={{fontWeight:400,color:'#9ca3af',fontSize:10}}>任意</span></label>
+              <input value={form.address||''} onChange={e=>setForm({...form,address:e.target.value})} placeholder="市区町村から" style={INP}/>
+            </div>}
+          </div>
           {/* コース（車検） */}
           {isInsp&&(
             <div>
@@ -6983,7 +6994,8 @@ const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,loanerResH
               {row.staff&&<div style={{fontSize:12,color:pending?'#6b7280':'#374151'}}>{row.staff}</div>}
             </div>}
       </td>
-      <td style={TD}><span style={{color:pending||isOverLimit||isCancelled?'#6b7280':'#374151',fontSize:13,fontWeight:700}}>{row.carType||'—'}</span></td>
+      <td style={TD}><span style={{color:pending||isOverLimit||isCancelled?'#6b7280':'#374151',fontSize:13,fontWeight:700}}>{row.carType||'—'}</span>
+        {row.phone&&<div style={{fontSize:11,color:pending||isOverLimit||isCancelled?'#9ca3af':'#0369a1',fontWeight:600,whiteSpace:'nowrap'}}>📞{row.phone}</div>}</td>
       <td style={TD}>{cObj&&<span style={{display:'inline-flex',alignItems:'center',gap:4,padding:'2px 8px',borderRadius:20,background:cObj.bg,color:cObj.color,fontWeight:700,fontSize:11,opacity:pending||isOverLimit||isCancelled?0.4:1}}><span style={{width:16,height:16,borderRadius:'50%',background:cObj.color,color:'white',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,fontWeight:900}}>{cObj.initial}</span>{cObj.name}</span>}</td>
       <td style={TD}><span style={{fontSize:12,color:row.rentalLabel?(pending||isOverLimit||isCancelled?'#6b7280':'#065f46'):(pending||isOverLimit||isCancelled?'#6b7280':'#374151'),fontWeight:400}}>
         {/* ★限定（この車でないとダメ）の代車は鍵マークを付ける。最適化で動かない印 */}
@@ -7094,7 +7106,8 @@ const SchedRow=memo(({row,slot,baseSlot,isFirstSub,dk,onOpenModal,lockInfo,loane
               {row.staff&&<div style={{fontSize:12,color:'#374151'}}>{row.staff}</div>}
             </div>}
       </td>
-      <td style={TD}><span style={{color:'#374151',fontSize:13,fontWeight:700}}>{row.carType||'—'}</span></td>
+      <td style={TD}><span style={{color:'#374151',fontSize:13,fontWeight:700}}>{row.carType||'—'}</span>
+        {row.phone&&<div style={{fontSize:11,color:'#0369a1',fontWeight:600,whiteSpace:'nowrap'}}>📞{row.phone}</div>}</td>
       <td style={TD}>{row.work?<WorkBadge id={row.work} dim={locked||otherStore}/>:<span style={{fontSize:13,color:'#374151'}}>—</span>}</td>
       <td style={TD}><span style={{fontSize:12,color:row.rentalLabel?'#065f46':'#374151',fontWeight:400}}>
         {/* ★限定（この車でないとダメ）の代車は鍵マークを付ける。最適化で動かない印 */}
