@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789872639300';
+  window.__APP_BUILD='build-1789905841657';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.57';
+const MOBILE_VERSION='2.58';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -136,7 +136,8 @@ const MOBILE_KEYS=()=>[STOR+'insp',storKey('sched','honten'),storKey('sched','sa
   storKey('dayoff','honten'),storKey('dayoff','sanda'),
   storKey('staff-v2','honten'),storKey('staff-v2','sanda'),
   storKey('pleave','honten'),storKey('pleave','sanda'),STOR+'mholidays',
-  storKey('offnote','honten'),storKey('offnote','sanda')];   // 休日タブ（2026-09-19）・休日メモ（2026-09-20）
+  storKey('offnote','honten'),storKey('offnote','sanda'),   // 休日タブ（2026-09-19）・休日メモ（2026-09-20）
+  STOR+'mysched'];   // マイスケジュール（公開予定・2026-09-20）
 
 // ── データ復旧（GAS v10スナップショット）。PC版と同じ4名のみ ──
 const RESTORE_ALLOWED=[{uid:'h0',name:'見取勇一'},{uid:'h1',name:'見取大介'},{uid:'s10',name:'藤原昭人'},{uid:'h7',name:'江川京志'}];
@@ -1347,7 +1348,9 @@ const LoginScreen=({onLogin,onAddAuth})=>{
   );
 };
 
-const CalendarView=({inspData,closedDays,closedDates,overrideOpen,vsId,onSelectDate})=>{
+const CalendarView=({inspData,closedDays,closedDates,overrideOpen,vsId,onSelectDate,mySched,secItems,uid})=>{
+  // マイスケジュール：日ごとの件数（自分の公開＋自分のシークレット＋他の人の公開）
+  const msCnt=useMemo(()=>{const r={};Object.values(mySched||{}).forEach(v=>{if(v&&v.dk)r[v.dk]=(r[v.dk]||0)+1;});Object.values(secItems||{}).forEach(v=>{if(v&&v.dk)r[v.dk]=(r[v.dk]||0)+1;});return r;},[mySched,secItems]);
   const today=new Date();
   const [cur,setCur]=useState(new Date(today.getFullYear(),today.getMonth(),1));
   const cy=cur.getFullYear(),cm=cur.getMonth();
@@ -1396,7 +1399,7 @@ const CalendarView=({inspData,closedDays,closedDates,overrideOpen,vsId,onSelectD
               const isSun=di===0,isSat=di===6,isHol=isHoliday(cy,cm,d);
               const info=dayCnt[d];
               return(
-                <div key={di} onClick={()=>!closed&&onSelectDate(`${cy}-${cm+1}-${d}`,cy,cm,d)}
+                <div key={di} onClick={()=>onSelectDate(`${cy}-${cm+1}-${d}`,cy,cm,d)}
                   style={{borderRadius:10,background:closed?CLOSED_BG:isToday?'#dbeafe':'white',border:isToday?'2px solid #3b82f6':'2px solid #f1f5f9',boxShadow:closed?CLOSED_BAR:info?'0 2px 6px rgba(0,0,0,.08)':'none',minHeight:58,padding:'5px 3px',cursor:closed?'default':'pointer'}}>
                   <div style={{textAlign:'center',fontWeight:800,fontSize:14,color:isToday?'#1e40af':closed?CLOSED_FG:isSun||isHol?'#ef4444':isSat?'#3b82f6':'#1e293b'}}>{d}</div>
                   {info&&!closed&&(
@@ -1408,6 +1411,7 @@ const CalendarView=({inspData,closedDays,closedDates,overrideOpen,vsId,onSelectD
                     </div>
                   )}
                   {closed&&<div style={{textAlign:'center',fontSize:12,color:CLOSED_FG,fontWeight:900,marginTop:5,letterSpacing:0.5}}>{CLOSED_LABEL}</div>}
+                  {msCnt[`${cy}-${cm+1}-${d}`]>0&&<div style={{textAlign:'center',fontSize:9,fontWeight:800,color:'#5b21b6',marginTop:2}}>📝{msCnt[`${cy}-${cm+1}-${d}`]}</div>}
                 </div>
               );
             })}
@@ -1421,7 +1425,7 @@ const CalendarView=({inspData,closedDays,closedDates,overrideOpen,vsId,onSelectD
   );
 };
 
-const DayDetailModal=({dk,y,m,d,inspData,schedDataH,schedDataS,memoDataH,memoDataS,vsId,onClose,onGoSchedule,onToggleArrived,arrivedOv})=>{
+const DayDetailModal=({dk,y,m,d,inspData,schedDataH,schedDataS,memoDataH,memoDataS,vsId,onClose,onGoSchedule,onToggleArrived,arrivedOv,mySchedPanel})=>{
   const sc=vsId==='honten'?'#1d4ed8':'#dc2626';
   const irows=(inspData[dk]||[]).filter(r=>r&&r.name&&!r.pendingApproval&&r.bookingStatus!=='cancelled');
   const sorted=[...irows.filter(r=>normStore(r.store)===vsId),...irows.filter(r=>!normStore(r.store)),...irows.filter(r=>normStore(r.store)&&normStore(r.store)!==vsId)];
@@ -1519,7 +1523,13 @@ const DayDetailModal=({dk,y,m,d,inspData,schedDataH,schedDataS,memoDataH,memoDat
               {memos.map((m,i)=><div key={i} style={{padding:'8px 10px',marginBottom:4,background:'#faf5ff',borderRadius:10,border:'1px solid #e9d5ff',fontSize:12}}>{m.content||m.text||''}</div>)}
             </div>
           )}
-          {sorted.length===0&&sched.length===0&&dropoffs.length===0&&<div style={{textAlign:'center',color:'#94a3b8',padding:32,fontSize:13}}>この日の予約はありません</div>}
+          {sorted.length===0&&sched.length===0&&dropoffs.length===0&&<div style={{textAlign:'center',color:'#94a3b8',padding:'18px 0',fontSize:13}}>この日の予約はありません</div>}
+          {mySchedPanel&&(
+            <div style={{marginTop:6,paddingTop:12,borderTop:'2px solid #ede9fe'}}>
+              <div style={{fontWeight:800,fontSize:12,color:'#5b21b6',marginBottom:8}}>📝 マイスケジュール</div>
+              {mySchedPanel}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -2376,6 +2386,357 @@ const LoanerView=({loanerResH,loanerResS,rentalResData,rentalCars,loanerCarsH,lo
 // 保存失敗時の通知メール送信先（ログイン中スタッフごとに1件、通知専用・個人アドレス可）。
 // 登録先は共有キー ${STOR}notify-emails の {スタッフ名: アドレス} マップ。
 // ============================================
+//  マイスケジュール（2026-09-20・アイデア仕様書③）— PC と mobile で同じコードを置く
+//   ・公開予定：kv の ${STOR}mysched = { id: {dk, time, title, memo, owner(氏名), uid(スタッフuid), at} }。全員が読める。編集・削除は本人だけ
+//   ・シークレット予定：kv の ${STOR}mysec-{スタッフuid} に **暗号化して** 保存（C案・ユーザー決定）。
+//       { hint, salt, iter, checkIv, check, iv, data, u }。data = AES-GCM で暗号化した { id: {dk,time,title,memo,at} }。
+//       鍵は「ヒントに対する答え」から PBKDF2 で作る。答えは正規化（全角→半角・空白除去・小文字）してから使う。
+//       サーバーには暗号文とヒントだけが残るので、他のスタッフ・管理者・運営（サービスアカウント鍵を持つ人）も中身は読めない。
+//       ★答えを忘れると誰にも復元できない（リセット＝シークレット予定を全部消して作り直す）。
+//   ・開いた鍵はそのタブの sessionStorage に置く（タブを閉じれば消える。リロードでは聞き直さない）。
+// ============================================
+const HubSecret={
+  ITER:150000,
+  norm:a=>String(a||'').normalize('NFKC').replace(/\s+/g,'').toLowerCase(),
+  b64:u8=>{let s='';for(let i=0;i<u8.length;i++)s+=String.fromCharCode(u8[i]);return btoa(s);},
+  unb64:s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0)),
+  ok:()=>!!(window.crypto&&crypto.subtle&&crypto.getRandomValues),
+  async derive(answer,saltB64,iter){
+    const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(HubSecret.norm(answer)),'PBKDF2',false,['deriveKey']);
+    return crypto.subtle.deriveKey({name:'PBKDF2',salt:HubSecret.unb64(saltB64),iterations:iter||HubSecret.ITER,hash:'SHA-256'},km,{name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+  },
+  async encrypt(key,obj){
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(JSON.stringify(obj)));
+    return {iv:HubSecret.b64(iv),data:HubSecret.b64(new Uint8Array(ct))};
+  },
+  async decrypt(key,ivB64,dataB64){
+    const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:HubSecret.unb64(ivB64)},key,HubSecret.unb64(dataB64));
+    return JSON.parse(new TextDecoder().decode(pt));
+  },
+  async exportKey(key){return HubSecret.b64(new Uint8Array(await crypto.subtle.exportKey('raw',key)));},
+  async importKey(b64){return crypto.subtle.importKey('raw',HubSecret.unb64(b64),{name:'AES-GCM'},true,['encrypt','decrypt']);},
+  // 新しいヒント・答えで書庫を作る（items を暗号化して入れる）
+  async makeDoc(hint,answer,items){
+    const salt=HubSecret.b64(crypto.getRandomValues(new Uint8Array(16)));
+    const key=await HubSecret.derive(answer,salt,HubSecret.ITER);
+    const chk=await HubSecret.encrypt(key,{ok:1});
+    const enc=await HubSecret.encrypt(key,items||{});
+    return {key,doc:{hint:String(hint||'').slice(0,60),salt,iter:HubSecret.ITER,checkIv:chk.iv,check:chk.data,iv:enc.iv,data:enc.data,u:Date.now()}};
+  },
+  sessKey:uid=>STOR+'mysec-key-'+uid,
+};
+// 予定の並び（時刻→作成順）
+const hubSchedSort=(a,b)=>((a.time||'99:99')<(b.time||'99:99')?-1:(a.time||'99:99')>(b.time||'99:99')?1:(a.at||0)-(b.at||0));
+const hubSchedId=()=>'ms'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+
+// ── シークレット書庫のフック。sGet/saveKv は各画面のデータ層（PC: sGet/writeVerified、mobile: sGet/writeShared）──
+function useHubSecret(staffUid,sGetFn,saveKv){
+  const key=staffUid?STOR+'mysec-'+staffUid:null;
+  const [doc,setDoc]=useState(undefined);       // undefined=読込中 / null=未設定 / {..}=設定済み
+  const [ckey,setCkey]=useState(null);           // 開いた鍵（CryptoKey）
+  const [items,setItems]=useState(null);         // 復号した予定
+  const [busy,setBusy]=useState(false);
+  const reload=useCallback(async()=>{
+    if(!key)return;
+    try{const v=await sGetFn(key);setDoc(v&&typeof v==='object'&&v.salt?v:null);}catch(e){setDoc(null);}
+  },[key]);
+  useEffect(()=>{setDoc(undefined);setCkey(null);setItems(null);reload();},[key]);
+  // 開いた鍵をタブ内から戻す
+  useEffect(()=>{(async()=>{
+    if(!staffUid||!HubSecret.ok())return;
+    let raw=null;try{raw=sessionStorage.getItem(HubSecret.sessKey(staffUid));}catch(e){}
+    if(raw){try{setCkey(await HubSecret.importKey(raw));}catch(e){}}
+  })();},[staffUid]);
+  // 鍵と書庫が揃ったら復号
+  useEffect(()=>{(async()=>{
+    if(!ckey||!doc){setItems(null);return;}
+    try{const v=await HubSecret.decrypt(ckey,doc.iv,doc.data);setItems(v&&typeof v==='object'?v:{});}
+    catch(e){ // 答えが変えられた（別端末）等：鍵を捨てて聞き直す
+      setItems(null);setCkey(null);try{sessionStorage.removeItem(HubSecret.sessKey(staffUid));}catch(x){}
+    }
+  })();},[ckey,doc]);
+  const remember=async k=>{try{sessionStorage.setItem(HubSecret.sessKey(staffUid),await HubSecret.exportKey(k));}catch(e){}};
+  const status=!HubSecret.ok()?'unsupported':doc===undefined?'loading':!doc?'none':(ckey&&items)?'open':'locked';
+  const unlock=async answer=>{
+    if(!doc)return false;
+    setBusy(true);
+    try{
+      const k=await HubSecret.derive(answer,doc.salt,doc.iter);
+      try{await HubSecret.decrypt(k,doc.checkIv,doc.check);}catch(e){return false;}
+      await remember(k);setCkey(k);return true;
+    }finally{setBusy(false);}
+  };
+  // 初回設定／リセット（リセットは予定を全部消す）
+  const setup=async(hint,answer)=>{
+    setBusy(true);
+    try{
+      const {key:k,doc:d}=await HubSecret.makeDoc(hint,answer,{});
+      const ok=await saveKv(key,()=>d); if(!ok)return false;
+      setDoc(d);await remember(k);setCkey(k);return true;
+    }finally{setBusy(false);}
+  };
+  // ヒント・答えを変える（今の答えで開けている時だけ。予定は引き継ぐ）
+  const change=async(hint,answer)=>{
+    if(!items)return false;
+    setBusy(true);
+    try{
+      const {key:k,doc:d}=await HubSecret.makeDoc(hint,answer,items);
+      const ok=await saveKv(key,()=>d); if(!ok)return false;
+      setDoc(d);await remember(k);setCkey(k);return true;
+    }finally{setBusy(false);}
+  };
+  const save=async next=>{
+    if(!ckey||!doc)return false;
+    setBusy(true);
+    try{
+      const enc=await HubSecret.encrypt(ckey,next);
+      const d={...doc,iv:enc.iv,data:enc.data,u:Date.now()};
+      const ok=await saveKv(key,()=>d); if(!ok)return false;
+      setDoc(d);setItems(next);return true;
+    }finally{setBusy(false);}
+  };
+  const lock=()=>{setCkey(null);setItems(null);try{sessionStorage.removeItem(HubSecret.sessKey(staffUid));}catch(e){}};
+  return {status,hint:doc&&doc.hint||'',items:items||{},busy,unlock,setup,change,save,lock,reload};
+}
+
+// ── 1日分の予定パネル（公開＋シークレット、追加・編集）。PC のモーダルと mobile の日詳細で共用 ──
+const MySchedPanel=({dk,user,pub,savePub,secret,compact,onClose})=>{
+  const [form,setForm]=useState(null);           // {id?, title, time, memo, secret}
+  const [ans,setAns]=useState('');
+  const [setupMode,setSetupMode]=useState(null);  // 'setup' | 'change' | 'reset'
+  const [sf,setSf]=useState({hint:'',a1:'',a2:''});
+  const [msg,setMsg]=useState('');
+  const [saving,setSaving]=useState(false);
+  useEffect(()=>{setForm(null);setMsg('');setAns('');},[dk]);
+  const pubList=Object.entries(pub||{}).filter(([,v])=>v&&v.dk===dk).map(([id,v])=>({...v,id})).sort(hubSchedSort);
+  const secList=Object.entries(secret.items||{}).filter(([,v])=>v&&v.dk===dk).map(([id,v])=>({...v,id,secret:true})).sort(hubSchedSort);
+  const mine=v=>v.uid===user.uid;
+  const p=dk.split('-');
+  const label=`${p[1]}/${p[2]}（${['日','月','火','水','木','金','土'][new Date(Number(p[0]),Number(p[1])-1,Number(p[2])).getDay()]}）`;
+  const fs=compact?12:13;
+  const submit=async()=>{
+    if(!form)return;
+    const title=String(form.title||'').trim().slice(0,40);
+    if(!title){setMsg('件名を入れてください');return;}
+    const rec={dk,time:form.time||'',title,memo:String(form.memo||'').trim().slice(0,200)};
+    setSaving(true);setMsg('');
+    try{
+      if(form.secret){
+        if(secret.status!=='open'){setMsg('先にシークレットを開いてください');return;}
+        const next={...secret.items};
+        const id=form.id&&next[form.id]?form.id:hubSchedId();
+        next[id]={...(next[id]||{}),...rec,at:(next[id]&&next[id].at)||Date.now()};
+        if(form.id&&form.wasPublic){ await savePub(b=>{const n={...(b||{})};delete n[form.id];return n;}); } // 公開→🔒 に変えた
+        if(!(await secret.save(next))){setMsg('保存できませんでした。もう一度お試しください');return;}
+      }else{
+        const id=form.id&&!form.wasSecret?form.id:hubSchedId();
+        const ok=await savePub(b=>{const n={...(b||{})};const old=n[id];if(old&&old.uid&&old.uid!==user.uid)return undefined;n[id]={...(old||{}),...rec,owner:user.name,uid:user.uid,at:(old&&old.at)||Date.now()};return n;});
+        if(ok===false){setMsg('保存できませんでした。もう一度お試しください');return;}
+        if(form.id&&form.wasSecret){ const next={...secret.items};delete next[form.id];await secret.save(next); } // 🔒→公開 に変えた
+      }
+      setForm(null);
+    }finally{setSaving(false);}
+  };
+  const remove=async it=>{
+    if(!confirm(`「${it.title}」を削除しますか？`))return;
+    setSaving(true);
+    try{
+      if(it.secret){const next={...secret.items};delete next[it.id];await secret.save(next);}
+      else await savePub(b=>{const n={...(b||{})};if(!n[it.id]||(n[it.id].uid&&n[it.id].uid!==user.uid))return undefined;delete n[it.id];return n;});
+      setForm(null);
+    }finally{setSaving(false);}
+  };
+  const Item=({it})=>(
+    <div style={{display:'flex',alignItems:'flex-start',gap:7,padding:compact?'7px 9px':'8px 11px',marginBottom:4,borderRadius:9,
+      background:it.secret?'#f5f3ff':mine(it)?'#eff6ff':'white',border:`1.5px solid ${it.secret?'#c4b5fd':mine(it)?'#93c5fd':'#e5e7eb'}`,borderLeft:`4px solid ${it.secret?'#7c3aed':mine(it)?'#2563eb':'#9ca3af'}`}}>
+      <span style={{fontSize:11,fontWeight:800,color:it.secret?'#6d28d9':'#1d4ed8',width:42,flexShrink:0,marginTop:1}}>{it.time||'—'}</span>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontWeight:800,fontSize:fs,display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
+          {it.secret&&<span title="シークレット（自分だけ）">🔒</span>}
+          <span style={{wordBreak:'break-all'}}>{it.title}</span>
+          {!it.secret&&<span style={{fontSize:10,fontWeight:700,color:mine(it)?'#1d4ed8':'#6b7280',background:mine(it)?'#dbeafe':'#f3f4f6',borderRadius:10,padding:'1px 7px'}}>{mine(it)?'自分':it.owner}</span>}
+        </div>
+        {it.memo&&<div style={{fontSize:11,color:'#4b5563',marginTop:2,whiteSpace:'pre-wrap',wordBreak:'break-all'}}>{it.memo}</div>}
+      </div>
+      {(it.secret||mine(it))&&(
+        <button onClick={()=>{setForm({id:it.id,title:it.title,time:it.time||'',memo:it.memo||'',secret:!!it.secret,wasSecret:!!it.secret,wasPublic:!it.secret});setMsg('');}}
+          style={{flexShrink:0,padding:'3px 8px',borderRadius:6,border:'1px solid #d1d5db',background:'white',fontSize:11,cursor:'pointer',color:'#374151'}}>編集</button>
+      )}
+    </div>
+  );
+  const inputS={width:'100%',padding:compact?'8px 10px':'8px 11px',border:'1.5px solid #d1d5db',borderRadius:8,fontSize:14,boxSizing:'border-box',background:'white'};
+  const secretBox=()=>{
+    const st=secret.status;
+    if(st==='unsupported')return <div style={{fontSize:11,color:'#9ca3af'}}>この端末のブラウザではシークレット予定を使えません（暗号化に対応していません）。</div>;
+    if(st==='loading')return <div style={{fontSize:11,color:'#9ca3af'}}>読み込み中…</div>;
+    if(setupMode){
+      const isReset=setupMode==='reset';
+      return(
+        <div style={{padding:'10px 12px',background:'#faf5ff',border:'1.5px solid #c4b5fd',borderRadius:10}}>
+          <div style={{fontWeight:800,fontSize:12,color:'#5b21b6',marginBottom:6}}>
+            {setupMode==='setup'?'🔒 シークレット予定を使う準備':setupMode==='change'?'🔒 ヒントと答えを変える':'🔒 リセット（作り直し）'}
+          </div>
+          {isReset&&<div style={{fontSize:11,color:'#b91c1c',fontWeight:700,marginBottom:6}}>⚠ 今までのシークレット予定はすべて消えます（復元できません）。</div>}
+          <div style={{fontSize:11,color:'#6b7280',lineHeight:1.7,marginBottom:6}}>
+            ヒントは自分だけが答えを思い出せる質問に。答えは簡単でよいので、<b>本人しか知らないもの</b>にしてください。<br/>
+            <b>答えを忘れるとシークレット予定は誰にも復元できません。</b>全角・半角・空白・大文字小文字の違いは無視します。
+          </div>
+          <input style={{...inputS,marginBottom:6}} placeholder="ヒント（例：初めて飼った犬の名前）" value={sf.hint} onChange={e=>setSf({...sf,hint:e.target.value})} maxLength={60}/>
+          <input style={{...inputS,marginBottom:6}} placeholder="答え" type="password" value={sf.a1} onChange={e=>setSf({...sf,a1:e.target.value})} autoComplete="new-password"/>
+          <input style={{...inputS,marginBottom:8}} placeholder="答え（もう一度）" type="password" value={sf.a2} onChange={e=>setSf({...sf,a2:e.target.value})} autoComplete="new-password"/>
+          <div style={{display:'flex',gap:6}}>
+            <button disabled={secret.busy} onClick={async()=>{
+                if(!sf.hint.trim()){setMsg('ヒントを入れてください');return;}
+                if(HubSecret.norm(sf.a1).length<1){setMsg('答えを入れてください');return;}
+                if(HubSecret.norm(sf.a1)!==HubSecret.norm(sf.a2)){setMsg('答えが一致しません');return;}
+                if(isReset&&!confirm('本当にリセットしますか？ 今までのシークレット予定はすべて消えます。'))return;
+                const ok=setupMode==='change'?await secret.change(sf.hint,sf.a1):await secret.setup(sf.hint,sf.a1);
+                if(ok){setSetupMode(null);setSf({hint:'',a1:'',a2:''});setMsg('');}else setMsg('保存できませんでした。もう一度お試しください');
+              }}
+              style={{flex:1,padding:'9px 0',borderRadius:8,border:'none',background:'#7c3aed',color:'white',fontWeight:800,fontSize:13,cursor:'pointer'}}>
+              {secret.busy?'処理中…':'決める'}
+            </button>
+            <button onClick={()=>{setSetupMode(null);setMsg('');}} style={{padding:'9px 12px',borderRadius:8,border:'1px solid #d1d5db',background:'white',fontSize:12,cursor:'pointer'}}>やめる</button>
+          </div>
+        </div>
+      );
+    }
+    if(st==='none')return(
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',fontSize:11,color:'#6b7280'}}>
+        <span>🔒 シークレット予定（自分だけが見られる予定）はまだ準備されていません。</span>
+        <button onClick={()=>{setSetupMode('setup');setSf({hint:'',a1:'',a2:''});}} style={{padding:'5px 11px',borderRadius:7,border:'1.5px solid #7c3aed',background:'#f5f3ff',color:'#5b21b6',fontWeight:800,fontSize:11,cursor:'pointer'}}>準備する</button>
+      </div>
+    );
+    if(st==='locked')return(
+      <div style={{padding:'9px 11px',background:'#faf5ff',border:'1.5px solid #c4b5fd',borderRadius:10}}>
+        <div style={{fontSize:11,color:'#5b21b6',fontWeight:800,marginBottom:5}}>🔒 シークレット予定を開く　<span style={{fontWeight:600,color:'#6b7280'}}>ヒント：</span><span style={{fontWeight:700,color:'#374151'}}>{secret.hint}</span></div>
+        <div style={{display:'flex',gap:6}}>
+          <input style={{...inputS,flex:1}} placeholder="答え" type="password" value={ans} onChange={e=>setAns(e.target.value)} autoComplete="current-password"
+            onKeyDown={async e=>{if(e.key==='Enter'){const ok=await secret.unlock(ans);setMsg(ok?'':'答えが違います');if(ok)setAns('');}}}/>
+          <button disabled={secret.busy} onClick={async()=>{const ok=await secret.unlock(ans);setMsg(ok?'':'答えが違います');if(ok)setAns('');}}
+            style={{padding:'0 14px',borderRadius:8,border:'none',background:'#7c3aed',color:'white',fontWeight:800,fontSize:13,cursor:'pointer'}}>{secret.busy?'…':'開く'}</button>
+        </div>
+        <div style={{marginTop:6,fontSize:10.5,color:'#9ca3af'}}>答えを忘れた場合は <span onClick={()=>{setSetupMode('reset');setSf({hint:'',a1:'',a2:''});}} style={{color:'#b91c1c',textDecoration:'underline',cursor:'pointer'}}>リセット（予定は全部消えます）</span></div>
+      </div>
+    );
+    return(
+      <div style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:'#5b21b6',flexWrap:'wrap'}}>
+        <span style={{fontWeight:800}}>🔓 シークレット予定を開いています</span>
+        <button onClick={()=>secret.lock()} style={{padding:'3px 9px',borderRadius:6,border:'1px solid #c4b5fd',background:'white',fontSize:11,cursor:'pointer',color:'#5b21b6'}}>閉じる（施錠）</button>
+        <span onClick={()=>{setSetupMode('change');setSf({hint:secret.hint,a1:'',a2:''});}} style={{color:'#6b7280',textDecoration:'underline',cursor:'pointer'}}>ヒント・答えを変える</span>
+      </div>
+    );
+  };
+  return(
+    <div>
+      {!compact&&(
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+          <div style={{fontWeight:900,fontSize:16}}>📝 {label} の予定</div>
+          {onClose&&<button onClick={onClose} style={{background:'#f3f4f6',border:'none',borderRadius:'50%',width:30,height:30,cursor:'pointer',fontSize:14}}>✕</button>}
+        </div>
+      )}
+      {pubList.length===0&&secList.length===0&&!form&&<div style={{fontSize:12,color:'#9ca3af',padding:'4px 0 8px'}}>この日の予定はありません</div>}
+      {pubList.map(it=><Item key={it.id} it={it}/>)}
+      {secList.map(it=><Item key={it.id} it={it}/>)}
+      {form?(
+        <div style={{marginTop:8,padding:'10px 12px',background:'#f8fafc',border:'1.5px solid #cbd5e1',borderRadius:10}}>
+          <div style={{fontWeight:800,fontSize:12,color:'#334155',marginBottom:6}}>{form.id?'予定を編集':'予定を追加'}</div>
+          <input style={{...inputS,marginBottom:6}} placeholder="件名（例：○○社と打合せ）" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} maxLength={40} autoFocus/>
+          <div style={{display:'flex',gap:6,marginBottom:6}}>
+            <input type="time" style={{...inputS,width:'auto',flex:'0 0 auto'}} value={form.time} onChange={e=>setForm({...form,time:e.target.value})}/>
+            {form.time&&<button onClick={()=>setForm({...form,time:''})} style={{padding:'0 10px',borderRadius:8,border:'1px solid #d1d5db',background:'white',fontSize:11,cursor:'pointer'}}>時刻なし</button>}
+          </div>
+          <textarea style={{...inputS,minHeight:52,marginBottom:6,resize:'vertical'}} placeholder="メモ（任意）" value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})} maxLength={200}/>
+          <div style={{display:'flex',gap:6,marginBottom:8}}>
+            {[['pub','👥 公開','他のスタッフにも見えます'],['sec','🔒 シークレット','自分だけ']].map(([k,l,sub])=>{
+              const on=(k==='sec')===!!form.secret;
+              const dis=k==='sec'&&secret.status!=='open';
+              return(
+                <button key={k} disabled={dis} onClick={()=>setForm({...form,secret:k==='sec'})} title={dis?'先に下でシークレットを準備・開いてください':''}
+                  style={{flex:1,padding:'8px 6px',borderRadius:8,border:`2px solid ${on?(k==='sec'?'#7c3aed':'#2563eb'):'#e5e7eb'}`,background:on?(k==='sec'?'#f5f3ff':'#eff6ff'):'white',color:dis?'#9ca3af':on?(k==='sec'?'#5b21b6':'#1e40af'):'#6b7280',fontWeight:on?800:600,fontSize:12,cursor:dis?'not-allowed':'pointer'}}>
+                  {l}<div style={{fontSize:9.5,fontWeight:400,opacity:.8}}>{sub}</div>
+                </button>
+              );
+            })}
+          </div>
+          {msg&&<div style={{fontSize:11,color:'#b91c1c',fontWeight:700,marginBottom:6}}>{msg}</div>}
+          <div style={{display:'flex',gap:6}}>
+            <button disabled={saving} onClick={submit} style={{flex:1,padding:'9px 0',borderRadius:8,border:'none',background:form.secret?'#7c3aed':'#2563eb',color:'white',fontWeight:800,fontSize:13,cursor:'pointer'}}>{saving?'保存中…':form.id?'保存':'追加'}</button>
+            {form.id&&<button disabled={saving} onClick={()=>remove({id:form.id,title:form.title,secret:form.wasSecret})} style={{padding:'9px 12px',borderRadius:8,border:'1px solid #fca5a5',background:'#fef2f2',color:'#b91c1c',fontWeight:700,fontSize:12,cursor:'pointer'}}>削除</button>}
+            <button disabled={saving} onClick={()=>{setForm(null);setMsg('');}} style={{padding:'9px 12px',borderRadius:8,border:'1px solid #d1d5db',background:'white',fontSize:12,cursor:'pointer'}}>やめる</button>
+          </div>
+        </div>
+      ):(
+        <button onClick={()=>{setForm({title:'',time:'',memo:'',secret:false});setMsg('');}}
+          style={{marginTop:6,width:'100%',padding:'9px 0',borderRadius:9,border:'1.5px dashed #93c5fd',background:'#eff6ff',color:'#1e40af',fontWeight:800,fontSize:12,cursor:'pointer'}}>＋ 予定を追加</button>
+      )}
+      <div style={{marginTop:12,paddingTop:10,borderTop:'1px dashed #e5e7eb'}}>
+        {msg&&!form&&<div style={{fontSize:11,color:'#b91c1c',fontWeight:700,marginBottom:6}}>{msg}</div>}
+        {secretBox()}
+      </div>
+    </div>
+  );
+};
+
+// ── PC：月のカレンダー（予定ビュー）──
+const MySchedCalendar=({cy,cm,user,pub,secret,isClosedDay,onPickDay,storeLabelOf})=>{
+  const today=new Date();
+  const dim=new Date(cy,cm+1,0).getDate();
+  const first=new Date(cy,cm,1).getDay();
+  const byDay={};
+  const add=(it)=>{const p=String(it.dk||'').split('-').map(Number);if(p[0]!==cy||p[1]!==cm+1)return;(byDay[p[2]]=byDay[p[2]]||[]).push(it);};
+  Object.entries(pub||{}).forEach(([id,v])=>{if(v&&v.dk)add({...v,id});});
+  Object.entries(secret.items||{}).forEach(([id,v])=>{if(v&&v.dk)add({...v,id,secret:true});});
+  const weeks=[];let wk=Array(7).fill(null);
+  for(let d=1;d<=dim;d++){const dow=(first+d-1)%7;wk[dow]=d;if(dow===6||d===dim){weeks.push([...wk]);wk=Array(7).fill(null);}}
+  const DOWS=['日','月','火','水','木','金','土'];
+  return(
+    <div style={{display:'flex',flexDirection:'column',flex:1,minHeight:0,overflow:'hidden',margin:'0 18px 18px',border:'2px solid #e5e7eb',borderRadius:9}}>
+      <div style={{overflowY:'auto',flex:1}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',background:'linear-gradient(90deg,#eff6ff,#f5f3ff)',borderBottom:'2px solid #c7d2fe'}}>
+          {DOWS.map((d,i)=><div key={i} style={{padding:'8px 0',textAlign:'center',fontWeight:700,fontSize:13,color:i===0?'#dc2626':i===6?'#1d4ed8':'#374151'}}>{d}</div>)}
+        </div>
+        {weeks.map((week,wi)=>(
+          <div key={wi} style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)'}}>
+            {week.map((day,di)=>{
+              if(!day)return <div key={di} style={{minHeight:110,borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:'#f9fafb'}}/>;
+              const dkk=`${cy}-${cm+1}-${day}`;
+              const isToday=day===today.getDate()&&cm===today.getMonth()&&cy===today.getFullYear();
+              const isCl=isClosedDay?isClosedDay(cy,cm,day):false;
+              const list=(byDay[day]||[]).sort(hubSchedSort);
+              const dow=new Date(cy,cm,day).getDay();
+              return(
+                <div key={di} onClick={()=>onPickDay(dkk)}
+                  style={{minHeight:110,padding:'5px 4px',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:isCl?(typeof CLOSED_BG!=='undefined'?CLOSED_BG:'#f3f4f6'):'white',cursor:'pointer',position:'relative'}}
+                  onMouseEnter={e=>{e.currentTarget.style.background=isCl?'#e5e7eb':'#f8fafc';}} onMouseLeave={e=>{e.currentTarget.style.background=isCl?(typeof CLOSED_BG!=='undefined'?CLOSED_BG:'#f3f4f6'):'white';}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:3}}>
+                    <span style={isToday?{background:'#2563eb',color:'white',borderRadius:'50%',width:21,height:21,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800}:{fontWeight:800,fontSize:14,color:dow===0?'#dc2626':dow===6?'#1d4ed8':'#111'}}>{day}</span>
+                    {isCl&&<span style={{fontSize:11,color:'#9ca3af',fontWeight:800}}>休業日</span>}
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:2}}>
+                    {list.slice(0,4).map(it=>{
+                      const mine=it.secret||it.uid===user.uid;
+                      return(
+                        <div key={it.id} title={`${it.time?it.time+' ':''}${it.title}${it.secret?'（シークレット）':'（'+(it.owner||'')+'）'}${it.memo?'\n'+it.memo:''}`}
+                          style={{fontSize:10.5,padding:'2px 5px',borderRadius:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',
+                            background:it.secret?'#f5f3ff':mine?'#eff6ff':'#f3f4f6',border:`1px solid ${it.secret?'#c4b5fd':mine?'#93c5fd':'#e5e7eb'}`,color:it.secret?'#5b21b6':mine?'#1e40af':'#374151',fontWeight:mine?700:500}}>
+                          {it.secret?'🔒':''}{it.time&&<span style={{fontWeight:800,marginRight:3}}>{it.time}</span>}{it.title}{!it.secret&&!mine&&<span style={{color:'#9ca3af',marginLeft:3}}>{String(it.owner||'').slice(0,2)}</span>}
+                        </div>
+                      );
+                    })}
+                    {list.length>4&&<div style={{fontSize:10,color:'#6b7280'}}>＋{list.length-4}件</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+// ============================================
 //  休日タブ（2026-09-19・アイデア仕様書②）
 //   PC版「🏖 スタッフ休日・有給カレンダー」のスマホ版。同じキー（dayoff / pleave）を読み書きする。
 //   ・月のカレンダー：自分の休日／有給に色が付き、各日に「出勤 N人」を出す（店休日は全員休み）
@@ -2784,6 +3145,8 @@ const App=()=>{
   const [gasOk,setGasOk]=useState(null);
   const [dayDetail,setDayDetail]=useState(null);
   const [schedInitDate,setSchedInitDate]=useState(null);
+  // マイスケジュール：シークレット予定（暗号化書庫）。保存は下の writeShared 経由
+  const mySecret=useHubSecret(user?user.uid:null,k=>sGet(k),(k,m)=>writeShared(k,{},m,()=>{},null,false).then(()=>true).catch(()=>false));
   const [hotInsp,setInspData]=useState({});   // hot=今日以降＋直近。保存はサーバー最新(hot)から構築
   const [inspArch,setInspArch]=useState({});  // 保管箱（過去日）。起動時に1回読むだけ・書き換えない
   useEffect(()=>{ sGet(STOR+'insp-arch').then(v=>{ if(v&&typeof v==='object'&&!Array.isArray(v)) setInspArch(v); }).catch(()=>{}); },[]);
@@ -2813,6 +3176,7 @@ const App=()=>{
   const [monthlyHolidays,setMonthlyHolidays]=useState({}); // 会社が決めた月間休日数 {"2026-6":10}（表示のみ）
   const [offNoteH,setOffNoteH]=useState({});        // 休日メモ {"YYYY-M-D::氏名":"メモ"}（PC版と同じキー {店}-offnote）
   const [offNoteS,setOffNoteS]=useState({});
+  const [mySched,setMySched]=useState({});        // マイスケジュール（公開予定）{id:{dk,time,title,memo,owner,uid,at}}
   const [staffH,setStaffH]=useState([]);
   const [staffS,setStaffS]=useState([]);
   // ── 本人認証：この端末に登録された人 ──
@@ -2907,7 +3271,7 @@ const App=()=>{
       // まとめ読み1リクエスト（GAS未対応の間は従来の並列GETへ自動フォールバック）
       let vals=await sGetMany(KEYS);
       if(!vals)vals=await Promise.all(KEYS.map(k=>sGet(k)));
-      const [insp,sh,ss,mh,ms,lh,ls,cdh,cds,cdateH,cdateS,ov,rcars,rres,carsH,carsS,limits,restr,doH,doS,stH,stS,plH,plS,mhol,onH,onS]=vals;
+      const [insp,sh,ss,mh,ms,lh,ls,cdh,cds,cdateH,cdateS,ov,rcars,rres,carsH,carsS,limits,restr,doH,doS,stH,stS,plH,plS,mhol,onH,onS,msch]=vals;
       if(writeGuardRef.current>0&&!force){setLoading(false);return;} // 取得中に保存が始まった場合も反映しない
       if(isPlainObj(insp))setInspData(applyOverlays(STOR+'insp',insp));
       if(isPlainObj(sh))setSchedDataH(applyOverlays(storKey('sched','honten'),sh));
@@ -2936,6 +3300,7 @@ const App=()=>{
       if(isPlainObj(mhol))setMonthlyHolidays(mhol);
       if(isPlainObj(onH))setOffNoteH(onH);
       if(isPlainObj(onS))setOffNoteS(onS);
+      if(isPlainObj(msch))setMySched(msch);
       setGasOk(FB_ON?!(window.__hubGasDown||0):true);   // Firestore では購読の失敗（fbDown）を接続状態に反映
     }catch{setGasOk(false);}
     finally{fetchBusyRef.current=false;}
@@ -3071,6 +3436,8 @@ const App=()=>{
       fetchAll(true);
     }
   };
+  // マイスケジュール（公開予定）の保存：サーバー最新値に対して自分の予定だけ足す／直す／消す
+  const saveMySched=m=>writeShared(STOR+'mysched',{},m,v=>setMySched(v),null,true).then(()=>true).catch(()=>false);
   // 休日メモ（2026-09-20）：{店}-offnote の "dk::氏名" に文字列。空なら消す
   const saveOffNote=async(store,dk,name,text)=>{
     const key=storKey('offnote',store), k=dk+'::'+name, t=String(text||'').trim().slice(0,30);
@@ -3667,6 +4034,7 @@ const App=()=>{
           dayOffData={vsId==='honten'?dayOffH:dayOffS}
           closedDays={cDays} closedDates={cDates} overrideOpen={overrideOpen} inspLimits={inspLimits}/>}
         {tab==='cal'&&<CalendarView inspData={inspData} closedDays={cDays} closedDates={cDates} overrideOpen={overrideOpen} vsId={vsId}
+          mySched={mySched} secItems={mySecret.items} uid={user.uid}
           onSelectDate={(dk,y,m,d)=>setDayDetail({dk,y,m,d})}/>}
         {tab==='loaner'&&<LoanerView loanerResH={loanerResH} loanerResS={loanerResS} rentalResData={rentalResData} rentalCars={rentalCars}
           loanerCarsH={loanerCarsH} loanerCarsS={loanerCarsS} vsId={vsId}/>}
@@ -3679,6 +4047,7 @@ const App=()=>{
       </div>
       {dayDetail&&<DayDetailModal {...dayDetail} inspData={inspData} schedDataH={schedDataH} schedDataS={schedDataS} memoDataH={memoDataH} memoDataS={memoDataS} vsId={vsId} onToggleArrived={toggleArrived} arrivedOv={arrivedOv}
         onClose={()=>setDayDetail(null)}
+        mySchedPanel={<MySchedPanel compact dk={dayDetail.dk} user={{uid:user.uid,name:user.name}} pub={mySched} savePub={saveMySched} secret={mySecret}/>}
         onGoSchedule={(y,m,d)=>{setSchedInitDate({y,m,d});setTab('sched');setDayDetail(null);}}/>}
       {editMode&&<EditModal
         mode={editMode}
