@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789908841242';
+    window.__APP_BUILD='build-1789911380352';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.59';
+const APP_VERSION = '2.60';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -494,6 +494,22 @@ function useHubSecret(staffUid,sGetFn,saveKv){
   };
   const lock=()=>{setCkey(null);setItems(null);try{sessionStorage.removeItem(HubSecret.sessKey(staffUid));}catch(e){}};
   return {status,hint:doc&&doc.hint||'',items:items||{},busy,unlock,setup,change,save,lock,reload};
+}
+
+// ── 公開予定（mysched）の読み：サーバー値をそのまま使う小さなフック（PC 用）──
+//   useShared は {車:{日:予約}} 向けの「手元の新しい行を残す」マージをするため、{id:予定} の形だと
+//   消した予定が手元から復活する（削除できない・公開⇄🔒の切替で2つになる：2026-09-20 の不具合）。
+//   予定の書き込みは writeVerified（トランザクション）で、購読がその結果を運ぶので手元マージは要らない。
+function useHubKv(key,sGetFn){
+  const [val,setVal]=useState({});
+  useEffect(()=>{
+    if(!key)return;
+    let alive=true,got=false;
+    sGetFn(key).then(v=>{ if(alive&&!got&&v&&typeof v==='object')setVal(v); }).catch(()=>{});
+    const un=HubSecret.subscribe(key,v=>{ if(!alive)return; got=true; setVal(v&&typeof v==='object'?v:{}); });
+    return ()=>{alive=false;un();};
+  },[key]);
+  return val;
 }
 
 // ── 1日分の予定パネル（公開＋シークレット、追加・編集）。PC のモーダルと mobile の日詳細で共用 ──
@@ -2706,9 +2722,9 @@ const hubTakeHandoff = async () => {
 //   Firebase は失敗を繰り返すアドレスをしばらく止めるので、6桁を総当たりで当てることはできない。
 //   メールのリンクを開く方式も残す（コードが無い時・メールを開いた端末でそのまま登録したい時）。
 const fbSecondaryApp = () => { try { return firebase.app('hub-invite'); } catch (e) { return firebase.initializeApp(HUB_FIREBASE_CONFIG, 'hub-invite'); } };
-const hubGasMailInvite = async (email, code) => {
+const hubGasMailInvite = async (email, code, name, kind) => {
   try {
-    const q = new URLSearchParams({ action: 'mailInvite', email, code, prefix: STOR, apiKey: GAS_API_KEY });
+    const q = new URLSearchParams({ action: 'mailInvite', email, code, prefix: STOR, apiKey: GAS_API_KEY, name: String(name || ''), kind: String(kind || '') });   // name/kind：GAS のシートに無い人にも送れるように（2026-09-20）
     const r = await fetch(GAS_URL + '?' + q.toString(), { cache: 'no-store' });
     const t = await r.text(); try { return JSON.parse(t); } catch (e) { return { ok: false, err: 'bad_response' }; }
   } catch (e) { return { ok: false, err: 'offline' }; }
@@ -2743,7 +2759,7 @@ const hubInviteByCode = async (staff) => {
       await db2.collection('users').doc(user2.uid).set({ email: mail, pw: code, inviteAt: Date.now() }, { merge: true });
     } finally { try { await auth2.signOut(); } catch (e) {} }
   } catch (e) { return { ok: false, err: hubAuthErr(e), raw: String((e && e.code) || '') }; }
-  const m = await hubGasMailInvite(mail, code);
+  const m = await hubGasMailInvite(mail, code, staff.name || (hubAllowedEntry(mail) || {}).name || '', staff.kind || (hubAllowedEntry(mail) || {}).kind || 'staff');
   return { ok: true, mode: 'code', code, mailed: !!(m && m.ok), mailErr: (m && m.err) || '' };
 };
 // 使う端末：アドレスと6桁でサインインする。7日を過ぎた招待なら、その場で合言葉を長いものに付け替える
@@ -7057,7 +7073,7 @@ const SchedRow=memo(({row,slot,baseSlot,isFirstSub,dk,onOpenModal,lockInfo,loane
       onClick={()=>{if(!locked&&!otherStore){const _e=!row.name;onOpenModal('sched',dk,null,slot,_e);}}}>
       <td onClick={e=>{if(row.name&&onToggleArrived){e.preventDefault();e.stopPropagation();onToggleArrived(dk,slot);}}}
         title={row.name?(row.arrived?'入庫済み（クリックで解除）':'入庫したらクリック'):undefined}
-        style={{...TD,position:'relative',width:50,maxWidth:50,cursor:row.name?'pointer':undefined,textAlign:row.arrived?'center':undefined,background:row.arrived?'#fde047':(isRestricted?'#fee2e2':undefined),fontWeight:isFirstSub&&(isHour||isSpecialSlot(baseSlot))?800:500,color:isFirstSub&&isSpecialSlot(baseSlot)?'#9333ea':(isFirstSub&&isHour?'#0891b2':'#7dd3fc'),whiteSpace:isSpecialSlot(baseSlot)?'normal':'nowrap',lineHeight:isSpecialSlot(baseSlot)?1.12:undefined,paddingLeft:6,paddingRight:3,fontSize:isFirstSub&&isSpecialSlot(baseSlot)?10:(isFirstSub&&isHour?13:11),borderLeft:isSub?'3px solid #7dd3fc':''}}>
+        style={{...TD,position:'relative',width:50,maxWidth:50,cursor:row.name?'pointer':undefined,textAlign:row.arrived?'center':undefined,background:row.arrived?'#fde047':(isRestricted?'#fee2e2':undefined),fontWeight:isFirstSub&&(isHour||isSpecialSlot(baseSlot))?800:600,color:isFirstSub&&isSpecialSlot(baseSlot)?'#9333ea':(isFirstSub?'#0891b2':'#7dd3fc'),whiteSpace:isSpecialSlot(baseSlot)?'normal':'nowrap',lineHeight:isSpecialSlot(baseSlot)?1.12:undefined,paddingLeft:6,paddingRight:3,fontSize:isFirstSub&&isSpecialSlot(baseSlot)?10:(isFirstSub&&isHour?14:11),borderLeft:isSub?'3px solid #7dd3fc':''}}>
         {/* ★時刻欄をクリックすると入庫済みチェックが入る（氏名欄だと予約カードが開くため） */}
         {row.arrived
           ? <span style={{fontWeight:900,color:'#dc2626',fontSize:15,lineHeight:1}}>✓</span>
@@ -9398,7 +9414,7 @@ function AppInner() {
   const [offNoteH,setOffNoteH]=useShared(storKey('offnote','honten'),{},60000);
   const [offNoteS,setOffNoteS]=useShared(storKey('offnote','sanda'),{},60000);
   // マイスケジュール（2026-09-20）：公開予定は購読、シークレット予定は暗号化書庫（useHubSecret）
-  const [mySched]=useShared(STOR+'mysched',{},60000);
+  const mySched=useHubKv(STOR+'mysched',k=>sGet(k));   // useShared のマージ規則は {id:予定} に合わない（下の useHubKv の注記）
   const saveMySched=useCallback(m=>writeVerified(STOR+'mysched',m),[]);
   const mySecret=useHubSecret(currentUser?currentUser.uid:null,k=>sGet(k),(k,m)=>writeVerified(k,m));
   const [mySchedDay,setMySchedDay]=useState(null);   // 予定ビューで開いている日（dk）

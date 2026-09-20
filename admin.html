@@ -218,7 +218,7 @@ td.act{text-align:right;white-space:nowrap}
 //  この画面を開けるのは、許可簿（Firestore の meta/allowed）で role=admin の人だけ。
 //  ログインは Firebase Authentication のメールリンク（2026-09-18〜）。判定は Firestore のルールが行う。画面の申告は信用しない。
 // =====================================================================
-var APP_VERSION = '2.59';
+var APP_VERSION = '2.60';
 var GAS_URL     = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 // 環境の切り替え（2026-09-15）。この1ファイルで本番とDEVの両方を扱う。
 //   既定はDEV（安全側）。URLに ?env=prod が付いている時だけ本番のデータを扱う。
@@ -323,8 +323,9 @@ function sendInvite(mail, info){
 //   既にある人は users（合言葉の控え。管理者も読める）でその人としてサインインし直してから付け替える。控えが無い人はリンクを送る。
 function hubRandom(n){ var a = new Uint8Array(n); try { crypto.getRandomValues(a); } catch (e) { for (var i = 0; i < n; i++) a[i] = Math.floor(Math.random() * 256); } return Array.prototype.map.call(a, function(b){ return ('0' + b.toString(16)).slice(-2); }).join(''); }
 function secondaryApp(){ try { return firebase.app('hub-invite'); } catch (e) { return firebase.initializeApp(HUB_FIREBASE_CONFIG, 'hub-invite'); } }
-function gasMailInvite(mail, code){
-  var q = new URLSearchParams({ action:'mailInvite', email: mail, code: code, prefix: STOR, apiKey: GAS_API_KEY });
+function gasMailInvite(mail, code, info){
+  var q = new URLSearchParams({ action:'mailInvite', email: mail, code: code, prefix: STOR, apiKey: GAS_API_KEY,
+    name: String((info && info.name) || ''), kind: String((info && info.kind) || 'staff') });   // GAS のシートに無い人にも送れるように（2026-09-20）
   return fetch(GAS_URL + '?' + q.toString(), { cache:'no-store' }).then(function(r){ return r.text(); })
     .then(function(t){ try { return JSON.parse(t); } catch (e) { return { ok:false, err:'bad_response' }; } }, function(){ return { ok:false, err:'offline' }; });
 }
@@ -347,7 +348,7 @@ function inviteByCode(mail, info){
       if (!user2) return fin(null).then(function(){ return sendInvite(m, info).then(function(r){ return Object.assign({ mode:'link' }, r); }); });
       return db2.collection('users').doc(user2.uid).set({ email: m, pw: code, inviteAt: Date.now() }, { merge: true })
         .then(function(){ return fin(null); })
-        .then(function(){ return gasMailInvite(m, code); })
+        .then(function(){ return gasMailInvite(m, code, info); })
         .then(function(r){ return { ok:true, mode:'code', code: code, mailed: !!(r && r.ok), mailErr: (r && r.err) || '' }; });
     }, function(e){ return fin({ ok:false, err: fbErrCode(e).indexOf('permission-denied') >= 0 ? 'not_admin' : (fbErrCode(e) || 'error') }); });
   }, function(e){ return { ok:false, err: fbErrCode(e).indexOf('permission-denied') >= 0 ? 'not_admin' : (fbErrCode(e) || 'error') }; });

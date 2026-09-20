@@ -258,7 +258,7 @@ function doGet(e) {
   }
   // v15: Firebase 認証の招待コードをメールで送る（コードは画面が発行。GAS は送るだけ）
   if (e.parameter.action === 'mailInvite') {
-    return mailInvite_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter));
+    return mailInvite_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.name, e.parameter.kind);
   }
   // v14: 端末の種類と名前を記録する（管理者の端末一覧を読めるようにするため）。
   if (e.parameter.action === 'authLabel') {
@@ -1660,7 +1660,9 @@ function authInvite_(email, prefix) {
 //   本人認証は Firebase に移った。コードの発行と照合は画面（Firestore の invites）が行い、
 //   GAS はメールを送るだけ。送る先はスタッフ表か共有端末の名簿にあるアドレスに限る（部外者に飛ばさない）。
 //   GET ?action=mailInvite&email=...&code=123456&prefix=hub-v8-dev-&apiKey=...
-function mailInvite_(email, code, prefix) {
+//   name / kind（2026-09-20）：登録の有無は Firestore の許可簿が決める（GAS のシートは 2026-09-18 以降更新されない）。
+//   画面から名前が来ていればシートに無くても送る。kind='device' は共有端末の文面。
+function mailInvite_(email, code, prefix, name, kind) {
   try {
     email = String(email || '').trim().toLowerCase();
     code = String(code || '').replace(/[^0-9]/g, '');
@@ -1669,7 +1671,11 @@ function mailInvite_(email, code, prefix) {
     if (SNAP_ENV_PREFIXES.indexOf(String(prefix || '')) < 0) return makeResponse(JSON.stringify({ ok: false, err: 'bad_prefix' }));
     var staff = authFindStaffByEmail_(prefix, email);
     var devv = staff ? null : authFindDeviceByEmail_(prefix, email);
-    if (!staff && !devv) return makeResponse(JSON.stringify({ ok: false, err: 'not_registered' }));
+    if (!staff && !devv) {
+      var nm = String(name || '').trim().slice(0, 40);
+      if (!nm) return makeResponse(JSON.stringify({ ok: false, err: 'not_registered' }));
+      if (String(kind || '') === 'device') devv = { name: nm }; else staff = { name: nm };
+    }
     var cache = CacheService.getScriptCache();
     var cntKey = 'authinv:' + email;
     var cnt = Number(cache.get(cntKey) || 0);

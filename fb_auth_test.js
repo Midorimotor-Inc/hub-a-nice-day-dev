@@ -64,7 +64,7 @@ const SEED = {
     ctx.gasMails = [];
     await ctx.route('https://script.google.com/**', route => {
       const u = new URL(route.request().url());
-      if (u.searchParams.get('action') === 'mailInvite') { ctx.gasMails.push({ email: u.searchParams.get('email'), code: u.searchParams.get('code'), prefix: u.searchParams.get('prefix') }); return route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ ok: true, name: 'x' }) }); }
+      if (u.searchParams.get('action') === 'mailInvite') { ctx.gasMails.push({ email: u.searchParams.get('email'), code: u.searchParams.get('code'), prefix: u.searchParams.get('prefix'), name: u.searchParams.get('name'), kind: u.searchParams.get('kind') }); return route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ ok: true, name: 'x' }) }); }
       return route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: route.request().method() === 'POST' ? 'ok' : 'null' });
     });
     return ctx;
@@ -195,6 +195,7 @@ const SEED = {
     const code1 = await page.evaluate(() => window.__fakeFb.pwOf('tikurin@midori-m.com'));
     t('コード：アカウントの合言葉が6桁のコードになる', /^[0-9]{6}$/.test(code1), code1);
     t('コード：GAS にメール送信を頼む（アドレス・コード・環境）', ctx.gasMails.length === 1 && ctx.gasMails[0].email === 'tikurin@midori-m.com' && ctx.gasMails[0].code === code1 && ctx.gasMails[0].prefix === STOR, ctx.gasMails);
+    t('コード：メール依頼に名前と種類を添える（GAS のシートに無い人にも送れるように・2026-09-20）', ctx.gasMails[0].name === '竹林直行' && ctx.gasMails[0].kind === 'staff', ctx.gasMails[0]);
     t('コード：控え（users）にもコードが入る', (await page.evaluate(() => window.__fakeFb.docs('users'))).some(d => d.data.email === 'tikurin@midori-m.com' && d.data.pw === code1));
     t('コード：管理者のサインインは変わらない', (await page.evaluate(() => window.__fakeFb.user()) || {}).email === 'egawa@midori-m.com');
     // 使う端末（別の保管場所）

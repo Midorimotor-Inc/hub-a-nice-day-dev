@@ -86,6 +86,19 @@ const TIKU = { email: 'tikurin@midori-m.com', fbuid: 'uid_tiku', uid: 'h3', name
     await clickText(page, '追加');
     t('PC：公開予定が mysched に本人の uid・氏名付きで入る', await page.waitForFunction(([k, dk]) => Object.values(window.__fakeFb.get(k + 'mysched') || {}).some(v => v.dk === dk && v.title === '本店会議' && v.uid === 'h7' && v.owner === '江川京志' && v.time === '10:00'), [STOR, DK], { timeout: 8000 }).then(() => true).catch(() => false), await kv(page, STOR + 'mysched'));
     t('PC：一覧に「自分」の印で出る', await seeText(page, '本店会議', 3000) && (await page.evaluate(() => document.body.innerText)).includes('自分'));
+    // 編集：件名を変えても1件のまま（useShared のマージで2つになる不具合・2026-09-20）
+    await clickText(page, '編集');
+    await page.fill('input[placeholder*="件名"]', '本店会議（2階）');
+    await clickText(page, '保存');
+    t('PC：編集しても予定は1件のまま（件名が変わる）', await page.waitForFunction(() => { const m = document.querySelector('.modal-box'); const t = m ? m.innerText : ''; return t.includes('本店会議（2階）') && (t.match(/本店会議/g) || []).length === 1; }, null, { timeout: 8000 }).then(() => true).catch(() => false), await page.evaluate(() => document.body.innerText.slice(0, 400)));
+    // 削除 → 消える（復活しない）
+    await clickText(page, '編集'); await clickText(page, '削除');
+    t('PC：削除すると消えたまま（手元に復活しない）', await page.waitForFunction(() => !document.body.innerText.includes('本店会議'), null, { timeout: 8000 }).then(() => true).catch(() => false));
+    await page.waitForTimeout(1500);
+    t('PC：削除の3秒後も復活していない', !(await page.evaluate(() => document.body.innerText)).includes('本店会議') && Object.keys(await kv(page, STOR + 'mysched') || {}).length === 0);
+    // 入れ直す（後の検査で使う）
+    await clickText(page, '＋ 予定を追加'); await page.fill('input[placeholder*="件名"]', '本店会議'); await page.fill('input[type="time"]', '10:00'); await page.fill('textarea', '2階'); await clickText(page, '追加');
+    await seeText(page, '本店会議', 8000);
     // シークレットの準備
     t('PC：シークレットは未設定と出る', await seeText(page, 'まだ準備されていません', 3000));
     await clickText(page, '準備する');

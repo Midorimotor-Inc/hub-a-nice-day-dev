@@ -62,7 +62,7 @@ sub('doGet の入口',
   }
   // v15: Firebase 認証の招待コードをメールで送る（コードは画面が発行。GAS は送るだけ）
   if (e.parameter.action === 'mailInvite') {
-    return mailInvite_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter));
+    return mailInvite_(e.parameter.email, e.parameter.code, authPrefixOf_(e.parameter), e.parameter.name, e.parameter.kind);
   }
   // v14: 端末の種類と名前を記録する（管理者の端末一覧を読めるようにするため）。
   if (e.parameter.action === 'authLabel') {
