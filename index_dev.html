@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789869388399';
+    window.__APP_BUILD='build-1789872639300';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.56';
+const APP_VERSION = '2.57';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -5413,6 +5413,7 @@ const InspLimitModal=memo(({isOpen,onClose,curMonth,inspLimits,onSave})=>{
     if(!dk){alert('日付を選択してください');return;}
     if(limitCount==null){alert('最大台数を選んでください');return;}
     onSave(dk,limitCount);
+    onClose();   // 確定したら閉じる（2026-09-20 ユーザー要望）
   };
   const handleRemove=()=>{
     const dk=dateToDk(selDate);
@@ -5470,7 +5471,7 @@ const InspLimitModal=memo(({isOpen,onClose,curMonth,inspLimits,onSave})=>{
             })}
           </div>
           <div style={{marginTop:7,fontSize:11,color:'#6b7280',textAlign:'center'}}>
-            0 = 車検不可（全禁止）　6 = 通常通り（制限なし扱い）　制限解除は「制限解除」ボタン
+            0 = 車検不可（全禁止）　6 = 通常通り（制限なし扱い）　制限解除は「制限解除」ボタン。「確定」で保存して閉じます
           </div>
         </div>
 
@@ -5478,7 +5479,7 @@ const InspLimitModal=memo(({isOpen,onClose,curMonth,inspLimits,onSave})=>{
         <div style={{display:'flex',gap:8,marginBottom:16}}>
           <button onClick={handleSave} disabled={limitCount==null}
             style={{flex:1,padding:'11px 0',background:limitCount==null?'#e5e7eb':'linear-gradient(135deg,#ef4444,#dc2626)',color:limitCount==null?'#9ca3af':'white',border:'none',borderRadius:9,fontWeight:800,fontSize:14,cursor:limitCount==null?'not-allowed':'pointer'}}>
-            ✓ 台数制限を設定
+            ✓ 確定
           </button>
           {currentLimit!=null&&(
             <button onClick={handleRemove}
