@@ -47,6 +47,9 @@ const TIKU = { email: 'tikurin@midori-m.com', fbuid: 'uid_tiku', uid: 'h3', name
     [STOR + 'honten-staff-v2']: [{ uid: 'h7', name: '江川京志', myNumber: 7, badge: 'bodywork', store: 'honten' }, { uid: 'h3', name: '竹林直行', myNumber: 3, badge: 'inspector', store: 'honten' }],
     [STOR + 'sanda-staff-v2']: [],
     [STOR + 'honten-cdate']: [], [STOR + 'honten-cdow']: [],
+    // 予定カレンダーに自分の休日が同期して出る検査用（2026-09-21）：今月の5日＝江川の休日、6日＝有給
+    [STOR + 'honten-dayoff']: { [`${new Date().getFullYear()}-${new Date().getMonth() + 1}-5`]: ['江川京志'] },
+    [STOR + 'honten-pleave']: { [`${new Date().getFullYear()}-${new Date().getMonth() + 1}-6`]: ['江川京志'] },
   };
   const routeFakeFb = (ctx, extra) => ctx.route('https://www.gstatic.com/firebasejs/**', route => {
     const u = route.request().url();
@@ -78,6 +81,7 @@ const TIKU = { email: 'tikurin@midori-m.com', fbuid: 'uid_tiku', uid: 'h3', name
     const { ctx, page, errs } = await openPc(EGAWA);
     t('PC：カレンダーに「予定」の切替がある', await clickText(page, '予定'));
     t('PC：予定ビューが出る（凡例）', await seeText(page, 'マイスケジュール', 5000), await page.evaluate(() => document.body.innerText.slice(0, 300)));
+    t('PC：予定カレンダーに自分の休日・有給がスタッフ休日と同期して出る', await page.evaluate(() => { const cells = [...document.querySelectorAll('div')].filter(el => el.style && el.style.minHeight === '110px'); const has = (n, s) => cells.some(el => el.textContent.startsWith(String(n)) && el.textContent.includes(s)); return has(5, '🏖 休日') && has(6, '📋 有給'); }), await page.evaluate(() => [...document.querySelectorAll('div')].filter(el => el.style && el.style.minHeight === '110px').map(el => el.textContent.slice(0, 20)).filter(x => /休日|有給/.test(x))));
     t('PC：今日の日をクリックすると予定の画面が開く', await pickToday(page) && await seeText(page, 'の予定', 5000));
     await clickText(page, '＋ 予定を追加');
     await page.fill('input[placeholder*="件名"]', '本店会議');

@@ -43,7 +43,7 @@ const clickText = (page, s) => page.evaluate(x => { const b = [...document.query
   {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } });
     await ctx.addInitScript(signedInInit, [0, ME, STOR]);
-    await ctx.addInitScript(([y, m]) => { const D = Date; const fixed = new D(y, m, 21, 10, 0, 0); window.Date = class extends D { constructor(...a) { if (a.length) return new D(...a); return new D(fixed.getTime()); } static now() { return fixed.getTime(); } }; }, [Y0, M0]);
+    await ctx.addInitScript(([y, m]) => { const D = Date; const fixed = new D(y, m, 21, 10, 0, 0); window.Date = class extends D { constructor(...a) { if (a.length) super(...a); else super(fixed.getTime()); } static now() { return fixed.getTime(); } }; }, [Y0, M0]);
     await routeFakeFb(ctx); await routeGas(ctx);
     const page = await ctx.newPage();
     const errs = []; page.on('pageerror', e => errs.push(String(e)));
@@ -60,6 +60,14 @@ const clickText = (page, s) => page.evaluate(x => { const b = [...document.query
     console.log('【PC 閲覧カレンダー 個人表示】', (txt.match(/\d{4}年\s*\d{1,2}月/) || [''])[0]);
     console.log('  ', (txt.match(/🏖 休日[^\n]*/) || [''])[0], '|', (txt.match(/📋 有給[^\n]*/) || [''])[0], '|', (txt.match(/枠[^\n]*/) || ['(枠の表示なし)'])[0]);
     await page.screenshot({ path: path.join(DIR, 'render-holiday-pc.png') });
+    // 予定カレンダー（自分の休日が同期して出るか）
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.trim() === '予定' || (el.textContent.includes('予定') && el.textContent.length < 5)); if (b) b.click(); });
+    await page.waitForTimeout(800);
+    const txt3 = await page.evaluate(() => document.body.innerText);
+    console.log('【PC 予定カレンダー】 休日の印:', (txt3.match(/🏖 休日/g) || []).length, '件 / 有給:', (txt3.match(/📋 有給/g) || []).length, '件 / 繰り越し分:', (txt3.match(/↩d+月繰り越し分/g) || []).length, '件');
+    await page.screenshot({ path: path.join(DIR, 'render-holiday-pc-mysched.png') });
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.trim() === '休日' || (el.textContent.includes('休日') && el.textContent.length < 5)); if (b) b.click(); });
+    await page.waitForTimeout(400);
     await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.includes('設定') && el.textContent.length < 6 && el.offsetParent !== null); if (b) b.click(); });
     await page.waitForTimeout(400); await clickText(page, 'スタッフ休日設定'); await seeText(page, 'スタッフ休日・有給カレンダー', 5000);
     await page.waitForTimeout(600);
@@ -75,7 +83,7 @@ const clickText = (page, s) => page.evaluate(x => { const b = [...document.query
   {
     const ctx = await browser.newContext({ viewport: { width: 400, height: 850 }, isMobile: true, hasTouch: true });
     await ctx.addInitScript(signedInInit, [0, ME, STOR]);
-    await ctx.addInitScript(([y, m]) => { const D = Date; const fixed = new D(y, m, 21, 10, 0, 0); window.Date = class extends D { constructor(...a) { if (a.length) return new D(...a); return new D(fixed.getTime()); } static now() { return fixed.getTime(); } }; }, [Y0, M0]);
+    await ctx.addInitScript(([y, m]) => { const D = Date; const fixed = new D(y, m, 21, 10, 0, 0); window.Date = class extends D { constructor(...a) { if (a.length) super(...a); else super(fixed.getTime()); } static now() { return fixed.getTime(); } }; }, [Y0, M0]);
     await routeFakeFb(ctx); await routeGas(ctx);
     const page = await ctx.newPage();
     await page.goto('http://localhost:' + PORT + '/mobile.html', { waitUntil: 'domcontentloaded' });

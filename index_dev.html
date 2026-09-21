@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789998224739';
+    window.__APP_BUILD='build-1789999282865';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.69';
+const APP_VERSION = '2.70';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -705,7 +705,7 @@ const MySchedPanel=({dk,user,pub,savePub,secret,compact,onClose})=>{
 };
 
 // ── PC：月のカレンダー（予定ビュー）──
-const MySchedCalendar=({cy,cm,user,pub,secret,isClosedDay,onPickDay,storeLabelOf})=>{
+const MySchedCalendar=({cy,cm,user,pub,secret,isClosedDay,onPickDay,storeLabelOf,myOff})=>{   // myOff(day) → {kind:'dayoff'|'leave', note, carried}｜null（自分の休日。スタッフ休日と同期）
   const today=new Date();
   const dim=new Date(cy,cm+1,0).getDate();
   const first=new Date(cy,cm,1).getDay();
@@ -731,14 +731,18 @@ const MySchedCalendar=({cy,cm,user,pub,secret,isClosedDay,onPickDay,storeLabelOf
               const isCl=isClosedDay?isClosedDay(cy,cm,day):false;
               const list=(byDay[day]||[]).sort(hubSchedSort);
               const dow=new Date(cy,cm,day).getDay();
+              const off=(!isCl&&myOff)?myOff(day):null;   // 自分の休日／有給
+              const baseBg=isCl?(typeof CLOSED_BG!=='undefined'?CLOSED_BG:'#f3f4f6'):off?(off.kind==='leave'?'#f0fdf4':'#fff7ed'):'white';
               return(
                 <div key={di} onClick={()=>onPickDay(dkk)}
-                  style={{minHeight:110,padding:'5px 4px',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:isCl?(typeof CLOSED_BG!=='undefined'?CLOSED_BG:'#f3f4f6'):'white',cursor:'pointer',position:'relative'}}
-                  onMouseEnter={e=>{e.currentTarget.style.background=isCl?'#e5e7eb':'#f8fafc';}} onMouseLeave={e=>{e.currentTarget.style.background=isCl?(typeof CLOSED_BG!=='undefined'?CLOSED_BG:'#f3f4f6'):'white';}}>
+                  style={{minHeight:110,padding:'5px 4px',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:baseBg,boxShadow:off?`inset 3px 0 0 ${off.kind==='leave'?'#10b981':'#f97316'}`:'none',cursor:'pointer',position:'relative'}}
+                  onMouseEnter={e=>{e.currentTarget.style.background=isCl?'#e5e7eb':off?(off.kind==='leave'?'#dcfce7':'#ffedd5'):'#f8fafc';}} onMouseLeave={e=>{e.currentTarget.style.background=baseBg;}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:3}}>
                     <span style={isToday?{background:'#2563eb',color:'white',borderRadius:'50%',width:21,height:21,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800}:{fontWeight:800,fontSize:14,color:dow===0?'#dc2626':dow===6?'#1d4ed8':'#111'}}>{day}</span>
                     {isCl&&<span style={{fontSize:11,color:'#9ca3af',fontWeight:800}}>休業日</span>}
+                    {off&&<span title={`${user.name}の${off.kind==='leave'?'有給':'休日'}${off.carried?'（'+off.carried+'）':''}${off.note?'：'+off.note:''}`} style={{fontSize:10,fontWeight:800,color:off.kind==='leave'?'#059669':'#ea580c',background:'white',border:`1px solid ${off.kind==='leave'?'#6ee7b7':'#fdba74'}`,borderRadius:4,padding:'0 5px',whiteSpace:'nowrap'}}>{off.kind==='leave'?'📋 有給':'🏖 休日'}</span>}
                   </div>
+                  {off&&(off.carried||off.note)&&<div style={{fontSize:9.5,color:off.kind==='leave'?'#047857':'#9a3412',marginBottom:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{off.carried?'↩'+off.carried+' ':''}{off.note?'📝'+off.note:''}</div>}
                   <div style={{display:'flex',flexDirection:'column',gap:2}}>
                     {list.slice(0,4).map(it=>{
                       const mine=it.secret||it.uid===user.uid;
@@ -12030,7 +12034,18 @@ function AppInner() {
               ):calView==='my'?(
                 <MySchedCalendar cy={cy} cm={cm} user={{uid:currentUser?currentUser.uid:'',name:currentUser?currentUser.name:''}}
                   pub={mySched} secret={mySecret} onPickDay={dkk=>setMySchedDay(dkk)}
-                  isClosedDay={(y,m,d)=>isClosed(new Date(y,m,d))}/>
+                  isClosedDay={(y,m,d)=>isClosed(new Date(y,m,d))}
+                  myOff={(()=>{   // 自分の休日（スタッフ休日カレンダーと同じデータ・同じ繰り越しの充て方）
+                    const me=currentUser&&currentUser.name; if(!me)return null;
+                    const sid=(currentUser.store&&currentUser.store.id)||'honten';
+                    const off=sid==='honten'?dayOffDataH:dayOffDataS, pl=sid==='honten'?paidLeaveDataH:paidLeaveDataS, notes=(sid==='honten'?offNoteH:offNoteS)||{};
+                    const isClSid=(y,m,d)=>{const cd=sid==='honten'?closedDaysH:closedDaysS, cdt=sid==='honten'?closedDatesH:closedDatesS; const dt=new Date(y,m,d); return (Array.isArray(cd)&&cd.includes(dt.getDay()))||(Array.isArray(cdt)&&cdt.includes(fmt(y,m,d)))||isSecondTuesdayHoliday(y,m,d,Array.isArray(overrideOpenDates)?overrideOpenDates:[]);};
+                    const carry=calcHolidayCarry(me,cy,cm,off,isClSid,monthlyHolidays);
+                    return d=>{const dkk=`${cy}-${cm+1}-${d}`; const n=notes[dkk+'::'+me]; const note=typeof n==='string'?n:(n&&n.memo)||'';
+                      if(Array.isArray(off&&off[dkk])&&off[dkk].includes(me))return{kind:'dayoff',note,carried:carry&&carry.carried.includes(d)?carriedLabel(carry):''};
+                      if(Array.isArray(pl&&pl[dkk])&&pl[dkk].includes(me))return{kind:'leave',note,carried:''};
+                      return null;};
+                  })()}/>
               ):(
               /* --- スタッフ休日カレンダー（閲覧専用） --- */
               (()=>{
