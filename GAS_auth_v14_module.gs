@@ -31,11 +31,11 @@ var AUTH_INVITE_TTL_DAYS = 30;
 var AUTH_HANDOFF_SEC     = 1800;  // 引き継ぎリンク（?hand=）の有効時間（30分）    // 招待リンク（?inv=）が本人を指し続ける日数。6桁より長い＝切れても同じリンクから送り直せる
 
 // メールの件名の頭。受け取った人が「何のメールか」「テスト版か本番か」を件名だけで分かるように。
-//   DEV: みどりモーターススケジュールシステムテスト版【Hub a Nice Day /DEV】…
+//   DEV: みどりモータース スケジュールシステム テスト版【Hub a Nice Day】…
 //   本番: みどりモータース スケジュールシステム【Hub a Nice Day】…   （ユーザー指示・2026-09-12）
 function authMailHead_(prefix) {
   return (String(prefix || '').indexOf('dev') >= 0)
-    ? 'みどりモーターススケジュールシステムテスト版【Hub a Nice Day /DEV】'
+    ? 'みどりモータース スケジュールシステム テスト版【Hub a Nice Day】'
     : 'みどりモータース スケジュールシステム【Hub a Nice Day】';
 }
 var AUTH_APP_URL = {              // 招待メールに載せる各環境の入口
