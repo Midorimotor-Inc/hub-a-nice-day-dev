@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789973822023';
+  window.__APP_BUILD='build-1789976842883';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.67';
+const MOBILE_VERSION='2.68';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -2830,7 +2830,7 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
   const target=adminMode?who:user.name;           // 誰の休日を入れるか
   const targetInStore=staff.some(s=>s.name===target);
   // 月の集計（PC版と同じく店休日はスタッフ休日に数える）
-  const mine=useMemo(()=>{let o=0,l=0;for(let d=1;d<=dim;d++){if(closedOn(d)){o++;continue;}if((offs[dkOf(d)]||[]).includes(target))o++;if((leaves[dkOf(d)]||[]).includes(target))l++;}const c=calcHolidayCarry(target,cy,cm,offs,(y,m,d)=>calIsClosed(new Date(y,m,d),cDays,cDates,overrideOpen),monthlyHolidays);if(c&&c.over>0){o-=c.over;l+=c.over;}return{o,l};},[offs,leaves,cy,cm,target,cDays,cDates,overrideOpen]);
+  const mine=useMemo(()=>{let o=0,l=0,cN=0;for(let d=1;d<=dim;d++){if(closedOn(d)){o++;cN++;continue;}if((offs[dkOf(d)]||[]).includes(target))o++;if((leaves[dkOf(d)]||[]).includes(target))l++;}const c=calcHolidayCarry(target,cy,cm,offs,(y,m,d)=>calIsClosed(new Date(y,m,d),cDays,cDates,overrideOpen),monthlyHolidays);if(c&&c.over>0){o-=c.over;l+=c.over;}return{o,l,cN};},[offs,leaves,cy,cm,target,cDays,cDates,overrideOpen]);
   const mhol=monthlyHolidays&&monthlyHolidays[`${cy}-${cm+1}`];
   const offNote=(store==='honten'?offNoteH:offNoteS)||{};
   const noteOf=(dk,name)=>{const v=offNote[dk+'::'+name];return typeof v==='string'?v:(v&&v.memo)||'';};
@@ -2888,7 +2888,7 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
           </button>
         ))}
         <div style={{marginLeft:'auto',textAlign:'right',fontSize:10.5,color:'#475569',lineHeight:1.5}}>
-          <div><b style={{color:'#ea580c'}}>{target}</b>：🏖 {mine.o}日{mine.l?`・📋 有給 ${mine.l}日`:''}</div>
+          <div><b style={{color:'#ea580c'}}>{target}</b>：🏖 {mine.o}日{mine.cN?<span style={{fontWeight:500,color:'#9a3412'}}>（うち店休{mine.cN}）</span>:null}{mine.l?`・📋 有給 ${mine.l}日`:''}</div>
           {mhol!=null&&mhol!==''&&<div style={{color:'#94a3b8'}}>会社の{cm+1}月の休日 {mhol}日</div>}
         </div>
       </div>
