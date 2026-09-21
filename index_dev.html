@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789971733454';
+    window.__APP_BUILD='build-1789973195437';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.65';
+const APP_VERSION = '2.66';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -349,7 +349,7 @@ const calcHolidayCarry=(name,cy,cm,dayOff,isClosed,mhol)=>{
   const taken=(y,m)=>{const dim=new Date(y,m+1,0).getDate();let o=0;for(let d=1;d<=dim;d++){if(isClosed(y,m,d)){o++;continue;}if(((dayOff||{})[`${y}-${m+1}-${d}`]||[]).includes(name))o++;}return o;};
   let carry=0,y=months[0].y,m=months[0].m,guard=0;
   while((y<cy||(y===cy&&m<cm))&&guard++<240){
-    const c=num(`${y}-${m+1}`); if(c!=null)carry+=c-taken(y,m);
+    const c=num(`${y}-${m+1}`); carry=(c==null)?0:carry+c-taken(y,m);   // 会社の休日数が未設定の月で繰越は途切れる（前々月以前の残りを持ち越さない・2026-09-21）
     m++; if(m>11){m=0;y++;}
   }
   const company=num(`${cy}-${cm+1}`);

@@ -79,7 +79,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `${STOR}{store}-lres` — 代車予約。**オブジェクト構造** `{ carId: { key: 予約 } }`（配列ではない）。
 - `${STOR}rres` — レンタカー予約。これも**オブジェクト構造** `{ carId: { key: 予約 } }`。
 - `${STOR}cf-index` / `${STOR}cf-{name}-chunk-{i}` — 顧客ファイル（Excelインポート結果）をチャンク分割保存。
-- `${STOR}{store}-dayoff` / `-pleave` — スタッフ休日／有給 `{"YYYY-M-D":[氏名]}`。`{store}-offnote` — 休日メモ `{"YYYY-M-D::氏名":"メモ"}`。`mholidays` — 会社の月間休日数 `{"YYYY-M":N}`（繰り越し計算 `calcHolidayCarry` の元）。
+- `${STOR}{store}-dayoff` / `-pleave` — スタッフ休日／有給 `{"YYYY-M-D":[氏名]}`。`{store}-offnote` — 休日メモ `{"YYYY-M-D::氏名":"メモ"}`。`mholidays` — 会社の月間休日数 `{"YYYY-M":N}`（繰り越し計算 `calcHolidayCarry` の元。**会社の休日数が未設定の月で繰越は途切れる**＝繰越は連続して設定した月の間だけ流れる。v2.66。index/mobile に同じコード）。
 - `${STOR}mysched` — マイスケジュール（公開予定）`{id:{dk,time,title,memo,owner,uid,at}}`。`${STOR}mysec-{スタッフuid}` — シークレット予定の**暗号化書庫**（`{hint,salt,iter,checkIv,check,iv,data}`。AES-GCM、鍵は「ヒントの答え」から PBKDF2。**答えを忘れると復元不能・運営も読めない**。共通コードは index/mobile 両方にある `HubSecret`/`useHubSecret`/`MySchedPanel`）。
 
 ### loanerRes / rentalRes は配列ではなくオブジェクト
