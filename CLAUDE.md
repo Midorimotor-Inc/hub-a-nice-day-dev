@@ -18,9 +18,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | | DEV（このリポジトリ） | 本番 |
 |---|---|---|
-| フォルダ名 | `HUB-A-NICE-DAY-DEV` | `hub-a-nice-day` |
-| GitHub | `Midorimotor-Inc/hub-a-nice-day-dev` | `Midorimotor-Inc/hub-a-nice-day` |
-| Pages URL | `https://midorimotor-inc.github.io/hub-a-nice-day-dev/` | `https://midorimotor-inc.github.io/hub-a-nice-day/` |
+| フォルダ名 | `HUB-A-NICE-DAY-DEV` | `hub-a-nice-day` |（GitHub 名と違うが変えない。2026-09-21 にリポジトリだけ test/main に改名）
+| GitHub | `Midorimotor-Inc/hub-a-nice-day-test` | `Midorimotor-Inc/hub-a-nice-day-main` |
+| Pages URL | `https://midorimotor-inc.github.io/hub-a-nice-day-test/` | `https://midorimotor-inc.github.io/hub-a-nice-day-main/` |
 | STORプレフィックス | `hub-v8-dev-` | `hub-v8-` |
 | スケジュール本体 | `index_dev.html`（`index.html`がリダイレクト） | `index_main.html`（`index.html`がリダイレクト） |
 | 顧客リスト | `customers.html` | `customers.html` |

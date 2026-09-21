@@ -32,15 +32,15 @@ Hub a Nice Day を新しいPCで開発・修正できるようにするための
 Git Bash で、**置きたい親フォルダに移動してから**実行：
 
 ```bash
-git clone https://github.com/Midorimotor-Inc/hub-a-nice-day-dev.git HUB-A-NICE-DAY-DEV
+git clone https://github.com/Midorimotor-Inc/hub-a-nice-day-test.git HUB-A-NICE-DAY-DEV
 ```
 
 ```bash
-git clone https://github.com/Midorimotor-Inc/hub-a-nice-day.git
+git clone https://github.com/Midorimotor-Inc/hub-a-nice-day-main.git hub-a-nice-day
 ```
 
-※ DEVはGitHub上の名前が小文字（`hub-a-nice-day-dev`）なので、
-フォルダ名を `HUB-A-NICE-DAY-DEV` にするため clone の末尾に名前を指定している。
+※ GitHub 上の名前（`hub-a-nice-day-test` / `hub-a-nice-day-main`、2026-09-21 に改名）と
+ローカルのフォルダ名（`HUB-A-NICE-DAY-DEV` / `hub-a-nice-day`）は違うので、clone の末尾でフォルダ名を指定している。
 
 ---
 
@@ -134,7 +134,7 @@ git -C HUB-A-NICE-DAY-DEV pull && git -C hub-a-nice-day pull
 ```
 
 1. `index_dev.html` などを修正（バージョンは3ファイル揃えて上げる。`CLAUDE.md` 参照）
-2. DEVをcommit & push → `https://midorimotor-inc.github.io/hub-a-nice-day-dev/` で確認
+2. DEVをcommit & push → `https://midorimotor-inc.github.io/hub-a-nice-day-test/` で確認
 3. `node port_to_main.js` で本番へ移植
 4. `node smoke_main.js` が PASS するのを確認
 5. 本番をcommit & push → 青ヘッダー・[DEV]表記なしを目視確認

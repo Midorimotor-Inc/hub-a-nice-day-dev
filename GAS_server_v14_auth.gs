@@ -1097,8 +1097,8 @@ function authMailHead_(prefix) {
     : 'みどりモータース スケジュールシステム【Hub a Nice Day】';
 }
 var AUTH_APP_URL = {              // 招待メールに載せる各環境の入口
-  'hub-v8-':     'https://midorimotor-inc.github.io/hub-a-nice-day/',
-  'hub-v8-dev-': 'https://midorimotor-inc.github.io/hub-a-nice-day-dev/'
+  'hub-v8-':     'https://midorimotor-inc.github.io/hub-a-nice-day-main/',
+  'hub-v8-dev-': 'https://midorimotor-inc.github.io/hub-a-nice-day-test/'
 };
 var AUTH_MAX_TRY         = 5;     // コード入力の試行上限
 

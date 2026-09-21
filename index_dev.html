@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789959359046';
+    window.__APP_BUILD='build-1789971733454';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -98,12 +98,12 @@
 // ║  作成: 2026-04  ベースライン確定日: 2026-04-04                  ║
 // ╠══════════════════════════════════════════════════════════════════╣
 // ║  【リポジトリ】                                                  ║
-// ║  本番: kyoshi-egawa/hub-a-nice-day                              ║
-// ║  開発: kyoshi-egawa/hub-a-nice-day-dev                          ║
+// ║  本番: Midorimotor-Inc/hub-a-nice-day-main（メイン）           ║
+// ║  開発: Midorimotor-Inc/hub-a-nice-day-test（テスト版）         ║
 // ╠══════════════════════════════════════════════════════════════════╣
 // ║  【開発フロー】                                                  ║
-// ║  1. hub-a-nice-day-dev で修正・テスト                           ║
-// ║  2. 動作確認OK → hub-a-nice-day（本番）に反映                  ║
+// ║  1. hub-a-nice-day-test で修正・テスト                          ║
+// ║  2. 動作確認OK → hub-a-nice-day-main（メイン）に反映           ║
 // ╠══════════════════════════════════════════════════════════════════╣
 // ║  【絶対に触ってはいけない箇所】                                  ║
 // ║  - BLOCK-B: sGet / sSet / GAS通信（データ消失リスク）           ║

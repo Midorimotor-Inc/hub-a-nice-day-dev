@@ -227,8 +227,8 @@ var GAS_URL     = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZ
 var ENV_PROD    = (function(){ try { return new URLSearchParams(location.search).get('env') === 'prod'; } catch (e) { return false; } })();
 var STOR        = ENV_PROD ? 'hub-v8-' : 'hub-v8-dev-';
 var IS_DEV      = !ENV_PROD;
-var APP_URL_OF  = { 'hub-v8-': 'https://midorimotor-inc.github.io/hub-a-nice-day/',
-                    'hub-v8-dev-': 'https://midorimotor-inc.github.io/hub-a-nice-day-dev/' };
+var APP_URL_OF  = { 'hub-v8-': 'https://midorimotor-inc.github.io/hub-a-nice-day-main/',
+                    'hub-v8-dev-': 'https://midorimotor-inc.github.io/hub-a-nice-day-test/' };
 document.documentElement.setAttribute('data-env', ENV_PROD ? 'prod' : 'dev');
 // 切り替えボタン。本番へ入る時は一言たしかめる（押し間違いで本番のスタッフに招待が飛ぶのを防ぐ）
 function switchEnv(toProd){

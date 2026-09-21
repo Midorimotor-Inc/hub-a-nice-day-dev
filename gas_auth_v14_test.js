@@ -174,7 +174,7 @@ t('別環境の台帳を見ると未登録扱いになる',
   t('招待の件名が「登録のお願い」', /ログインの登録をお願いします/.test(m.sub), m.sub);
   t('招待にコードを載せない（コードは端末で申し込んだ時）', !/[^0-9]d{6}[^0-9]/.test(m.body));
   t('招待に本人の名前が入る', m.body.indexOf('見取大介')===0, m.body.slice(0,20));
-  t('招待にDEVの入口URLが入る', m.body.indexOf('hub-a-nice-day-dev/')>0);
+  t('招待にテスト版の入口URLが入る', m.body.indexOf('hub-a-nice-day-test/')>0);
   t('DEVの件名は「みどりモーターススケジュールシステムテスト版【Hub a Nice Day /DEV】」で始まる', m.sub.indexOf('みどりモーターススケジュールシステムテスト版【Hub a Nice Day /DEV】')===0, m.sub);
   sentMail=[];
   t('本番のURLは本番の入口', body(T.authInvite_('daisuke@example.com','hub-v8-')).err==='not_registered');
