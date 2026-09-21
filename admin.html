@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hub 管理者コンソール [DEV]</title>
+<title>Hub 管理者コンソール [テスト版]</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@400;500;700&display=swap">
@@ -197,8 +197,8 @@ td.act{text-align:right;white-space:nowrap}
 </head>
 <body>
 <div class="note-bar" id="notebar">
-  <span class="tag">DEV</span>
-  <span>テスト環境の管理者コンソールです。<b>本番のデータには触れません</b>。</span>
+  <span class="tag">テスト版</span>
+  <span>スケジュールシステム・テスト版の管理者コンソールです。<b>メイン（本番）のデータには触れません</b>。</span>
 </div>
 <div id="toastbox"></div><div id="app"><div class="gate"><div class="gate-card"><p class="hint">読み込んでいます…</p></div></div></div>
 <!-- 保存先・本人認証は Firebase（2026-09-18）。読み込めなければ「繋がらない」と出す -->
@@ -218,7 +218,7 @@ td.act{text-align:right;white-space:nowrap}
 //  この画面を開けるのは、許可簿（Firestore の meta/allowed）で role=admin の人だけ。
 //  ログインは Firebase Authentication のメールリンク（2026-09-18〜）。判定は Firestore のルールが行う。画面の申告は信用しない。
 // =====================================================================
-var APP_VERSION = '2.64';
+var APP_VERSION = '2.65';
 var GAS_URL     = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 // 環境の切り替え（2026-09-15）。この1ファイルで本番とDEVの両方を扱う。
 //   既定はDEV（安全側）。URLに ?env=prod が付いている時だけ本番のデータを扱う。
@@ -232,7 +232,7 @@ var APP_URL_OF  = { 'hub-v8-': 'https://midorimotor-inc.github.io/hub-a-nice-day
 document.documentElement.setAttribute('data-env', ENV_PROD ? 'prod' : 'dev');
 // 切り替えボタン。本番へ入る時は一言たしかめる（押し間違いで本番のスタッフに招待が飛ぶのを防ぐ）
 function switchEnv(toProd){
-  if (toProd && !window.confirm('本番のデータを扱います。\n\nここで送る招待メールは実際のスタッフに届き、\n取り消しは本番の端末に効きます。よろしいですか？\n\n（ログインし直しは要りません。画面が青になります）')) return;
+  if (toProd && !window.confirm('スケジュールシステム・メイン（本番）のデータを扱います。\n\nここで送る招待メールは実際のスタッフに届き、\n取り消しは本番の端末に効きます。よろしいですか？\n\n（ログインし直しは要りません。画面が青になります）')) return;
   var u = location.pathname + (toProd ? '?env=prod' : '');
   location.href = u;
 }
@@ -396,8 +396,8 @@ var DAY = 86400000;
   var nb = document.getElementById('notebar');
   if (!nb) return;
   if (ENV_PROD) {
-    nb.innerHTML = '<span class="tag">本番</span>'
-      + '<span><b>本番環境</b>です。招待メールは実際のスタッフに届き、取り消しは本番の端末に効きます。</span>';
+    nb.innerHTML = '<span class="tag">メイン</span>'
+      + '<span><b>スケジュールシステム・メイン（本番）</b>です。招待メールは実際のスタッフに届き、取り消しは本番の端末に効きます。</span>';
   }
 })();
 
@@ -471,10 +471,10 @@ function viewGate(){
   }
   return '<div class="gate"><div class="gate-card">'
     + '<div class="crest"><div class="mark">🔑</div>'
-    + '<h1>Hub 管理者コンソール</h1><p class="mono">MIDORI MOTORS' + (IS_DEV ? ' / DEV' : ' / 本番') + '</p></div>'
+    + '<h1>Hub 管理者コンソール</h1><p class="mono">MIDORI MOTORS' + (IS_DEV ? ' / テスト版' : ' / メイン') + '</p></div>'
     + body
     + '<button class="btn ghost w envswitch" id="envswitch" type="button" style="margin-top:14px">'
-    + (IS_DEV ? '本番に切り替える' : 'DEVに戻る') + '</button>'
+    + (IS_DEV ? 'メインに切り替える' : 'テスト版に戻る') + '</button>'
     + (fbUser ? '<button class="btn ghost w" id="signout" type="button" style="margin-top:9px">別のアドレスでログインする（ログアウト）</button>' : '')
     + '</div></div>';
 }
@@ -714,8 +714,8 @@ function viewConsole(){
       : (S.tab === 'devices' ? viewDevices() : S.tab === 'admins' ? viewAdmins() : viewStaff()));
   return '<header class="top">'
     + '<span class="brand">Hub 管理者コンソール</span>'
-    + '<span class="env mono">' + (IS_DEV ? 'DEV' : '本番') + ' v' + APP_VERSION + '</span>'
-    + '<button class="btn sm envswitch" id="envswitch" type="button">' + (IS_DEV ? '本番に切り替える' : 'DEVに戻る') + '</button>'
+    + '<span class="env mono">' + (IS_DEV ? 'テスト版' : 'メイン') + ' v' + APP_VERSION + '</span>'
+    + '<button class="btn sm envswitch" id="envswitch" type="button">' + (IS_DEV ? 'メインに切り替える' : 'テスト版に戻る') + '</button>'
     + '<span class="me"><span class="avatar">' + esc(String(S.me.name).slice(0,1)) + '</span>'
     + '<span><b>' + esc(S.me.name) + '</b> でログイン中</span>'
     + '<a class="btn ghost sm" href="' + (APP_URL_OF[STOR] || 'index.html') + '" style="color:#fff;border-color:rgba(255,255,255,.4);text-decoration:none">スケジュールへ</a>'

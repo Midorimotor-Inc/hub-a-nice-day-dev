@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789917850330';
+  window.__APP_BUILD='build-1789959359046';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.64';
+const MOBILE_VERSION='2.65';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -3691,7 +3691,7 @@ const App=()=>{
     const dkp=String(pend.dk||'').split('-');
     const when=dkp.length===3?`${dkp[0]}年${dkp[1]}月${dkp[2]}日`:pend.dk;
     const text=`${when} の${pend.type==='insp'?'車検':'タイムスケジュール'}${pend.kind==='delete'?'予約の削除':'予約'}「${pend.name}」（操作: ${pend.by||'不明'}）がサーバーに保存できていない可能性があります。\nアプリで該当日を確認し、登録されていなければお手数ですがもう一度操作してください。\n詳細: ${detail||'-'}`;
-    const body=JSON.stringify({action:'notifyFail',apiKey:GAS_API_KEY,emailsKey:STOR+'notify-emails',user:pend.by||'',env:STOR==='hub-v8-'?'本番':'DEV',detail:text});
+    const body=JSON.stringify({action:'notifyFail',apiKey:GAS_API_KEY,emailsKey:STOR+'notify-emails',user:pend.by||'',env:STOR==='hub-v8-'?'メイン':'テスト版',detail:text});
     try{await fetch(GAS_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body});}
     catch{
       await new Promise(r=>setTimeout(r,1500));

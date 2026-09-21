@@ -23,7 +23,7 @@ const INDEX_RULES = [
   // 2026-09-18：本番も Firestore＋Firebase Auth（BACKEND='firebase'・AUTH_REQUIRED=true）。変換ルールは無し。
   //   本番のデータは fb_migrate.js --prod --write で写してから移植する（GAS 側はその時点で控えになる）。
   // タイトル
-  ['<title>Hub a Nice Day v1.0 [DEV]</title>', '<title>Hub a Nice Day v1.0</title>', 1],
+  ['<title>Hub a Nice Day v1.0 [テスト版]</title>', '<title>Hub a Nice Day v1.0</title>', 1],
   // 環境識別の配色: 全体背景・ログイン画面（オレンジ→青）
   ['linear-gradient(140deg,#7c2d12,#EA580C,#f97316)', 'linear-gradient(140deg,#1e3a8a,#1d4ed8,#2563eb)', 3],
   // ヘッダー背景（オレンジ単色→青グラデーション）
@@ -36,7 +36,7 @@ const INDEX_RULES = [
 ];
 // 正規表現ルール（DEVバッジspan・キャッシュバスト）
 const INDEX_REGEX_RULES = [
-  [/\s*<span style=\{\{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#FFF7ED',color:'#9A3412',border:'2px solid #EA580C',flexShrink:0\}\}>⚠ テスト版（DEV）<\/span>/g, '', 1, 'DEVバッジspan'],
+  [/\s*<span style=\{\{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'#FFF7ED',color:'#9A3412',border:'2px solid #EA580C',flexShrink:0\}\}>⚠ スケジュールシステム テスト版<\/span>/g, '', 1, 'テスト版バッジspan'],
   [/\s*\{\/\* ===== DEV版警告バナー ===== \*\/\}/g, '', 0, 'DEVバナーコメント'],
   [/force-deploy-\d+/g, 'force-deploy-' + Date.now(), 1, 'force-deployタイムスタンプ'],
   // 自動アップデート検知のビルド識別子をデプロイ毎に更新（旧タブが新版を検知してバナー表示）
@@ -58,7 +58,7 @@ const MOBILE_REGEX_RULES = [
   [/__APP_BUILD='build-\d+'/, "__APP_BUILD='build-" + Date.now() + "'", 1, 'APP_BUILDタイムスタンプ'],
 ];
 // 変換後にあってはならない文字列（残骸チェック）
-const FORBIDDEN = ['hub-v8-dev', '[DEV]', 'テスト版（DEV）', 'DEV版警告バナー',
+const FORBIDDEN = ['hub-v8-dev', '[DEV]', '[テスト版]', 'テスト版（DEV）', 'スケジュールシステム テスト版', 'DEV版警告バナー',
   'linear-gradient(140deg,#7c2d12', "header ref={headerRef} style={{background:'#EA580C'"];
 
 let failed = false;
