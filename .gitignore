@@ -1,3 +1,5 @@
 # Firebase のサービスアカウント鍵は絶対にコミットしない（C:/Users/A/Documents/Hub重要書類/ に置く）
 firebase-admin*.json
 *-firebase-adminsdk-*.json
+
+render-holiday-*.png
