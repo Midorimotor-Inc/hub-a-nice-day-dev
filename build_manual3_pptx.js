@@ -84,7 +84,8 @@ async function annotated(kicker, title, sub, file, items, opt) {
     const f = frame(it);
     s.addShape(pres.ShapeType.rect, { x: f.fx, y: f.fy, w: f.fw, h: f.fh, fill: { type: 'none' }, line: { color: RED, width: 2.25 } });
     // 番号は枠の左外（中の文字を隠さない）。左端に寄りすぎる時は枠の上外
-    const bxx = f.fx - 0.36 >= 0.15 ? f.fx - 0.36 : f.fx, byy = f.fx - 0.36 >= 0.15 ? f.fy + Math.min(f.fh / 2, 0.22) - 0.15 : f.fy - 0.34;
+    let bxx = f.fx - 0.36 >= 0.15 ? f.fx - 0.36 : f.fx, byy = f.fx - 0.36 >= 0.15 ? f.fy + Math.min(f.fh / 2, 0.22) - 0.15 : f.fy - 0.34;
+    if (it.pos === 'below') { bxx = f.fx + f.fw / 2 - 0.15; byy = f.fy + f.fh + 0.04; }   // 左隣に別のボタンがある時は枠の下
     numCircle(s, i + 1, bxx, byy, 0.3);
     return f;
   };
@@ -260,7 +261,7 @@ async function exportPdf(pptx) {
     { k: 'shimi', t: '指示書・見積' },
     { k: 'content', t: '内容' },
     { k: 'del', t: '🗑 削除', d: '予約を消します（確認が出ます）' },
-    { k: 'save', t: '保存' },
+    { k: 'save', t: '保存', pos: 'below' },
   ], { colW: 5.0 });
   await annotated(M, '代車タブ', '代車・レンタカーの貸出状況を横に見ます（見るだけ。付けるのは予約カードから）', 'm7-loaner.png', [
     { k: 'period', t: '表示している期間', d: '‹ › で前後へ。左右スワイプでも動きます' },

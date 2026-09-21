@@ -97,7 +97,7 @@ async function loadDevStore() {
     try {
       return await page.evaluate(([src, a]) => {
         const f = eval('(' + src + ')'); const el = f(a); if (!el) return null;
-        const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height };
+        const r = el.getBoundingClientRect(); const x0 = Math.max(0, r.left), y0 = Math.max(0, r.top), x1 = Math.min(innerWidth, r.right), y1 = Math.min(innerHeight, r.bottom); if (x1 <= x0 || y1 <= y0) return null; return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
       }, [fn.toString(), arg === undefined ? null : arg]);
     } catch (e) { return null; }
   };
@@ -177,11 +177,78 @@ async function loadDevStore() {
       b.restore = await boxOf(pm, () => [...document.querySelectorAll('button')].find(x => x.offsetParent !== null && x.textContent.trim() === '🕒'));
       b.logout = await boxOf(pm, () => [...document.querySelectorAll('button')].find(x => x.offsetParent !== null && x.textContent.trim() === '↩'));
       b.tabs = await boxOf(pm, () => { const el = [...document.querySelectorAll('div')].filter(e => e.textContent.trim() === '休日' && e.offsetParent !== null).pop(); let c = el; for (let i = 0; i < 3 && c; i++) c = c.parentElement; return c; });
+      b.monthNav = await boxOf(pm, () => [...document.querySelectorAll('div')].find(e => e.offsetParent !== null && /^\d{4}年 \d{1,2}月$/.test(e.textContent.trim())));
+      b.dayCell = await boxOf(pm, () => { const cells = [...document.querySelectorAll('div')].filter(el => el.offsetParent !== null && el.style && el.style.borderRadius === '10px' && el.firstElementChild && /^\d{1,2}$/.test(el.firstElementChild.textContent) && el.textContent.includes('台')); return cells[0]; });
+      await shoot(pm, 'm3-calendar.png', 'スマホ：カレンダー', b, MW, MH);
+      // 日詳細（予約のある日）
+      if (b.dayCell) await pm.mouse.click(b.dayCell.x + b.dayCell.w / 2, b.dayCell.y + b.dayCell.h / 2);
+      await pm.waitForTimeout(1200);
+      const c = {};
+      c.goSched = await boxOf(pm, btn, '予約・編集');
+      c.close = await boxOf(pm, () => [...document.querySelectorAll('button')].find(x => x.offsetParent !== null && x.textContent.trim() === '✕'));
+      c.insp = await boxOf(pm, () => { const e = [...document.querySelectorAll('div')].find(x => x.offsetParent !== null && x.textContent.trim() === '🚗 車検'); return e && e.parentElement; });
+      c.my = await boxOf(pm, () => { const e = [...document.querySelectorAll('div')].find(x => x.offsetParent !== null && x.textContent.trim() === '📝 マイスケジュール'); return e && e.parentElement; });
+      await shoot(pm, 'm4-day.png', 'スマホ：日の詳細', c, MW, MH);
+      await pm.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => x.offsetParent !== null && x.textContent.trim() === '✕'); if (b) b.click(); });
+      await pm.waitForTimeout(600);
+    }
+    // m5: スケジュール
+    await tapTab(pm, 'スケジュール'); await pm.waitForTimeout(1500);
+    {
+      const b = {};
+      b.dateNav = await boxOf(pm, () => { const e = [...document.querySelectorAll('div,span')].find(x => x.offsetParent !== null && /^\d{1,2}月\d{1,2}日/.test(x.textContent.trim()) && x.textContent.length < 14); return e && e.parentElement; });
+      b.today = await boxOf(pm, btn, '当日に戻す');
+      b.inspAdd = await boxOf(pm, () => [...document.querySelectorAll('button')].find(x => x.offsetParent !== null && /^[+＋]\s*追加$/.test(x.textContent.trim())));
+      b.schedAdd = await boxOf(pm, () => [...document.querySelectorAll('div,span')].find(x => x.offsetParent !== null && x.textContent.trim() === '+ タップで追加' || (x.offsetParent !== null && /タップで追加/.test(x.textContent) && x.textContent.length < 12)));
+      b.schedRow = await boxOf(pm, () => { const e = [...document.querySelectorAll('div')].find(x => x.offsetParent !== null && x.textContent.includes('同時刻に追加') && x.textContent.length < 80); return e; });
+      b.inspHead = await boxOf(pm, () => [...document.querySelectorAll('div')].find(x => x.offsetParent !== null && /^🚗 車検/.test(x.textContent.trim()) && x.textContent.length < 20));
+      b.schedHead = await boxOf(pm, () => [...document.querySelectorAll('div')].find(x => x.offsetParent !== null && /^⏰/.test(x.textContent.trim()) && x.textContent.length < 24));
+      b.row = await boxOf(pm, () => [...document.querySelectorAll('div')].find(x => x.offsetParent !== null && x.style && x.style.borderLeft && x.style.borderLeft.includes('4px') && x.textContent.length > 4));
+      await shoot(pm, 'm5-schedule.png', 'スマホ：スケジュール', b, MW, MH);
+      // 予約カード（車検の「＋ 追加」をタップ → 新規の車検カード）
+      if (b.inspAdd) await pm.mouse.click(b.inspAdd.x + b.inspAdd.w / 2, b.inspAdd.y + b.inspAdd.h / 2);
+      await pm.waitForTimeout(1500);
+      const lab = (t) => { const l = [...document.querySelectorAll('label')].find(x => x.offsetParent !== null && x.textContent.trim().startsWith(t)); return l && l.parentElement; };
+      const c = {};
+      c.name = await boxOf(pm, lab, '氏名'); c.staff = await boxOf(pm, lab, '担当'); c.car = await boxOf(pm, lab, '車種'); c.course = await boxOf(pm, lab, 'コース'); c.time = await boxOf(pm, lab, '入庫時間'); c.tokuten = await boxOf(pm, lab, '特典');
+      c.entry = await boxOf(pm, lab, '入庫日'); c.delivery = await boxOf(pm, lab, '納車日'); c.note = await boxOf(pm, lab, '備考');
+      c.loaner = await boxOf(pm, () => { const l = [...document.querySelectorAll('label')].find(x => x.offsetParent !== null && x.textContent.includes('代車')); return l && l.parentElement; });
+      c.save = await boxOf(pm, () => [...document.querySelectorAll('button')].find(x => x.offsetParent !== null && /保存|確定/.test(x.textContent) && x.textContent.length < 10));
+      c.del = await boxOf(pm, btn, '🗑 削除');
+      c.close = await boxOf(pm, () => [...document.querySelectorAll('button')].find(x => x.offsetParent !== null && x.textContent.trim() === '✕'));
+      await shoot(pm, 'm6-edit.png', 'スマホ：予約カード', c, MW, MH);
+      // 下半分
+      await pm.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => x.offsetParent !== null && /保存|確定/.test(x.textContent) && x.textContent.length < 10); if (b) b.scrollIntoView({ block: 'center' }); });
+      await pm.waitForTimeout(600);
+      const c2 = {};
+      c2.entry = await boxOf(pm, lab, '入庫日'); c2.delivery = await boxOf(pm, lab, '納車日'); c2.note = await boxOf(pm, lab, '備考');
+      c2.loaner = await boxOf(pm, () => { const l = [...document.querySelectorAll('label')].find(x => x.offsetParent !== null && x.textContent.includes('代車')); return l && l.parentElement; });
+      c2.save = await boxOf(pm, () => [...document.querySelectorAll('button')].find(x => x.offsetParent !== null && /保存|確定/.test(x.textContent) && x.textContent.length < 10));
+      c2.del = await boxOf(pm, btn, '🗑 削除');
+      await shoot(pm, 'm6b-edit-bottom.png', 'スマホ：予約カード（下）', c2, MW, MH);
+      await pm.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => x.offsetParent !== null && x.textContent.trim() === '✕'); if (b) b.click(); });
+      await pm.waitForTimeout(800);
+      // 整備のカード（予約のある行をタップ）
+      if (b.schedRow) await pm.mouse.click(b.schedRow.x + 60, b.schedRow.y + 14);
+      await pm.waitForTimeout(1500);
+      const c3 = {};
+      c3.name = await boxOf(pm, lab, '氏名'); c3.car = await boxOf(pm, lab, '車種'); c3.work = await boxOf(pm, lab, '作業内容'); c3.shimi = await boxOf(pm, lab, '指・見'); c3.content = await boxOf(pm, lab, '内容');
+      c3.loaner = await boxOf(pm, () => { const l = [...document.querySelectorAll('label')].find(x => x.offsetParent !== null && x.textContent.includes('代車')); return l && l.parentElement; });
+      c3.save = await boxOf(pm, () => [...document.querySelectorAll('button')].find(x => x.offsetParent !== null && /保存|確定/.test(x.textContent) && x.textContent.length < 10));
+      c3.del = await boxOf(pm, btn, '🗑 削除');
+      await shoot(pm, 'm6c-sched-edit.png', 'スマホ：整備のカード', c3, MW, MH);
+      await pm.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => x.offsetParent !== null && x.textContent.trim() === '✕'); if (b) b.click(); });
+      await pm.waitForTimeout(600);
+    }
+    // m7: 代車
+    await tapTab(pm, '代車'); await pm.waitForTimeout(1500);
+    {
+      const b = {};
       b.period = await boxOf(pm, () => [...document.querySelectorAll('div')].find(e => e.offsetParent !== null && /^\d{1,2}\/\d{1,2} 〜 \d{1,2}\/\d{1,2}$/.test(e.textContent.trim())));
       b.today = await boxOf(pm, () => [...document.querySelectorAll('button')].find(x => x.offsetParent !== null && x.textContent.trim() === '今日'));
       b.honten = await boxOf(pm, () => [...document.querySelectorAll('div')].find(e => e.offsetParent !== null && /^(本店|三田店) 代車/.test(e.textContent.trim()) && e.textContent.length < 16));
       b.rental = await boxOf(pm, () => [...document.querySelectorAll('div')].find(e => e.offsetParent !== null && /^レンタカー（共通）/.test(e.textContent.trim()) && e.textContent.length < 16));
-      b.carName = await boxOf(pm, () => [...document.querySelectorAll('div')].find(e => e.offsetParent !== null && e.style && e.style.position === 'sticky' && e.getBoundingClientRect().width === 80));
+      b.carName = await boxOf(pm, () => [...document.querySelectorAll('div')].find(e => e.offsetParent !== null && e.style && e.style.position === 'sticky' && e.getBoundingClientRect().width === 80 && e.getBoundingClientRect().top > 200 && e.textContent.trim().length > 2));
       b.bar = await boxOf(pm, () => [...document.querySelectorAll('div')].find(e => e.offsetParent !== null && e.style && e.style.position === 'absolute' && e.textContent.trim().length > 1 && e.getBoundingClientRect().height < 40 && e.getBoundingClientRect().width > 30 && e.getBoundingClientRect().top > 200));
       await shoot(pm, 'm7-loaner.png', 'スマホ：代車', b, MW, MH);
     }
