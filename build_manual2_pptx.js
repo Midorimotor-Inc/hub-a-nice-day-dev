@@ -1,4 +1,4 @@
-// Hub a Nice Day 取扱説明書 2026-09 改訂版（基本操作／便利操作）を生成する。
+// Hub a Nice Day 取扱説明書 2026-09 改訂版（基本操作／便利機能）を生成する。
 //   素材: manual2_shots/*.png と index.json（capture_manual2_shots.js が作る。各ボタンの座標入り）
 //   実行: node build_manual2_pptx.js [--proto]   … --proto は試作（数枚だけ）
 //   出力: C:\Users\A\Documents\Hub取扱説明書\Hub_取扱説明書_2026-09.pptx（試作は _試作.pptx）
@@ -125,7 +125,7 @@ function slideTitle() {
   const s = pres.addSlide(); s.background = { color: NAVY };
   T(s, 'Hub a Nice Day', { x: 0.9, y: 2.1, w: 11.5, h: 0.9, fontSize: 46, bold: true, color: WHITE });
   T(s, '取扱説明書', { x: 0.9, y: 3.0, w: 11.5, h: 0.8, fontSize: 34, bold: true, color: '9FC2FF' });
-  T(s, '車検予約管理システム　／　基本操作 と 便利操作', { x: 0.9, y: 4.0, w: 11.5, h: 0.4, fontSize: 15, color: 'C6D4E8' });
+  T(s, '車検予約管理システム　／　基本操作 と 便利機能', { x: 0.9, y: 4.0, w: 11.5, h: 0.4, fontSize: 15, color: 'C6D4E8' });
   s.addShape(pres.ShapeType.roundRect, { x: 0.9, y: 4.9, w: 3.05, h: 0.46, rectRadius: 0.2, fill: { color: '1E3A66' }, line: { color: '2F5590', width: 1 } });
   T(s, '本店・三田店 共通', { x: 0.9, y: 4.9, w: 3.05, h: 0.46, fontSize: 12, color: 'C6D4E8', align: 'center', valign: 'middle' });
   T(s, '緑モータース　2026年9月版（v' + VERSION + '）' + (PROTO ? '　※試作' : ''), { x: 0.9, y: 6.5, w: 11.5, h: 0.35, fontSize: 11, color: '7E92AE' });
@@ -145,10 +145,10 @@ function slideSection(no, title, lead, items, color) {
 }
 function slideToc() {
   const s = pres.addSlide(); s.background = { color: PAPER };
-  pageTitle(s, null, 'この説明書の構成', '「基本操作」は毎日使う手順、「便利操作」は知っていると助かる機能です');
+  pageTitle(s, null, 'この説明書の構成', '「基本操作」は毎日使う手順、「便利機能」は知っていると助かる機能です');
   const cols = [
     { t: '第1部　基本操作', c: BLUE, bg: BLUE_L, items: ['画面の見方（バージョン・接続状態・店舗）', 'カレンダーから予約する', '顧客リストから予約する', 'タイムスケジュールに直接予約する', '代車・レンタカーの付け方'] },
-    { t: '第2部　便利操作', c: ORANGE, bg: ORANGE_L, items: ['カレンダー：スタッフ休日設定・My予定・車検台数制限', 'スケジュール：代車の限定・入庫済み☑・検索・事前入庫／納車日・入庫制限・印刷', '代車管理：最適化・タイヤ設定・レンタカーの所在地', '車両管理：代車・社用車の点検アラート', '顧客リスト：検索・同期チェック・絞り込みボタン'] },
+    { t: '第2部　便利機能', c: ORANGE, bg: ORANGE_L, items: ['カレンダー：スタッフ休日設定・My予定・車検台数制限', 'スケジュール：代車の限定・入庫済み☑・検索・事前入庫／納車日・入庫制限・印刷', '代車管理：最適化・タイヤ設定・レンタカーの所在地', '車両管理：代車・社用車の点検アラート', '顧客リスト：検索・同期チェック・絞り込みボタン'] },
   ];
   cols.forEach((c, i) => {
     const x = 0.55 + i * 6.2;
@@ -181,7 +181,7 @@ function slideText(kicker, title, sub, blocks, opt) {
 (async () => {
   await loadDims();
   fs.mkdirSync(OUTDIR, { recursive: true });
-  const B = { t: '基本操作', color: BLUE }, C = { t: '便利操作', color: ORANGE };
+  const B = { t: '基本操作', color: BLUE }, C = { t: '便利機能', color: ORANGE };
   const ver = 'v' + VERSION;
 
   slideTitle();
@@ -209,7 +209,7 @@ function slideText(kicker, title, sub, blocks, opt) {
     { k: 'monthNav', t: '月の移動', d: '‹ › で前後の月へ' },
     { k: 'dayCell', t: '日をクリック', d: 'その日のスケジュール画面が開きます。マス目の色は車検の種類（マ／ク／レ）、数字は台数' },
     { k: 'toggleGroup', t: '表示の切替', d: '🚗車検（予約の一覧）／🏖休日／📝予定' },
-    { k: 'gear', t: '設定', d: '車検台数制限・スタッフ休日設定（便利操作で説明）' },
+    { k: 'gear', t: '設定', d: '車検台数制限・スタッフ休日設定（便利機能で説明）' },
   ], { colW: 4.0 });
 
   await annotated(B, 'タイムスケジュール／車検表に直接予約する', '空いている行の「クリックして追加」を押すと予約カードが開きます', 'b1-schedule.png', [
@@ -271,8 +271,8 @@ function slideText(kicker, title, sub, blocks, opt) {
     { k: 'back', t: '予約カードに戻る', d: '選び終わると自動で戻り、代車欄に車名が入ります。やめる時もこのボタン' },
   ], { crop: { x: 0, y: 90, w: 1500, h: 480 }, top: true, layout: 'below', imgH: 3.3 });
 
-  // ═══════════ 第2部 便利操作 ═══════════
-  slideSection(2, '便利操作', '知っていると入力が早く・正確になります', ['カレンダー：スタッフ休日設定・My予定・車検台数制限', 'スケジュール：代車の限定・入庫済み☑・検索・事前入庫／納車日・入庫制限・印刷', '代車管理：最適化・タイヤ設定・レンタカーの所在地', '車両管理：代車・社用車の点検アラート', '顧客リスト：検索・同期チェック・絞り込みボタン']);
+  // ═══════════ 第2部 便利機能 ═══════════
+  slideSection(2, '便利機能', '', ['カレンダー：スタッフ休日設定・My予定・車検台数制限', 'スケジュール：代車の限定・入庫済み☑・検索・事前入庫／納車日・入庫制限・印刷', '代車管理：最適化・タイヤ設定・レンタカーの所在地', '車両管理：代車・社用車の点検アラート', '顧客リスト：検索・同期チェック・絞り込みボタン']);
 
   await annotated(C, 'カレンダーの便利機能', '右上の切替と「設定」から', 'b4b-calendar-gear.png', [
     { k: 'toggleOff', t: '🏖 休日カレンダー', d: 'スタッフの休日・有給を月で見る。個人を選ぶとその人の休みに枠が付き、月の集計と翌月への繰り越しが出ます' },
