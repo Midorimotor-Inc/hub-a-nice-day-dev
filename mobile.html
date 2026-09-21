@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789973195437';
+  window.__APP_BUILD='build-1789973822023';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.66';
+const MOBILE_VERSION='2.67';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -2780,9 +2780,10 @@ const MySchedCalendar=({cy,cm,user,pub,secret,isClosedDay,onPickDay,storeLabelOf
 //   ・管理者（PC版と同じ4人）は「設定する人」を選んで他の人の分も入れられる
 // ============================================
 // ── 休日の翌月繰り越し（2026-09-20 ユーザー決定・イ案）──
-//   会社の月間休日数（mholidays）より少なく取った分は翌月の枠に足す（多く取れば翌月の枠から引く）。
+//   会社の月間休日数（mholidays）より少なく取った分は翌月の枠に足す。
+//   ★多く取った分は翌月から引かず「有給」扱い（2026-09-21 ユーザー決定）：枠を使い切った後に休日を入れると自動で有給になる。
 //   その月の枠 = 会社の休日数 + 前月までの繰越、残り = 枠 − 取得（店休日を含む休日。有給は数えない）。
-//   mholidays が入っている最初の月から順に足し上げる。数字の無い月は枠なし（繰越はそのまま次の月へ）。
+//   数字の無い月で繰越は途切れる（連続して設定した月の間だけ流れる）。
 //   PC のスタッフ休日カレンダー・閲覧カレンダー・スマホの休日タブで同じ計算を使う。
 const calcHolidayCarry=(name,cy,cm,dayOff,isClosed,mhol)=>{
   const num=k=>{const v=(mhol||{})[k];return (v==null||v===''||isNaN(Number(v)))?null:Number(v);};
@@ -2791,19 +2792,21 @@ const calcHolidayCarry=(name,cy,cm,dayOff,isClosed,mhol)=>{
   const taken=(y,m)=>{const dim=new Date(y,m+1,0).getDate();let o=0;for(let d=1;d<=dim;d++){if(isClosed(y,m,d)){o++;continue;}if(((dayOff||{})[`${y}-${m+1}-${d}`]||[]).includes(name))o++;}return o;};
   let carry=0,y=months[0].y,m=months[0].m,guard=0;
   while((y<cy||(y===cy&&m<cm))&&guard++<240){
-    const c=num(`${y}-${m+1}`); carry=(c==null)?0:carry+c-taken(y,m);   // 会社の休日数が未設定の月で繰越は途切れる（前々月以前の残りを持ち越さない・2026-09-21）
+    const c=num(`${y}-${m+1}`); carry=(c==null)?0:Math.max(0,carry+c-taken(y,m));   // 未設定の月で途切れる。超過はマイナスで持ち越さない（有給扱い）
     m++; if(m>11){m=0;y++;}
   }
   const company=num(`${cy}-${cm+1}`);
   const t=taken(cy,cm);
-  return {carryIn:carry,company,taken:t,quota:company==null?null:company+carry,remain:company==null?null:company+carry-t};
+  const quota=company==null?null:company+carry;
+  const over=quota==null?0:Math.max(0,t-quota);   // 枠を超えた休日の数（集計では有給に数える）
+  return {carryIn:carry,company,taken:t,quota,remain:quota==null?null:Math.max(0,quota-t),over};
 };
 const carryLabel=(c,long)=>{
   if(!c||c.quota==null)return '';
-  const rem=c.remain>0?`残り${c.remain}日→翌月へ`:c.remain<0?`${-c.remain}日超過→翌月で調整`:'残り0日';
+  const rem=c.remain>0?`残り${c.remain}日→翌月へ`:c.over>0?`${c.over}日超過→有給扱い`:'残り0日（次は有給）';
   return long?`枠 ${c.quota}日（会社${c.company}${c.carryIn?`${c.carryIn>0?'＋':'−'}繰越${Math.abs(c.carryIn)}`:''}）・${rem}`:`枠${c.quota}・${rem}`;
 };
-const carryTitle=c=>c&&c.quota!=null?`今月の枠 ${c.quota}日 ＝ 会社の休日数 ${c.company}日 ${c.carryIn>=0?'＋':'−'} 前月までの繰越 ${Math.abs(c.carryIn)}日。取得 ${c.taken}日（店休日を含む・有給は数えない）`:'';
+const carryTitle=c=>c&&c.quota!=null?`今月の枠 ${c.quota}日 ＝ 会社の休日数 ${c.company}日 ${c.carryIn>=0?'＋':'−'} 前月までの繰越 ${Math.abs(c.carryIn)}日。取得 ${c.taken}日（店休日を含む・有給は数えない）。枠を使い切った後の休日は自動で有給になります`:'';
 const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pleaveS,
   closedDaysH,closedDaysS,closedDatesH,closedDatesS,overrideOpen,monthlyHolidays,onToggle,offNoteH,offNoteS,onSaveNote})=>{
   const today=new Date();
@@ -2827,12 +2830,14 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
   const target=adminMode?who:user.name;           // 誰の休日を入れるか
   const targetInStore=staff.some(s=>s.name===target);
   // 月の集計（PC版と同じく店休日はスタッフ休日に数える）
-  const mine=useMemo(()=>{let o=0,l=0;for(let d=1;d<=dim;d++){if(closedOn(d)){o++;continue;}if((offs[dkOf(d)]||[]).includes(target))o++;if((leaves[dkOf(d)]||[]).includes(target))l++;}return{o,l};},[offs,leaves,cy,cm,target,cDays,cDates,overrideOpen]);
+  const mine=useMemo(()=>{let o=0,l=0;for(let d=1;d<=dim;d++){if(closedOn(d)){o++;continue;}if((offs[dkOf(d)]||[]).includes(target))o++;if((leaves[dkOf(d)]||[]).includes(target))l++;}const c=calcHolidayCarry(target,cy,cm,offs,(y,m,d)=>calIsClosed(new Date(y,m,d),cDays,cDates,overrideOpen),monthlyHolidays);if(c&&c.over>0){o-=c.over;l+=c.over;}return{o,l};},[offs,leaves,cy,cm,target,cDays,cDates,overrideOpen]);
   const mhol=monthlyHolidays&&monthlyHolidays[`${cy}-${cm+1}`];
   const offNote=(store==='honten'?offNoteH:offNoteS)||{};
   const noteOf=(dk,name)=>{const v=offNote[dk+'::'+name];return typeof v==='string'?v:(v&&v.memo)||'';};
   const [memoOpen,setMemoOpen]=useState(false);
   const [memoText,setMemoText]=useState('');
+  const [autoLeaveMsg,setAutoLeaveMsg]=useState('');
+  useEffect(()=>{ if(!autoLeaveMsg)return; const t=setTimeout(()=>setAutoLeaveMsg(''),6000); return()=>clearTimeout(t); },[autoLeaveMsg]);
   const carry=useMemo(()=>calcHolidayCarry(target,cy,cm,offs,(y,m,d)=>calIsClosed(new Date(y,m,d),cDays,cDates,overrideOpen),monthlyHolidays),[target,cy,cm,offs,cDays,cDates,overrideOpen,monthlyHolidays]);
   const weeks=[];let wk=Array(7).fill(null);
   for(let d=1;d<=dim;d++){const dow=(fdow+d-1)%7;wk[dow]=d;if(dow===6||d===dim){weeks.push([...wk]);wk=Array(7).fill(null);}}
@@ -2843,6 +2848,10 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
   const myState=selDk?(selOffs.includes(target)?'dayoff':selLeaves.includes(target)?'leave':''):'';
   const tap=async(type)=>{
     if(!selDk||selClosed||busy||!canEditHere||!targetInStore)return;
+    // 今月の枠（会社の休日数＋繰越）を使い切っていたら、休日ではなく有給として入れる（2026-09-21 ユーザー決定）
+    if(type==='dayoff'&&myState!=='dayoff'&&carry&&carry.quota!=null&&carry.taken>=carry.quota){
+      type='leave'; setAutoLeaveMsg(`${cm+1}月の休日の枠（${carry.quota}日）を使い切っているので、${cm+1}/${selDay} は有給として入れました`);
+    }
     setBusy(true);
     try{ await onToggle(store,type,selDk,target); }finally{ setBusy(false); }
   };
@@ -2969,6 +2978,7 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
                 <Chip on={myState==='leave'} color="#059669" bg="#d1fae5" disabled={busy} onClick={()=>tap('leave')}>📋 有給{myState==='leave'?'（タップで解除）':''}</Chip>
               </div>
               <div style={{fontSize:10,color:'#94a3b8',marginTop:6}}>タップした瞬間に確定し、PC のスタッフ休日カレンダーにもすぐ出ます。</div>
+              {autoLeaveMsg&&<div data-auto-leave style={{marginTop:6,fontSize:11,fontWeight:700,color:'#065f46',background:'#d1fae5',border:'1px solid #6ee7b7',borderRadius:8,padding:'6px 9px'}}>📋 {autoLeaveMsg}</div>}
               {myState&&(
                 <div style={{marginTop:8}}>
                   {memoOpen

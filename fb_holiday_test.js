@@ -22,9 +22,9 @@ const now = new Date();
 const Y = now.getFullYear(), M = now.getMonth();
 // 今月の中で店休日（水曜・第2火曜・年末年始など）に当たらない平日を2つ選ぶ（月〜金・かつ 5日以降）
 const pick = (n) => { const out = []; for (let d = 5; d <= 28 && out.length < n; d++) { const w = new Date(Y, M, d).getDay(); if (w >= 1 && w <= 5 && w !== 2 && w !== 3) out.push(d); } return out; };
-const [D1, D2] = pick(2);
+const [D1, D2, D3] = pick(3);
 const PM = M === 0 ? 11 : M - 1, PY = M === 0 ? Y - 1 : Y;   // 前月
-const DK1 = `${Y}-${M + 1}-${D1}`, DK2 = `${Y}-${M + 1}-${D2}`;
+const DK1 = `${Y}-${M + 1}-${D1}`, DK2 = `${Y}-${M + 1}-${D2}`, DK3 = `${Y}-${M + 1}-${D3}`;
 const FAKE_FB = fs.readFileSync(path.join(DIR, 'fake_firebase.js'), 'utf8');
 const ME = { email: 'egawa@midori-m.com', uid: 'uid_egawa', name: '江川京志', store: 'honten' };
 const signedInInit = ([k, me, stor]) => {
@@ -113,7 +113,7 @@ const signedInInit = ([k, me, stor]) => {
     const prevClosed = await page.evaluate(([py, pm]) => { let n = 0; const dim = new Date(py, pm + 1, 0).getDate(); for (let d = 1; d <= dim; d++) if (calIsClosed(new Date(py, pm, d), [], [], [])) n++; return n; }, [PY, PM]);
     const quota = 9 + (8 - prevClosed);
     t(`繰り越し：今月の枠が 会社9＋前月の残り(8−${prevClosed}) = ${quota}日 と出る`, await seeText(page, `今月の枠 ${quota}日`, 5000), await page.evaluate(() => (document.body.innerText.match(/今月の枠[^\n]*/) || [''])[0]));
-    t('繰り越し：残り日数（翌月へ）が出る', await page.evaluate(() => /残り\d+日→翌月へ|日超過→翌月で調整|残り0日/.test(document.body.innerText)));
+    t('繰り越し：残り日数（翌月へ）が出る', await page.evaluate(() => /残り\d+日→翌月へ|日超過→有給扱い|残り0日/.test(document.body.innerText)));
     t('今月の集計に自分の休日が数えられる', await page.evaluate(() => /江川京志：🏖 \d+日/.test(document.body.innerText)));
     await clickText(page, '📋 有給');
     t('有給に切り替えると dayoff から外れ pleave に入る', await page.waitForFunction(([k, dk]) => { const o = window.__fakeFb.get(k + 'honten-dayoff') || {}, l = window.__fakeFb.get(k + 'honten-pleave') || {}; return !(o[dk] || []).includes('江川京志') && (o[dk] || []).includes('竹林直行') && (l[dk] || []).includes('江川京志'); }, [STOR, DK1], { timeout: 8000 }).then(() => true).catch(() => false), { o: await dayoff(page), l: await pleave(page) });
@@ -171,7 +171,7 @@ const signedInInit = ([k, me, stor]) => {
     await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.trim() === '江川京志'); if (b) b.click(); });
     await page.waitForTimeout(800);
     t('PC：個人を選んでも他の日が薄くならない（opacity 0.28 のセルが無い）', await page.evaluate(() => ![...document.querySelectorAll('div')].some(el => el.style && (el.style.opacity === '0.28'))));
-    t('PC：個人の集計に繰り越し（今月の枠）が出る', await seeText(page, '枠', 5000) && await page.evaluate(() => /残り\d+日→翌月へ|日超過→翌月で調整|残り0日/.test(document.body.innerText)), await page.evaluate(() => (document.body.innerText.match(/月の集計[^]{0,200}/) || [''])[0]));
+    t('PC：個人の集計に繰り越し（今月の枠）が出る', await seeText(page, '枠', 5000) && await page.evaluate(() => /残り\d+日→翌月へ|日超過→有給扱い|残り0日/.test(document.body.innerText)), await page.evaluate(() => (document.body.innerText.match(/月の集計[^]{0,200}/) || [''])[0]));
     await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.includes('設定') && el.textContent.length < 6 && el.offsetParent !== null); if (b) b.click(); });
     await page.waitForTimeout(500);
     await clickText(page, 'スタッフ休日設定');
@@ -186,6 +186,61 @@ const signedInInit = ([k, me, stor]) => {
     await page.screenshot({ path: path.join(DIR, 'smoke-holiday-pc.png') });
     t('PC：月次集計に枠と残りが出る', await page.evaluate(() => /枠\d+・/.test(document.body.innerText)));
     t('PC：JSエラー・alert なし', errs.length === 0, errs.slice(0, 3));
+    await ctx.close();
+  }
+  // ── 4. 枠を使い切った後の休日は自動で有給（2026-09-21）：PC の集計は押した瞬間に変わる ──
+  {
+    // 今月の店休日（第2火曜など）も「取得」に数えるので、枠 = 店休日 + 2 にして「D1 で残り1 → D2 で残り0 → D3 は有給」にする
+    const closedN = (() => { let n = 0; const dim = new Date(Y, M + 1, 0).getDate(); for (let d = 1; d <= dim; d++) { const w = new Date(Y, M, d); let tue = 0, st = null; for (let k = 1; k <= dim; k++) { if (new Date(Y, M, k).getDay() === 2) { tue++; if (tue === 2) { st = k; break; } } } if (d === st) n++; } return n; })();
+    const seed4 = Object.assign({}, seed, { [STOR + 'honten-dayoff']: { [DK1]: ['江川京志'] }, [STOR + 'mholidays']: { [`${Y}-${M + 1}`]: closedN + 2 } });
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } });
+    await ctx.addInitScript(signedInInit, [0, ME, STOR]);
+    await routeFakeFb(ctx, seed4); await routeGas(ctx);
+    const page = await ctx.newPage();
+    const errs = []; page.on('pageerror', e => errs.push(String(e)));
+    page.on('dialog', async d => { errs.push('dialog:' + d.message()); await d.accept().catch(() => {}); });
+    await page.goto('http://localhost:' + PORT + '/index_dev.html', { waitUntil: 'domcontentloaded' });
+    await seeText(page, '江川京志', 20000); await clickText(page, '江川京志'); await clickText(page, 'でログイン');
+    await seeText(page, 'スケジュール', 20000);
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.includes('カレンダー') && el.offsetParent !== null && el.textContent.replace(/\s/g, '').length < 16); if (b) b.click(); });
+    await page.waitForTimeout(1200);
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.includes('設定') && el.textContent.length < 6 && el.offsetParent !== null); if (b) b.click(); });
+    await page.waitForTimeout(400);
+    await clickText(page, 'スタッフ休日設定');
+    t('自動有給：スタッフ休日カレンダーが開く', await seeText(page, 'スタッフ休日・有給カレンダー', 5000));
+    const summary = () => page.evaluate(() => (document.body.innerText.match(/江川京志[^\n]*枠[^\n]*/) || [''])[0]);
+    const clickDay = d => page.evaluate(d => { const sp = [...document.querySelectorAll('span')].find(el => el.textContent.trim() === String(d) && el.offsetParent !== null && el.closest('.modal-box')); let c = sp; for (let i = 0; i < 6 && c; i++) { if (c.onclick || (c.getAttribute && c.style && c.style.cursor === 'pointer')) break; c = c.parentElement; } if (c) c.click(); return !!c; }, d);
+    t(`自動有給：最初は 残り1日（枠${closedN + 2}・取得${closedN + 1}）`, await seeText(page, '残り1日', 5000), await summary());
+    await clickDay(D2); await page.waitForTimeout(400);
+    t('自動有給：D2 を押した瞬間に集計が 残り0日 に変わる', await seeText(page, '残り0日', 3000), await summary());
+    await clickDay(D3); await page.waitForTimeout(400);
+    t('自動有給：枠を使い切った後の D3 は休日ではなく有給に入る', await page.waitForFunction(([k, dk]) => { const p = window.__fakeFb.get(k + 'honten-pleave') || {}; const o = window.__fakeFb.get(k + 'honten-dayoff') || {}; return (p[dk] || []).includes('江川京志') && !(o[dk] || []).includes('江川京志'); }, [STOR, DK3], { timeout: 8000 }).then(() => true).catch(() => false), [await dayoff(page), await pleave(page)]);
+    t('自動有給：「有給として入れました」のお知らせが出る', await seeText(page, '有給として入れました', 3000));
+    t('自動有給：集計に 有1日 が出て、超過にならない', await page.evaluate(() => /有1日/.test(document.body.innerText) && !/超過/.test(document.body.innerText)), await summary());
+    t('自動有給：JSエラー・alert なし', errs.length === 0, errs.slice(0, 3));
+    await ctx.close();
+  }
+  // ── 5. スマホでも同じ：枠を使い切った後に 🏖 休日 を押すと有給に入る ──
+  {
+    const closedN = (() => { let n = 0; const dim = new Date(Y, M + 1, 0).getDate(); let tue = 0, st = null; for (let k = 1; k <= dim; k++) { if (new Date(Y, M, k).getDay() === 2) { tue++; if (tue === 2) { st = k; break; } } } if (st) n++; return n; })();
+    const seed5 = Object.assign({}, seed, { [STOR + 'honten-dayoff']: { [DK1]: ['江川京志'] }, [STOR + 'mholidays']: { [`${Y}-${M + 1}`]: closedN + 1 } });
+    const ctx = await browser.newContext({ viewport: { width: 400, height: 850 }, isMobile: true, hasTouch: true });
+    await ctx.addInitScript(signedInInit, [0, ME, STOR]);
+    await routeFakeFb(ctx, seed5); await routeGas(ctx);
+    const page = await ctx.newPage();
+    const errs = []; page.on('pageerror', e => errs.push(String(e)));
+    page.on('dialog', async d => { errs.push('dialog:' + d.message()); await d.accept().catch(() => {}); });
+    await page.goto('http://localhost:' + PORT + '/mobile.html', { waitUntil: 'domcontentloaded' });
+    await seeText(page, '江川京志', 20000);
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.includes('江川京志')); if (b) b.click(); });
+    await seeText(page, 'カレンダー', 20000);
+    await openTab(page); await seeText(page, 'スタッフ休日', 8000);
+    t('スマホ自動有給：枠を使い切っている（残り0日）', await seeText(page, '残り0日', 5000), await page.evaluate(() => (document.body.innerText.match(/枠[^\n]*/) || [''])[0]));
+    await tapDay(page, D2); await page.waitForTimeout(300);
+    await clickText(page, '🏖 休日');
+    t('スマホ自動有給：🏖 休日 を押しても有給（pleave）に入る', await page.waitForFunction(([k, dk]) => { const p = window.__fakeFb.get(k + 'honten-pleave') || {}; const o = window.__fakeFb.get(k + 'honten-dayoff') || {}; return (p[dk] || []).includes('江川京志') && !(o[dk] || []).includes('江川京志'); }, [STOR, DK2], { timeout: 8000 }).then(() => true).catch(() => false), [await dayoff(page), await pleave(page)]);
+    t('スマホ自動有給：お知らせが出る', await seeText(page, '有給として入れました', 3000));
+    t('スマホ自動有給：JSエラー・alert なし', errs.length === 0, errs.slice(0, 3));
     await ctx.close();
   }
   await browser.close(); server.close();
