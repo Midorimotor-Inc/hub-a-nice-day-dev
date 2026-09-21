@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1789976842883';
+  window.__APP_BUILD='build-1789998224739';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.68';
+const MOBILE_VERSION='2.69';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -2783,6 +2783,8 @@ const MySchedCalendar=({cy,cm,user,pub,secret,isClosedDay,onPickDay,storeLabelOf
 //   会社の月間休日数（mholidays）より少なく取った分は翌月の枠に足す。
 //   ★多く取った分は翌月から引かず「有給」扱い（2026-09-21 ユーザー決定）：枠を使い切った後に休日を入れると自動で有給になる。
 //   その月の枠 = 会社の休日数 + 前月までの繰越、残り = 枠 − 取得（店休日を含む休日。有給は数えない）。
+//   ★A案（2026-09-21 ユーザー決定）：繰り越した日数は翌月の一番早い休日から順に「○月繰り越し分」として充てる（carried）。
+//     画面は「枠」を見せず、集計に「うち店休日N＋繰り越し休日M」、右のバッジは翌月へ回る分だけ「繰り越しN日」と出す。
 //   数字の無い月で繰越は途切れる（連続して設定した月の間だけ流れる）。
 //   PC のスタッフ休日カレンダー・閲覧カレンダー・スマホの休日タブで同じ計算を使う。
 const calcHolidayCarry=(name,cy,cm,dayOff,isClosed,mhol)=>{
@@ -2799,14 +2801,22 @@ const calcHolidayCarry=(name,cy,cm,dayOff,isClosed,mhol)=>{
   const t=taken(cy,cm);
   const quota=company==null?null:company+carry;
   const over=quota==null?0:Math.max(0,t-quota);   // 枠を超えた休日の数（集計では有給に数える）
-  return {carryIn:carry,company,taken:t,quota,remain:quota==null?null:Math.max(0,quota-t),over};
+  // 繰り越し分を充てた日：この月の本人の休日（店休日を除く）を日付順に、繰越の日数だけ
+  const days=[];{const dim=new Date(cy,cm+1,0).getDate();for(let d=1;d<=dim;d++){if(!isClosed(cy,cm,d)&&((dayOff||{})[`${cy}-${cm+1}-${d}`]||[]).includes(name))days.push(d);}}
+  const carried=days.slice(0,Math.min(carry,days.length));
+  return {carryIn:carry,company,taken:t,quota,remain:quota==null?null:Math.max(0,quota-t),over,carried,carriedN:carried.length,fromM:cm===0?12:cm};
 };
+// バッジの文言：翌月へ回る分だけ「繰り越しN日」。使い切っていれば何も出さない（空文字）。枠を超えた分は有給扱いと出す
 const carryLabel=(c,long)=>{
   if(!c||c.quota==null)return '';
-  const rem=c.remain>0?`残り${c.remain}日→翌月へ`:c.over>0?`${c.over}日超過→有給扱い`:'残り0日（次は有給）';
-  return long?`枠 ${c.quota}日（会社${c.company}${c.carryIn?`${c.carryIn>0?'＋':'−'}繰越${Math.abs(c.carryIn)}`:''}）・${rem}`:`枠${c.quota}・${rem}`;
+  if(c.remain>0)return long?`繰り越し${c.remain}日 →翌月へ`:`繰越${c.remain}日`;
+  if(c.over>0)return `${c.over}日超過→有給扱い`;
+  return '';
 };
-const carryTitle=c=>c&&c.quota!=null?`今月の枠 ${c.quota}日 ＝ 会社の休日数 ${c.company}日 ${c.carryIn>=0?'＋':'−'} 前月までの繰越 ${Math.abs(c.carryIn)}日。取得 ${c.taken}日（店休日を含む・有給は数えない）。枠を使い切った後の休日は自動で有給になります`:'';
+// 集計の内訳「（うち店休日N＋繰り越し休日M）」
+const offBreakdown=(closedN,c)=>{const p=[];if(closedN>0)p.push(`店休日 ${closedN}`);if(c&&c.carriedN>0)p.push(`繰り越し休日 ${c.carriedN}`);return p.length?`（うち${p.join('＋')}）`:'';};
+const carriedLabel=c=>c?`${c.fromM}月繰り越し分`:'';
+const carryTitle=c=>c&&c.quota!=null?`会社の休日数 ${c.company}日 ＋ 前月からの繰り越し ${c.carryIn}日 ＝ ${c.quota}日。取得 ${c.taken}日（店休日を含む・有給は数えない）。繰り越し分は今月の一番早い休日から充てます。使い切った後の休日は自動で有給になります`:'';
 const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pleaveS,
   closedDaysH,closedDaysS,closedDatesH,closedDatesS,overrideOpen,monthlyHolidays,onToggle,offNoteH,offNoteS,onSaveNote})=>{
   const today=new Date();
@@ -2888,17 +2898,13 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
           </button>
         ))}
         <div style={{marginLeft:'auto',textAlign:'right',fontSize:10.5,color:'#475569',lineHeight:1.5}}>
-          <div><b style={{color:'#ea580c'}}>{target}</b>：🏖 {mine.o}日{mine.cN?<span style={{fontWeight:500,color:'#9a3412'}}>（うち店休{mine.cN}）</span>:null}{mine.l?`・📋 有給 ${mine.l}日`:''}</div>
+          <div><b style={{color:'#ea580c'}}>{target}</b>：🏖 {mine.o}日{offBreakdown(mine.cN,carry)?<span style={{fontWeight:500,color:'#9a3412'}}>{offBreakdown(mine.cN,carry)}</span>:null}{mine.l?`・📋 有給 ${mine.l}日`:''}</div>
           {mhol!=null&&mhol!==''&&<div style={{color:'#94a3b8'}}>会社の{cm+1}月の休日 {mhol}日</div>}
         </div>
       </div>
-      {carry&&carry.quota!=null&&(
-        <div style={{margin:'6px 12px 0',padding:'6px 10px',borderRadius:8,background:'white',border:'1px solid #e2e8f0',fontSize:11,color:'#334155',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-          <span style={{fontWeight:800}}>今月の枠 {carry.quota}日</span>
-          <span style={{color:'#94a3b8'}}>（会社{carry.company}{carry.carryIn?(carry.carryIn>0?'＋':'−')+'繰越'+Math.abs(carry.carryIn):''}）</span>
-          <span style={{marginLeft:'auto',fontWeight:800,color:carry.remain>0?'#1d4ed8':carry.remain<0?'#dc2626':'#64748b'}}>
-            {carry.remain>0?`残り${carry.remain}日→翌月へ`:carry.remain<0?`${-carry.remain}日超過→翌月で調整`:'残り0日'}
-          </span>
+      {carryLabel(carry,true)&&(
+        <div title={carryTitle(carry)} style={{margin:'6px 12px 0',padding:'6px 10px',borderRadius:8,background:'white',border:'1px solid #93c5fd',fontSize:11,color:carry.remain>0?'#1d4ed8':'#dc2626',fontWeight:800}}>
+          {carryLabel(carry,true)}
         </div>
       )}
       {adminMode&&(
@@ -2934,7 +2940,7 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
                   {closed
                     ?<div style={{textAlign:'center',fontSize:11,color:CLOSED_FG,fontWeight:900,marginTop:4}}>{CLOSED_LABEL}</div>
                     :<div style={{textAlign:'center',marginTop:2,lineHeight:1.2}}>
-                      {(meOff||meLeave)&&<div style={{fontSize:9,fontWeight:900,color:meOff?'#ea580c':'#059669'}}>{meOff?'🏖休':'📋有'}</div>}
+                      {(meOff||meLeave)&&<div style={{fontSize:9,fontWeight:900,color:meOff?'#ea580c':'#059669'}}>{meOff?(carry&&carry.carried.includes(d)?'🏖繰越':'🏖休'):'📋有'}</div>}
                       <div style={{fontSize:9,fontWeight:700,color:working<=Math.max(1,Math.floor(staff.length/2))?'#dc2626':'#64748b'}}>出{working}</div>
                       {(o.length+l.length)>0&&<div style={{fontSize:8,color:'#94a3b8'}}>休{o.length+l.length}</div>}
                     </div>}
@@ -2958,7 +2964,7 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
             <div style={{display:'flex',flexDirection:'column',gap:5,marginBottom:10,fontSize:12}}>
               <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
                 <span style={{flexShrink:0,color:'#ea580c',fontWeight:800}}>🏖 休日</span>
-                {selOffs.length?selOffs.map(n=><span key={n} style={{padding:'2px 8px',borderRadius:6,background:'#fff7ed',border:'1px solid #fdba74',color:'#9a3412',fontWeight:700}}>{n}{noteOf(selDk,n)&&<span style={{fontWeight:400,fontSize:10.5}}>（{noteOf(selDk,n)}）</span>}</span>):<span style={{color:'#94a3b8'}}>なし</span>}
+                {selOffs.length?selOffs.map(n=><span key={n} style={{padding:'2px 8px',borderRadius:6,background:'#fff7ed',border:'1px solid #fdba74',color:'#9a3412',fontWeight:700}}>{n}{n===target&&carry&&selDay&&carry.carried.includes(selDay)&&<span style={{fontWeight:700,fontSize:10.5,color:'#1d4ed8'}}>（{carriedLabel(carry)}）</span>}{noteOf(selDk,n)&&<span style={{fontWeight:400,fontSize:10.5}}>（{noteOf(selDk,n)}）</span>}</span>):<span style={{color:'#94a3b8'}}>なし</span>}
               </div>
               {selLeaves.length>0&&<div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
                 <span style={{flexShrink:0,color:'#059669',fontWeight:800}}>📋 有給</span>

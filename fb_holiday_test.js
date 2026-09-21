@@ -108,12 +108,12 @@ const signedInInit = ([k, me, stor]) => {
     await page.fill('input[placeholder*="午後休"]', '午後休');
     await clickText(page, '保存');
     t('メモが {店}-offnote に "日::氏名" で保存される', await page.waitForFunction(([k, dk]) => (window.__fakeFb.get(k + 'honten-offnote') || {})[dk + '::江川京志'] === '午後休', [STOR, DK1], { timeout: 8000 }).then(() => true).catch(() => false), await offnote(page));
-    t('休みの人の名前の横にメモが出る', await seeText(page, '江川京志（午後休）', 5000));
-    // 繰り越し（イ案）：今月の枠 = 会社9 + (前月の会社8 − 前月に取った休日数)。前月は休日を入れていないので店休日の数だけ
+    t('休みの人の名前の横にメモが出る', await seeText(page, '（午後休）', 5000) && await page.evaluate(() => /江川京志（[^）]*）?（午後休）/.test(document.body.innerText)));
+    // 繰り越し（A案・2026-09-21）：前月の残り(8−店休日)が今月の一番早い休日に「○月繰り越し分」として充たる。バッジは翌月へ回る分だけ「繰り越しN日」
     const prevClosed = await page.evaluate(([py, pm]) => { let n = 0; const dim = new Date(py, pm + 1, 0).getDate(); for (let d = 1; d <= dim; d++) if (calIsClosed(new Date(py, pm, d), [], [], [])) n++; return n; }, [PY, PM]);
     const quota = 9 + (8 - prevClosed);
-    t(`繰り越し：今月の枠が 会社9＋前月の残り(8−${prevClosed}) = ${quota}日 と出る`, await seeText(page, `今月の枠 ${quota}日`, 5000), await page.evaluate(() => (document.body.innerText.match(/今月の枠[^\n]*/) || [''])[0]));
-    t('繰り越し：残り日数（翌月へ）が出る', await page.evaluate(() => /残り\d+日→翌月へ|日超過→有給扱い|残り0日/.test(document.body.innerText)));
+    t(`繰り越し：集計に「繰り越し休日」の内訳が出る（前月の残り ${8 - prevClosed} 日のうち充てた分）`, await seeText(page, '繰り越し休日', 5000), await page.evaluate(() => (document.body.innerText.match(/江川京志：[^\n]*/) || [''])[0]));
+    t('繰り越し：バッジは「繰り越しN日 →翌月へ」だけ（枠・残りは出さない）', await page.evaluate(() => /繰り越し\d+日 →翌月へ/.test(document.body.innerText) && !/今月の枠|残り\d+日/.test(document.body.innerText)));
     t('今月の集計に自分の休日が数えられる', await page.evaluate(() => /江川京志：🏖 \d+日/.test(document.body.innerText)));
     await clickText(page, '📋 有給');
     t('有給に切り替えると dayoff から外れ pleave に入る', await page.waitForFunction(([k, dk]) => { const o = window.__fakeFb.get(k + 'honten-dayoff') || {}, l = window.__fakeFb.get(k + 'honten-pleave') || {}; return !(o[dk] || []).includes('江川京志') && (o[dk] || []).includes('竹林直行') && (l[dk] || []).includes('江川京志'); }, [STOR, DK1], { timeout: 8000 }).then(() => true).catch(() => false), { o: await dayoff(page), l: await pleave(page) });
@@ -171,7 +171,7 @@ const signedInInit = ([k, me, stor]) => {
     await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.trim() === '江川京志'); if (b) b.click(); });
     await page.waitForTimeout(800);
     t('PC：個人を選んでも他の日が薄くならない（opacity 0.28 のセルが無い）', await page.evaluate(() => ![...document.querySelectorAll('div')].some(el => el.style && (el.style.opacity === '0.28'))));
-    t('PC：個人の集計に繰り越し（今月の枠）が出る', await seeText(page, '枠', 5000) && await page.evaluate(() => /残り\d+日→翌月へ|日超過→有給扱い|残り0日/.test(document.body.innerText)), await page.evaluate(() => (document.body.innerText.match(/月の集計[^]{0,200}/) || [''])[0]));
+    t('PC：個人の集計に繰り越しの内訳とバッジが出る', await seeText(page, '繰り越し休日', 5000) && await page.evaluate(() => /繰り越し\d+日 →翌月へ/.test(document.body.innerText) && !/枠 \d+日/.test(document.body.innerText)), await page.evaluate(() => (document.body.innerText.match(/月の集計[^]{0,200}/) || [''])[0]));
     await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.includes('設定') && el.textContent.length < 6 && el.offsetParent !== null); if (b) b.click(); });
     await page.waitForTimeout(500);
     await clickText(page, 'スタッフ休日設定');
@@ -184,7 +184,7 @@ const signedInInit = ([k, me, stor]) => {
     t('PC：メモが {店}-offnote に保存される', await page.waitForFunction(([k, dk]) => (window.__fakeFb.get(k + 'honten-offnote') || {})[dk + '::江川京志'] === '前月分', [STOR, DK1], { timeout: 8000 }).then(() => true).catch(() => false), await offnote(page));
     t('PC：セルにメモが出る', await seeText(page, '📝 前月分', 3000));
     await page.screenshot({ path: path.join(DIR, 'smoke-holiday-pc.png') });
-    t('PC：月次集計に枠と残りが出る', await page.evaluate(() => /枠\d+・/.test(document.body.innerText)));
+    t('PC：月次集計に繰越バッジが出る', await page.evaluate(() => /繰越\d+日/.test(document.body.innerText)));
     t('PC：JSエラー・alert なし', errs.length === 0, errs.slice(0, 3));
     await ctx.close();
   }
@@ -208,11 +208,11 @@ const signedInInit = ([k, me, stor]) => {
     await page.waitForTimeout(400);
     await clickText(page, 'スタッフ休日設定');
     t('自動有給：スタッフ休日カレンダーが開く', await seeText(page, 'スタッフ休日・有給カレンダー', 5000));
-    const summary = () => page.evaluate(() => (document.body.innerText.match(/江川京志[^\n]*枠[^\n]*/) || [''])[0]);
+    const summary = () => page.evaluate(() => { const el = [...document.querySelectorAll('span')].find(e => e.firstElementChild && e.firstElementChild.textContent === '江川京志' && e.textContent.includes('休')); return el ? el.textContent : ''; });   // 月次集計の江川のチップ
     const clickDay = d => page.evaluate(d => { const sp = [...document.querySelectorAll('span')].find(el => el.textContent.trim() === String(d) && el.offsetParent !== null && el.closest('.modal-box')); let c = sp; for (let i = 0; i < 6 && c; i++) { if (c.onclick || (c.getAttribute && c.style && c.style.cursor === 'pointer')) break; c = c.parentElement; } if (c) c.click(); return !!c; }, d);
-    t(`自動有給：最初は 残り1日（枠${closedN + 2}・取得${closedN + 1}）`, await seeText(page, '残り1日', 5000), await summary());
+    t(`自動有給：最初は「繰越1日」（会社${closedN + 2}・取得${closedN + 1}）`, await page.waitForFunction(() => { const el = [...document.querySelectorAll('span')].find(e => e.firstElementChild && e.firstElementChild.textContent === '江川京志' && e.textContent.includes('休')); return el && /繰越1日/.test(el.textContent); }, null, { timeout: 5000 }).then(() => true).catch(() => false), await summary());
     await clickDay(D2); await page.waitForTimeout(400);
-    t('自動有給：D2 を押した瞬間に集計が 残り0日 に変わる', await seeText(page, '残り0日', 3000), await summary());
+    t('自動有給：D2 を押した瞬間にバッジが消える（使い切り）', await page.waitForFunction(() => { const el = [...document.querySelectorAll('span')].find(e => e.firstElementChild && e.firstElementChild.textContent === '江川京志' && e.textContent.includes('休')); return el && !/繰越\d+日/.test(el.textContent) && /休\d+日/.test(el.textContent);}, null, { timeout: 3000 }).then(() => true).catch(() => false), await summary());
     await clickDay(D3); await page.waitForTimeout(400);
     t('自動有給：枠を使い切った後の D3 は休日ではなく有給に入る', await page.waitForFunction(([k, dk]) => { const p = window.__fakeFb.get(k + 'honten-pleave') || {}; const o = window.__fakeFb.get(k + 'honten-dayoff') || {}; return (p[dk] || []).includes('江川京志') && !(o[dk] || []).includes('江川京志'); }, [STOR, DK3], { timeout: 8000 }).then(() => true).catch(() => false), [await dayoff(page), await pleave(page)]);
     t('自動有給：「有給として入れました」のお知らせが出る', await seeText(page, '有給として入れました', 3000));
@@ -235,7 +235,7 @@ const signedInInit = ([k, me, stor]) => {
     await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(el => el.textContent.includes('江川京志')); if (b) b.click(); });
     await seeText(page, 'カレンダー', 20000);
     await openTab(page); await seeText(page, 'スタッフ休日', 8000);
-    t('スマホ自動有給：枠を使い切っている（残り0日）', await seeText(page, '残り0日', 5000), await page.evaluate(() => (document.body.innerText.match(/枠[^\n]*/) || [''])[0]));
+    t('スマホ自動有給：枠を使い切っているのでバッジが出ない', await seeText(page, '江川京志：🏖', 5000) && await page.evaluate(() => !/繰り越し\d+日 →翌月へ/.test(document.body.innerText)), await page.evaluate(() => (document.body.innerText.match(/江川京志：[^\n]*/) || [''])[0]));
     await tapDay(page, D2); await page.waitForTimeout(300);
     await clickText(page, '🏖 休日');
     t('スマホ自動有給：🏖 休日 を押しても有給（pleave）に入る', await page.waitForFunction(([k, dk]) => { const p = window.__fakeFb.get(k + 'honten-pleave') || {}; const o = window.__fakeFb.get(k + 'honten-dayoff') || {}; return (p[dk] || []).includes('江川京志') && !(o[dk] || []).includes('江川京志'); }, [STOR, DK2], { timeout: 8000 }).then(() => true).catch(() => false), [await dayoff(page), await pleave(page)]);

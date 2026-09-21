@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1789976842883';
+    window.__APP_BUILD='build-1789998224739';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -121,7 +121,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.68';
+const APP_VERSION = '2.69';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -341,6 +341,8 @@ const ClosedMark = ({small,topOffset=26})=>(
 //   会社の月間休日数（mholidays）より少なく取った分は翌月の枠に足す。
 //   ★多く取った分は翌月から引かず「有給」扱い（2026-09-21 ユーザー決定）：枠を使い切った後に休日を入れると自動で有給になる。
 //   その月の枠 = 会社の休日数 + 前月までの繰越、残り = 枠 − 取得（店休日を含む休日。有給は数えない）。
+//   ★A案（2026-09-21 ユーザー決定）：繰り越した日数は翌月の一番早い休日から順に「○月繰り越し分」として充てる（carried）。
+//     画面は「枠」を見せず、集計に「うち店休日N＋繰り越し休日M」、右のバッジは翌月へ回る分だけ「繰り越しN日」と出す。
 //   数字の無い月で繰越は途切れる（連続して設定した月の間だけ流れる）。
 //   PC のスタッフ休日カレンダー・閲覧カレンダー・スマホの休日タブで同じ計算を使う。
 const calcHolidayCarry=(name,cy,cm,dayOff,isClosed,mhol)=>{
@@ -357,14 +359,22 @@ const calcHolidayCarry=(name,cy,cm,dayOff,isClosed,mhol)=>{
   const t=taken(cy,cm);
   const quota=company==null?null:company+carry;
   const over=quota==null?0:Math.max(0,t-quota);   // 枠を超えた休日の数（集計では有給に数える）
-  return {carryIn:carry,company,taken:t,quota,remain:quota==null?null:Math.max(0,quota-t),over};
+  // 繰り越し分を充てた日：この月の本人の休日（店休日を除く）を日付順に、繰越の日数だけ
+  const days=[];{const dim=new Date(cy,cm+1,0).getDate();for(let d=1;d<=dim;d++){if(!isClosed(cy,cm,d)&&((dayOff||{})[`${cy}-${cm+1}-${d}`]||[]).includes(name))days.push(d);}}
+  const carried=days.slice(0,Math.min(carry,days.length));
+  return {carryIn:carry,company,taken:t,quota,remain:quota==null?null:Math.max(0,quota-t),over,carried,carriedN:carried.length,fromM:cm===0?12:cm};
 };
+// バッジの文言：翌月へ回る分だけ「繰り越しN日」。使い切っていれば何も出さない（空文字）。枠を超えた分は有給扱いと出す
 const carryLabel=(c,long)=>{
   if(!c||c.quota==null)return '';
-  const rem=c.remain>0?`残り${c.remain}日→翌月へ`:c.over>0?`${c.over}日超過→有給扱い`:'残り0日（次は有給）';
-  return long?`枠 ${c.quota}日（会社${c.company}${c.carryIn?`${c.carryIn>0?'＋':'−'}繰越${Math.abs(c.carryIn)}`:''}）・${rem}`:`枠${c.quota}・${rem}`;
+  if(c.remain>0)return long?`繰り越し${c.remain}日 →翌月へ`:`繰越${c.remain}日`;
+  if(c.over>0)return `${c.over}日超過→有給扱い`;
+  return '';
 };
-const carryTitle=c=>c&&c.quota!=null?`今月の枠 ${c.quota}日 ＝ 会社の休日数 ${c.company}日 ${c.carryIn>=0?'＋':'−'} 前月までの繰越 ${Math.abs(c.carryIn)}日。取得 ${c.taken}日（店休日を含む・有給は数えない）。枠を使い切った後の休日は自動で有給になります`:'';
+// 集計の内訳「（うち店休日N＋繰り越し休日M）」
+const offBreakdown=(closedN,c)=>{const p=[];if(closedN>0)p.push(`店休日 ${closedN}`);if(c&&c.carriedN>0)p.push(`繰り越し休日 ${c.carriedN}`);return p.length?`（うち${p.join('＋')}）`:'';};
+const carriedLabel=c=>c?`${c.fromM}月繰り越し分`:'';
+const carryTitle=c=>c&&c.quota!=null?`会社の休日数 ${c.company}日 ＋ 前月からの繰り越し ${c.carryIn}日 ＝ ${c.quota}日。取得 ${c.taken}日（店休日を含む・有給は数えない）。繰り越し分は今月の一番早い休日から充てます。使い切った後の休日は自動で有給になります`:'';
 // ============================================
 //  マイスケジュール（2026-09-20・アイデア仕様書③）— PC と mobile で同じコードを置く
 //   ・公開予定：kv の ${STOR}mysched = { id: {dk, time, title, memo, owner(氏名), uid(スタッフuid), at} }。全員が読める。編集・削除は本人だけ
@@ -5540,6 +5550,7 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
   }).filter(s=>s.offs>0||s.leaves>0||(s.carry&&s.carry.quota!=null));
 
   const today=new Date();
+  const selCarry=selStaff?calcHolidayCarry(selStaff,cy,cm,dayOffData,isStoreClosed,monthlyHolidays):null;   // 選んだ人の繰り越し（充てた日の表示用）
 
   return(
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:2500,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClose}>
@@ -5688,6 +5699,7 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
                           {isHol&&!isCl&&<span style={{fontSize:8,color:'#dc2626'}}>祝</span>}
                           {isCl&&<span style={{fontSize:13,color:CLOSED_FG,fontWeight:900,letterSpacing:1}}>{CLOSED_LABEL}</span>}
                           {selDayoff&&<span style={{fontSize:11}}>🏖</span>}
+                          {selDayoff&&selCarry&&selCarry.carried.includes(day)&&<span title="前月の残りの休日をこの日に充てています" style={{fontSize:9,fontWeight:700,color:'#1d4ed8',background:'#dbeafe',borderRadius:3,padding:'0 4px'}}>↩{carriedLabel(selCarry)}</span>}
                           {selLeave&&<span style={{fontSize:11}}>📋</span>}
                           {(selDayoff||selLeave)&&canEditStaff(selStaff)&&(
                             <span onClick={e=>{e.stopPropagation();setMemoText(noteOf(dkk,selStaff));setMemoEdit({dkk});}} title="メモを書く"
@@ -5731,10 +5743,10 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
                 {monthlySummary.map(({name,offs,leaves,closedN,carry})=>(
                   <span key={name} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'4px 10px',background:'white',border:'1px solid #e5e7eb',borderRadius:20,fontSize:11}}>
                     <span style={{fontWeight:700,color:'#374151'}}>{name}</span>
-                    {offs>0&&<span style={{color:'#ea580c',fontWeight:700,display:'flex',alignItems:'center',gap:2}}><span style={{width:8,height:8,borderRadius:2,background:'#f97316',display:'inline-block'}}/>休{offs}日{closedN>0&&<span style={{fontWeight:500,color:'#9a3412'}}>（うち店休{closedN}）</span>}</span>}
+                    {offs>0&&<span style={{color:'#ea580c',fontWeight:700,display:'flex',alignItems:'center',gap:2}}><span style={{width:8,height:8,borderRadius:2,background:'#f97316',display:'inline-block'}}/>休{offs}日{offBreakdown(closedN,carry)&&<span style={{fontWeight:500,color:'#9a3412'}}>{offBreakdown(closedN,carry)}</span>}</span>}
                     {leaves>0&&<span style={{color:'#059669',fontWeight:700,display:'flex',alignItems:'center',gap:2}}><span style={{width:8,height:8,borderRadius:2,background:'#10b981',display:'inline-block'}}/>有{leaves}日</span>}
                     <span style={{color:'#c2410c',fontWeight:800,fontSize:10}}>計{offs+leaves}日</span>
-                    {carry&&carry.quota!=null&&<span title={carryTitle(carry)} style={{fontSize:10,fontWeight:700,color:carry.remain>0?'#1d4ed8':carry.remain<0?'#dc2626':'#6b7280',borderLeft:'1px solid #e5e7eb',paddingLeft:6}}>{carryLabel(carry)}</span>}
+                    {carryLabel(carry)&&<span title={carryTitle(carry)} style={{fontSize:10,fontWeight:700,color:carry.remain>0?'#1d4ed8':'#dc2626',borderLeft:'1px solid #e5e7eb',paddingLeft:6}}>{carryLabel(carry)}</span>}
                   </span>
                 ))}
               </div>
@@ -12103,6 +12115,7 @@ function AppInner() {
                                         <span style={{width:14,height:14,borderRadius:3,background:'#f97316',color:'white',display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:8,fontWeight:800,flexShrink:0}}>{name.charAt(0)}</span>
                                         <span style={{fontSize:10,fontWeight:isFiltered?800:600,color:'#92400e',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:56}}>{name}</span>
                                         <span style={{fontSize:8,color:'#ea580c',flexShrink:0}}>休</span>
+                                        {isFiltered&&staffMonthStats&&staffMonthStats.carry&&staffMonthStats.carry.carried.includes(day)&&<span title="前月の残りの休日をこの日に充てています" style={{fontSize:9,fontWeight:700,color:'#1d4ed8',background:'#dbeafe',borderRadius:3,padding:'0 4px',flexShrink:0}}>↩{carriedLabel(staffMonthStats.carry)}</span>}
                                         {noteOfCur(dkk,name)&&<span title={noteOfCur(dkk,name)} style={{fontSize:9,color:'#b45309',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:70}}>📝{noteOfCur(dkk,name)}</span>}
                                       </div>
                                     );
@@ -12135,7 +12148,7 @@ function AppInner() {
                         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
                           <span style={{display:'inline-flex',alignItems:'center',gap:5,padding:'5px 14px',background:'#fff7ed',border:'2px solid #f97316',borderRadius:20,fontSize:13,fontWeight:800,color:'#ea580c'}}>
                             <span style={{width:10,height:10,borderRadius:2,background:'#f97316',display:'inline-block'}}/>
-                            🏖 休日&nbsp;<span style={{fontSize:18,fontWeight:900}}>{staffMonthStats.offs}</span>&nbsp;日{staffMonthStats.closedN>0&&<span style={{fontSize:11,fontWeight:600,color:'#9a3412'}}>（うち店休日 {staffMonthStats.closedN}）</span>}
+                            🏖 休日&nbsp;<span style={{fontSize:18,fontWeight:900}}>{staffMonthStats.offs}</span>&nbsp;日{offBreakdown(staffMonthStats.closedN,staffMonthStats.carry)&&<span style={{fontSize:11,fontWeight:600,color:'#9a3412'}}>{offBreakdown(staffMonthStats.closedN,staffMonthStats.carry)}</span>}
                           </span>
                           <span style={{display:'inline-flex',alignItems:'center',gap:5,padding:'5px 14px',background:'#f0fdf4',border:'2px solid #10b981',borderRadius:20,fontSize:13,fontWeight:800,color:'#059669'}}>
                             <span style={{width:10,height:10,borderRadius:2,background:'#10b981',display:'inline-block'}}/>
@@ -12144,7 +12157,7 @@ function AppInner() {
                           <span style={{fontSize:12,color:'#c2410c',fontWeight:800,padding:'5px 10px',background:'#eef2ff',border:'1px solid #a5b4fc',borderRadius:16}}>
                             合計 {staffMonthStats.offs+staffMonthStats.leaves} 日
                           </span>
-                          {staffMonthStats.carry&&staffMonthStats.carry.quota!=null&&(
+                          {carryLabel(staffMonthStats.carry,true)&&(
                             <span title={carryTitle(staffMonthStats.carry)} style={{fontSize:12,fontWeight:800,padding:'5px 12px',background:'white',border:'2px solid #93c5fd',borderRadius:16,color:staffMonthStats.carry.remain>0?'#1d4ed8':staffMonthStats.carry.remain<0?'#dc2626':'#374151'}}>
                               {carryLabel(staffMonthStats.carry,true)}
                             </span>
