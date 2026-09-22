@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1790054692084';
+  window.__APP_BUILD='build-1790056328395';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.75';
+const MOBILE_VERSION='2.76';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -964,11 +964,27 @@ const hubDropInvite=()=>{ if(!HUB_INVITE_ID)return; try{history.replaceState(nul
 const HUB_HANDOFF_ID=(()=>{try{return new URLSearchParams(location.search).get('hand')||'';}catch(e){return '';}})();
 const hubIsPhone=()=>/iPhone|iPad|iPod|Android/i.test(navigator.userAgent||'');
 // 印を作る／出す（hubMakeHandoff / hubTakeHandoff）は Firestore 版を認証層に置いた（2026-09-18）
+// ── PC の QR コードから登録（?hand=…&reg=1・2026-09-22 ユーザー要望）──
+//   PC で登録した直後（またはログイン画面の「スマホを登録」）に出す QR。スマホで読むと、この端末でその人としてサインインし、
+//   通常の登録の流れ（自分専用／共有 → 完了 → ホーム画面に追加）に入る。印の中の端末情報（PC の登録一覧・端末ID）は使わない。
+const HUB_HANDOFF_REG=(()=>{try{return new URLSearchParams(location.search).get('reg')==='1';}catch(e){return false;}})();
+const hubSignInByHandoff=async()=>{
+  if(!HUB_HANDOFF_ID||!fbAuth)return false;
+  let ok=false;
+  try{
+    const s=await fbDb.collection('handoff').doc(HUB_HANDOFF_ID).get();
+    const d=s.exists?s.data():null;
+    if(d&&d.exp>Date.now()){ await fbAuth.signInWithEmailAndPassword(d.email,d.pw); ok=true; }
+  }catch(e){ console.warn('[FB] QR からのサインインに失敗',e&&e.message); }
+  try{history.replaceState(null,'',location.pathname+location.hash);}catch(e){}
+  return ok;
+};
 
-const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
+const AuthAddScreen=({onDone,onCancel,staffH,staffS,viaHandoff})=>{
   // 流れ：email → sent → ［メールのリンクを開く＝開き直る］→ signing → kind / plan / label → done（2026-09-18・メールリンク方式）
+  //   viaHandoff：PC の QR（?hand=&reg=1）でサインイン済み → 端末に誰かいてもそのまま確定へ（2026-09-22）
   const linkOpen=hubIsLinkOpen();
-  const firstOnDevice=hubLive(hubLoadMine()).length===0;
+  const firstOnDevice=hubLive(hubLoadMine()).length===0||!!viaHandoff;
   const [step,setStep]=useState((linkOpen||(fbAuth&&firstOnDevice))?'signing':'email');
   const [email,setEmail]=useState(hubLinkEmailFromUrl());
   const [code,setCode]=useState('');            // 招待コード（6桁）
@@ -3295,13 +3311,15 @@ const App=()=>{
   const [handPending,setHandPending]=useState(!!fbAuth||(!!HUB_HANDOFF_ID&&hubLive(hubLoadMine()).length===0));
   // 引き継ぎを受けた直後の案内（ホーム画面に追加）。すでにホーム画面のアイコンから開いている時は出さない
   const [homeHint,setHomeHint]=useState(false);
+  const [viaHandoff,setViaHandoff]=useState(false);   // PC の QR から来た（登録画面をサインイン済みで始める）
   useEffect(()=>{
     if(!handPending)return;
     (async()=>{
       let took=false;
       try{
         const u=await fbWhenReady();
-        if(HUB_HANDOFF_ID&&hubLive(hubLoadMine()).length===0){ took=await hubTakeHandoff(); }
+        if(HUB_HANDOFF_ID&&HUB_HANDOFF_REG){ if(await hubSignInByHandoff()){ setViaHandoff(true); setShowAuthAdd(true); } }
+        else if(HUB_HANDOFF_ID&&hubLive(hubLoadMine()).length===0){ took=await hubTakeHandoff(); }
         else if(fbAuth&&!u&&hubLoadMine().length){ hubSaveMine([]); }
         else if(fbAuth&&u){ if(!(await hubCheckDevice())) setUser(null); }
       }catch(e){}
@@ -4075,9 +4093,9 @@ const App=()=>{
   if(!user&&handPending)
     return <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,#1e1b4b,#3730a3 60%,#6d28d9)',color:'white',fontWeight:800,fontSize:15}}>登録を引き継いでいます…</div>;
   if(!user&&(showAuthAdd||(AUTH_REQUIRED&&authMine.length===0)))
-    return <AuthAddScreen staffH={staffH} staffS={staffS}
-      onCancel={(authMine.length>0||!AUTH_REQUIRED)?()=>setShowAuthAdd(false):null}
-      onDone={()=>{setShowAuthAdd(false);setAuthMine(hubLive(hubLoadMine()));}}/>;
+    return <AuthAddScreen staffH={staffH} staffS={staffS} viaHandoff={viaHandoff}
+      onCancel={(authMine.length>0||!AUTH_REQUIRED)?()=>{setShowAuthAdd(false);setViaHandoff(false);}:null}
+      onDone={()=>{setShowAuthAdd(false);setViaHandoff(false);setAuthMine(hubLive(hubLoadMine()));}}/>;
   if(!user)return <LoginScreen
     onLogin={u=>{hubUse(u.name);hubRenew(u.name);setUser(u);setFadeIn(true);}}
     onAddAuth={()=>setShowAuthAdd(true)}/>;

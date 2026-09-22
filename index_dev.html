@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1790054692084';
+    window.__APP_BUILD='build-1790056328395';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -75,6 +75,8 @@
   <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.9/babel.min.js"></script>
+  <!-- スマホ登録用の QR コード（2026-09-22）。読めなくても URL の文字で代替する -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 
   <style>
@@ -121,7 +123,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.75';
+const APP_VERSION = '2.76';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -4226,6 +4228,68 @@ const HUB_HANDOFF_ID=(()=>{try{return new URLSearchParams(location.search).get('
 const hubIsPhone=()=>/iPhone|iPad|iPod|Android/i.test(navigator.userAgent||'');
 // 印を作る／出す（hubMakeHandoff / hubTakeHandoff）は Firestore 版を BLOCK-B の認証層に置いた（2026-09-18）
 
+// ── スマホ登録の QR コード（2026-09-22 ユーザー要望）──
+//   PC でサインインしている人の「引き継ぎの印」（30分）を作り、mobile.html?hand=…&reg=1 を QR にする。
+//   スマホのカメラで読むと、その人としてサインインした状態で登録の流れ（自分専用／共有 → 完了 → ホーム画面に追加）に入る。
+//   印には合言葉が入るので30分で無効。別の人（このPCでサインインしていない人）は、アドレス入りの招待 URL（要・6桁コード）を QR にする。
+const hubMobileUrl=()=>location.origin+location.pathname.replace(/[^/]*$/,'mobile.html');
+const HubQr=({text,size=200})=>{
+  let svg='';
+  try{ if(typeof qrcode==='function'){ const q=qrcode(0,'M'); q.addData(text); q.make(); svg=q.createSvgTag({cellSize:4,margin:2,scalable:true}); } }catch(e){ svg=''; }
+  if(!svg) return <div style={{fontSize:11,color:'#6b7280',wordBreak:'break-all',padding:8,border:'1px dashed #cbd5e1',borderRadius:8}}>QR を描けません。この URL をスマホで開いてください：<br/>{text}</div>;
+  return <div style={{width:size,height:size,margin:'0 auto',background:'white',padding:6,border:'1px solid #e5e7eb',borderRadius:10}} dangerouslySetInnerHTML={{__html:svg.replace('<svg ','<svg style="width:100%;height:100%" ')}}/>;
+};
+const PhoneQrPanel=({people,compact})=>{
+  // people: この端末に登録されている人 [{name,email}]。サインイン中の人は印（コード不要）、それ以外は招待 URL（要コード）
+  const meMail=(fbUser&&fbUser.email||'').toLowerCase();
+  const list=(people||[]).filter(p=>p&&p.name);
+  const mine=list.find(p=>String(p.email||'').toLowerCase()===meMail);
+  const [sel,setSel]=useState(mine?mine.name:(list[0]?list[0].name:''));
+  const person=list.find(p=>p.name===sel)||mine||null;
+  const direct=!!(person&&mine&&person.name===mine.name&&fbAuth&&fbUser);
+  const [hand,setHand]=useState('');
+  const [made,setMade]=useState(0);
+  const [busy,setBusy]=useState(false);
+  const make=async()=>{ if(!direct)return; setBusy(true); try{ const h=await hubMakeHandoff(); setHand(h||''); setMade(Date.now()); }finally{ setBusy(false); } };
+  useEffect(()=>{ setHand(''); if(direct) make(); },[direct,sel]);
+  useEffect(()=>{ if(!direct)return; const t=setInterval(make,25*60*1000); return()=>clearInterval(t); },[direct]);   // 印は30分で無効なので作り直す
+  const url=direct?(hand?hubMobileUrl()+'?hand='+encodeURIComponent(hand)+'&reg=1':''):(person&&person.email?hubMobileUrl()+'?inv=1&e='+encodeURIComponent(person.email):'');
+  return(
+    <div style={{textAlign:'center'}}>
+      {list.length>1&&(
+        <div style={{display:'flex',gap:6,justifyContent:'center',flexWrap:'wrap',marginBottom:10}}>
+          {list.map(p=><button key={p.name} onClick={()=>setSel(p.name)} style={{padding:'6px 12px',borderRadius:8,border:`2px solid ${sel===p.name?'#1d4ed8':'#e5e7eb'}`,background:sel===p.name?'#dbeafe':'white',color:sel===p.name?'#1e40af':'#475569',fontWeight:700,fontSize:12,cursor:'pointer'}}>{p.name}</button>)}
+        </div>
+      )}
+      {person&&<div style={{fontWeight:900,fontSize:15,color:'#1e293b',marginBottom:6}}>{person.name} さんのスマホ用</div>}
+      {direct
+        ?(url?<HubQr text={url} size={compact?180:220}/>:<div style={{padding:30,color:'#6b7280',fontSize:12}}>{busy?'QR を準備しています…':'QR を作れませんでした。もう一度お試しください。'}</div>)
+        :(url?<HubQr text={url} size={compact?180:220}/>:<div style={{padding:20,color:'#b45309',fontSize:12}}>この人のメールアドレスが登録に無いため QR を出せません。招待メールから登録してください。</div>)}
+      <div style={{fontSize:12,color:'#475569',lineHeight:1.8,marginTop:10,textAlign:'left',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:10,padding:'10px 12px'}}>
+        <b>スマホでの手順</b><br/>
+        ① スマホのカメラでこの QR を読む → 出てきたリンクを開く（<b>Safari／Chrome で</b>）<br/>
+        {direct
+          ?<>② 名前が出たら「自分専用」を選ぶ → 登録完了（<b>コード入力は不要</b>）<br/></>
+          :<>② メールアドレスが入った登録画面が出るので、<b>招待コード（6桁）</b>を入れる<br/></>}
+        ③ 「ホーム画面に追加」（iPhone：共有ボタン □↑ → ホーム画面に追加／Android：⋮ → ホーム画面に追加）<br/>
+        ④ 次からはホーム画面のアイコンから開くだけ
+      </div>
+      {direct&&<div style={{fontSize:11,color:'#94a3b8',marginTop:6}}>この QR は表示から30分で無効になります（自動で作り直します）。{hand&&<button onClick={make} disabled={busy} style={{marginLeft:6,padding:'2px 8px',borderRadius:6,border:'1px solid #cbd5e1',background:'white',fontSize:11,cursor:'pointer'}}>作り直す</button>}</div>}
+    </div>
+  );
+};
+const PhoneQrModal=({people,onClose})=>(
+  <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.55)',zIndex:2147483000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:16,width:'min(460px,96vw)',maxHeight:'92vh',overflowY:'auto',padding:'18px 18px 16px',boxShadow:'0 24px 80px rgba(0,0,0,.4)'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+        <div style={{fontWeight:900,fontSize:16,color:'#1e293b'}}>📱 スマホを登録（QR コード）</div>
+        <button onClick={onClose} style={{border:'none',background:'#f1f5f9',borderRadius:8,width:32,height:32,fontSize:16,cursor:'pointer'}}>✕</button>
+      </div>
+      <PhoneQrPanel people={people}/>
+    </div>
+  </div>
+);
+
 const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
   // 流れ：email（アドレスを入れる）→ sent（メールを送った）→ ［メールのリンクを開く＝この画面が開き直る］→ signing（確認中）
   //       → kind / plan / label（端末の種類）→ done。招待メールのリンクから開いた時は signing から始まる。
@@ -4238,6 +4302,7 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
   const [kind,setKind]=useState(hubKind());
   const [busy,setBusy]=useState(false);
   const [hand,setHand]=useState('');            // 登録直後に作る引き継ぎの印（スマホ）
+  const [phoneQr,setPhoneQr]=useState('ask');   // PC で登録完了 → 'ask'（スマホも登録しますか？）｜'show'（QR）｜'no'
   const [err,setErr]=useState('');
   const [who,setWho]=useState(null);
   const [pend,setPend]=useState(null);
@@ -4547,7 +4612,22 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
                 </button>
               </div>
             )}
-            <button style={hubIsPhone()?SUB:BTN(true)} onClick={()=>onDone&&onDone(who)}>{hubIsPhone()?'このままPC版を使う':'はじめる →'}</button>
+            {!hubIsPhone()&&phoneQr==='ask'&&(
+              <div style={{marginTop:12,padding:'12px 13px',background:'#eef2ff',border:'2px solid #c7d2fe',borderRadius:10}}>
+                <div style={{fontWeight:800,fontSize:13.5,color:'#3730a3'}}>📱 スマホも登録しますか？</div>
+                <div style={{fontSize:12,color:'#4338ca',lineHeight:1.7,marginTop:4}}>QR コードをスマホのカメラで読むだけで、コードを入れずに登録できます（あとからでもログイン画面の「スマホを登録」で出せます）。</div>
+                <div style={{display:'flex',gap:8,marginTop:10}}>
+                  <button style={{...BTN(true),flex:2}} onClick={()=>setPhoneQr('show')}>はい（QR を表示）</button>
+                  <button style={{...SUB,flex:1}} onClick={()=>setPhoneQr('no')}>あとで</button>
+                </div>
+              </div>
+            )}
+            {!hubIsPhone()&&phoneQr==='show'&&(
+              <div style={{marginTop:12,padding:'12px 10px',background:'#eef2ff',border:'2px solid #c7d2fe',borderRadius:10}}>
+                <PhoneQrPanel compact people={who?[{name:who.name,email:(fbUser&&fbUser.email)||who.email||''}]:[]}/>
+              </div>
+            )}
+            <button style={hubIsPhone()?SUB:BTN(true)} onClick={()=>onDone&&onDone(who)}>{hubIsPhone()?'このままPC版を使う':(phoneQr==='show'?'スマホの登録が済んだら → はじめる':'はじめる →')}</button>
           </div>
         )}
       </div>
@@ -4555,7 +4635,7 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS})=>{
   );
 };
 
-const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop,onAddAuth,deviceName,deviceStore,authOn,onMakeOwn})=>{
+const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop,onAddAuth,deviceName,deviceStore,authOn,onMakeOwn,onPhoneQr})=>{
   const [sel,setSel]=useState(null);
   // タイムアウト後（initialDesktopあり）はすぐスタッフ選択画面を表示
   const [deskSel,setDeskSel]=useState(()=>{
@@ -4740,6 +4820,12 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
           </div>
         )}
         <div style={{display:'flex',gap:8}}>
+          {onPhoneQr&&(
+            <button onClick={onPhoneQr}
+              style={{flex:1,padding:'10px 12px',background:'#eef2ff',border:'2px solid #a5b4fc',borderRadius:10,fontWeight:800,fontSize:13,color:'#3730a3',cursor:'pointer'}}>
+              📱 スマホを登録（QR）
+            </button>
+          )}
           <button onClick={onSettings}
             style={{flex:1,padding:'10px 18px',background:'#f8fafc',border:'2px solid #94a3b8',borderRadius:10,fontWeight:700,fontSize:13,color:'#475569',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:5,transition:'all 0.12s'}}
             onMouseEnter={e=>{e.currentTarget.style.background='#e2e8f0';}}
@@ -9148,6 +9234,7 @@ function AppInner() {
   // ── 本人認証：この端末に登録された人 ──
   const [authMine,setAuthMine]=useState(()=>hubLive(hubLoadMine()));
   const [showAuthAdd,setShowAuthAdd]=useState(!!HUB_INVITE_ID);   // 招待リンクから開いたら最初から登録画面
+  const [showPhoneQr,setShowPhoneQr]=useState(false);   // ログイン画面の「スマホを登録（QR）」（2026-09-22）
   // 引き継ぎの印（?hand=）つきで開いた：この保管場所に利用証が無ければ印を出して受け取る。
   // すでにある時は何もしない（URLの印はホーム画面に追加する時のために残す）。
   //   2026-09-18 から：Firebase のサインイン判定が出るまで（数百ミリ秒）も同じく何も描かない。判定が出たら
@@ -11597,6 +11684,7 @@ function AppInner() {
       <LoginScreen
         onLogin={u=>{hubUse(u.name);hubRenew(u.name);setCurrentUserPersist(u);setViewStore(u.store?.id||'honten');setView('schedule');setTimeout(()=>window.scrollTo({top:0,behavior:'instant'}),50);}}
         onAddAuth={_needEnrol?()=>setShowAuthAdd(true):null}
+        onPhoneQr={(fbAuth&&authMine.some(x=>!x.isDevice))?()=>setShowPhoneQr(true):null}
         deviceName={_devName} deviceStore={_devStore} authOn={AUTH_REQUIRED}
         onMakeOwn={(authMine.length===1&&!authMine[0].isDevice&&hubKind()!=='own')
           ?()=>{hubSetKind('own');setAuthAutoOff(false);refreshAuthMine();}:null}
@@ -11606,6 +11694,7 @@ function AppInner() {
         onRegister={()=>setShowStaffRegister(true)}
         onSettings={()=>setShowStaffSettings(true)}
         initialDesktop={_idleDesktop.current}/>
+      {showPhoneQr&&<PhoneQrModal people={authMine.filter(x=>!x.isDevice)} onClose={()=>setShowPhoneQr(false)}/>}
       <StaffRegisterModal
         isOpen={showStaffRegister}
         onClose={()=>setShowStaffRegister(false)}

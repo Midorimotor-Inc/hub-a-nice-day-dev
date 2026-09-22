@@ -91,8 +91,32 @@ const SEED = {
     const dev = await page.evaluate(() => window.__fakeFb.docs('devices'));
     t('台帳に端末の行が1つ書かれる（名前・種類・環境）', dev.length === 1 && dev[0].data.names.join() === '竹林直行' && dev[0].data.k === 'own' && dev[0].data.env === 'hub-v8-dev-', dev);
     t('サインインしている', (await page.evaluate(() => window.__fakeFb.user())).email === 'tikurin@midori-m.com');
+    // PC の登録完了 → 「スマホも登録しますか？」→ QR（2026-09-22）
+    t('PC：登録完了に「スマホも登録しますか？」が出る', await seeText(page, 'スマホも登録しますか', 5000));
+    await clickText(page, 'はい（QR を表示）');
+    t('PC：QR（または代替 URL）と手順が出る', await page.waitForFunction(() => document.querySelector('svg') || document.body.innerText.includes('この URL をスマホで開いてください'), null, { timeout: 15000 }).then(() => true).catch(() => false) && (await bodyText(page)).includes('コード入力は不要'));
+    const qrHands = await page.evaluate(() => window.__fakeFb.docs('handoff'));
+    t('PC：QR 用の引き継ぎの印がサーバーにできる（本人・期限内）', qrHands.length >= 1 && qrHands.every(h => h.data.email === 'tikurin@midori-m.com' && h.data.exp > Date.now()), qrHands.length);
+    const qrHandId = qrHands[qrHands.length - 1].id;
     await clickText(page, 'はじめる');
     t('登録後に自動ログインしてスケジュールが出る', await seeText(page, '前村', 20000), await bodyText(page).then(x => x.slice(0, 200)));
+    // スマホ側：QR のリンク（mobile.html?hand=…&reg=1）を新しい端末で開く → コード無しで登録の流れ → 自分の端末として登録される
+    {
+      const st = await page.evaluate(() => localStorage.getItem('__fakeFbStore'));
+      const ctxQ = await browser.newContext({ viewport: { width: 400, height: 850 }, isMobile: true, hasTouch: true, userAgent: IPHONE_UA });
+      await ctxQ.addInitScript(x => { if (!localStorage.getItem('__fakeFbStore')) localStorage.setItem('__fakeFbStore', x); }, st);
+      await ctxQ.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: route.request().url().indexOf('firebase-app-compat') >= 0 ? FAKE_FB : '' }));
+      await ctxQ.route('https://script.google.com/**', route => route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: 'null' }));
+      const pq = await ctxQ.newPage(); const errsQ = watch(pq);
+      await pq.goto(U('mobile.html?hand=' + qrHandId + '&reg=1'), { waitUntil: 'domcontentloaded' });
+      t('QR：スマホでコードを入れずに登録が完了する（竹林直行 さん）', await seeText(pq, '竹林直行 さん', 30000), await bodyText(pq).then(x => x.slice(0, 300)));
+      t('QR：自分専用として登録され、ホーム画面に追加の案内が出る', (await bodyText(pq)).includes('自分専用') && (await bodyText(pq)).includes('ホーム画面に追加'));
+      const devQ = await pq.evaluate(() => window.__fakeFb.docs('devices'));
+      t('QR：台帳にスマホの行が別に増える（PC の行とは別の端末ID）', devQ.length === 2 && devQ.every(d => d.data.names.join() === '竹林直行'), devQ.map(d => d.id));
+      t('QR：URL の reg= は消え、ホーム画面に追加用の新しい ?hand= に置き換わる', !/reg=/.test(pq.url()) && /hand=/.test(pq.url()) && pq.url().indexOf(qrHandId) < 0, pq.url());
+      t('QR：JSエラーなし', errsQ.length === 0, errsQ.slice(0, 3));
+      await ctxQ.close();
+    }
     t('JSエラーなし', errs.length === 0, errs.slice(0, 3));
     // ── 2. 開き直しても登録が残る ──
     await page.goto(U('index_dev.html'), { waitUntil: 'domcontentloaded' });
