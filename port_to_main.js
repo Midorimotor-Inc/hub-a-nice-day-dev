@@ -23,7 +23,7 @@ const INDEX_RULES = [
   // 2026-09-18：本番も Firestore＋Firebase Auth（BACKEND='firebase'・AUTH_REQUIRED=true）。変換ルールは無し。
   //   本番のデータは fb_migrate.js --prod --write で写してから移植する（GAS 側はその時点で控えになる）。
   // タイトル
-  ['<title>Hub a Nice Day v1.0 [テスト版]</title>', '<title>Hub a Nice Day v1.0</title>', 1],
+  ['<title>Hub a Nice Day [テスト版]</title>', '<title>Hub a Nice Day</title>', 1],
   // 環境識別の配色: 全体背景・ログイン画面（オレンジ→青）
   ['linear-gradient(140deg,#7c2d12,#EA580C,#f97316)', 'linear-gradient(140deg,#1e3a8a,#1d4ed8,#2563eb)', 3],
   // ヘッダー背景（オレンジ単色→青グラデーション）
