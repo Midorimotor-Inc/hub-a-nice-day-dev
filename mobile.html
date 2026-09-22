@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1790035323464';
+  window.__APP_BUILD='build-1790036944415';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.71';
+const MOBILE_VERSION='2.72';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -2856,14 +2856,26 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
   const selOffs=selDk?(offs[selDk]||[]):[], selLeaves=selDk?(leaves[selDk]||[]):[];
   const selWorking=selClosed?[]:staff.filter(s=>!selOffs.includes(s.name)&&!selLeaves.includes(s.name));
   const myState=selDk?(selOffs.includes(target)?'dayoff':selLeaves.includes(target)?'leave':''):'';
-  const tap=async(type)=>{
+  // 休日・有給はチップで選んでから「確定」で保存する（2026-09-22 ユーザー要望：タップ1つで確定すると誤操作しやすい）
+  const [pend,setPend]=useState(null);   // {dk, type:'dayoff'|'leave'|''} 未確定の選択。'' は解除
+  useEffect(()=>{ setPend(null); },[selDay,cy,cm,store,target]);
+  const shown=(pend&&pend.dk===selDk)?pend.type:myState;   // チップに出す状態（未確定があればそれ）
+  const dirty=pend&&pend.dk===selDk&&pend.type!==myState;
+  const tap=(type)=>{
     if(!selDk||selClosed||busy||!canEditHere||!targetInStore)return;
+    const next=shown===type?'':type;   // もう一度押すと取り消し（解除の選択）
+    setPend({dk:selDk,type:next});
+  };
+  const cancelPend=()=>setPend(null);
+  const commit=async()=>{
+    if(!dirty||busy)return;
+    let type=pend.type||myState;   // onToggle は「その種類を付ける／外す」なので、外す時は今の種類を渡す
     // 今月の枠（会社の休日数＋繰越）を使い切っていたら、休日ではなく有給として入れる（2026-09-21 ユーザー決定）
-    if(type==='dayoff'&&myState!=='dayoff'&&carry&&carry.quota!=null&&carry.taken>=carry.quota){
+    if(pend.type==='dayoff'&&myState!=='dayoff'&&carry&&carry.quota!=null&&carry.taken>=carry.quota){
       type='leave'; setAutoLeaveMsg(`${cm+1}月の休日の枠（${carry.quota}日）を使い切っているので、${cm+1}/${selDay} は有給として入れました`);
     }
     setBusy(true);
-    try{ await onToggle(store,type,selDk,target); }finally{ setBusy(false); }
+    try{ await onToggle(store,type,selDk,target); setPend(null); }finally{ setBusy(false); }
   };
   const Chip=({on,color,bg,children,onClick,disabled})=>(
     <button onClick={onClick} disabled={disabled}
@@ -2980,10 +2992,17 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
             <div>
               <div style={{fontSize:11,color:'#64748b',marginBottom:5}}><b>{target}</b>{target===user.name?'（自分）':''}のこの日：</div>
               <div style={{display:'flex',gap:6}}>
-                <Chip on={myState==='dayoff'} color="#ea580c" bg="#fff7ed" disabled={busy} onClick={()=>tap('dayoff')}>🏖 休日{myState==='dayoff'?'（タップで解除）':''}</Chip>
-                <Chip on={myState==='leave'} color="#059669" bg="#d1fae5" disabled={busy} onClick={()=>tap('leave')}>📋 有給{myState==='leave'?'（タップで解除）':''}</Chip>
+                <Chip on={shown==='dayoff'} color="#ea580c" bg="#fff7ed" disabled={busy} onClick={()=>tap('dayoff')}>🏖 休日</Chip>
+                <Chip on={shown==='leave'} color="#059669" bg="#d1fae5" disabled={busy} onClick={()=>tap('leave')}>📋 有給</Chip>
               </div>
-              <div style={{fontSize:10,color:'#94a3b8',marginTop:6}}>タップした瞬間に確定し、PC のスタッフ休日カレンダーにもすぐ出ます。</div>
+              {dirty
+                ?<div style={{display:'flex',gap:6,marginTop:8}}>
+                  <button onClick={commit} disabled={busy} style={{flex:2,padding:'11px 8px',borderRadius:10,border:'none',background:'#1d4ed8',color:'white',fontWeight:900,fontSize:14,opacity:busy?.6:1}}>
+                    {busy?'保存中…':pend.type===''?`✅ 確定（${cm+1}/${selDay} の${myState==='leave'?'有給':'休日'}を解除）`:`✅ 確定（${cm+1}/${selDay} を${pend.type==='leave'?'有給':'休日'}に）`}
+                  </button>
+                  <button onClick={cancelPend} disabled={busy} style={{flex:1,padding:'11px 8px',borderRadius:10,border:'1px solid #cbd5e1',background:'white',color:'#475569',fontWeight:700,fontSize:13}}>やめる</button>
+                </div>
+                :<div style={{fontSize:10,color:'#94a3b8',marginTop:6}}>{myState?'もう一度押すと解除の選択になります。':'選んで'}「確定」を押すまで保存されません。確定すると PC のスタッフ休日カレンダーにもすぐ出ます。</div>}
               {autoLeaveMsg&&<div data-auto-leave style={{marginTop:6,fontSize:11,fontWeight:700,color:'#065f46',background:'#d1fae5',border:'1px solid #6ee7b7',borderRadius:8,padding:'6px 9px'}}>📋 {autoLeaveMsg}</div>}
               {myState&&(
                 <div style={{marginTop:8}}>
