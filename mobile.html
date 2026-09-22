@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1790056328395';
+  window.__APP_BUILD='build-1790068504369';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.76';
+const MOBILE_VERSION='2.77';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -987,7 +987,9 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS,viaHandoff})=>{
   const firstOnDevice=hubLive(hubLoadMine()).length===0||!!viaHandoff;
   const [step,setStep]=useState((linkOpen||(fbAuth&&firstOnDevice))?'signing':'email');
   const [email,setEmail]=useState(hubLinkEmailFromUrl());
-  const [code,setCode]=useState('');            // 招待コード（6桁）
+  // 招待 QR（管理者コンソール）から来た時は 6桁を URL から受け取って入れておく（2026-09-22・メールが届かない人のため）
+  const codeFromUrl=()=>{try{return (new URLSearchParams(location.search).get('code')||'').replace(/[^0-9]/g,'').slice(0,6);}catch(e){return '';}};
+  const [code,setCode]=useState(codeFromUrl());            // 招待コード（6桁）
   const [kind,setKind]=useState(hubKind());
   const [pend,setPend]=useState(null);
   const [needEmail,setNeedEmail]=useState(false);

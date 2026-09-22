@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Hub 管理者コンソール [テスト版]</title>
+<!-- 招待 QR（2026-09-22）。読めなくても URL の文字で代わりになる -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=Roboto+Mono:wght@400;500;700&display=swap">
@@ -218,7 +220,7 @@ td.act{text-align:right;white-space:nowrap}
 //  この画面を開けるのは、許可簿（Firestore の meta/allowed）で role=admin の人だけ。
 //  ログインは Firebase Authentication のメールリンク（2026-09-18〜）。判定は Firestore のルールが行う。画面の申告は信用しない。
 // =====================================================================
-var APP_VERSION = '2.76';
+var APP_VERSION = '2.77';
 var GAS_URL     = 'https://script.google.com/macros/s/AKfycbyNE1eVKjibSPLEA0HrVZI8NxEFKWQfMYQ6cKoM1Gznauy9AhfZqHzgs1zzMaxXnQ1_/exec';
 // 環境の切り替え（2026-09-15）。この1ファイルで本番とDEVの両方を扱う。
 //   既定はDEV（安全側）。URLに ?env=prod が付いている時だけ本番のデータを扱う。
@@ -411,6 +413,49 @@ function renderToast(){
   var el = document.getElementById('toastbox'); if (!el) return;
   el.innerHTML = S.toast ? '<div class="toast" role="status">' + esc(S.toast.msg)
     + (S.toast.sub ? '<small>' + esc(S.toast.sub) + '</small>' : '') + '</div>' : '';
+}
+// ── 招待 QR（2026-09-22）──
+//   メールが届かない人のために、アドレスと6桁を入れた登録 URL を QR にして画面に出す。
+//   本人のスマホのカメラで読む → 登録画面がアドレス・コード入りで開く → 「登録する」だけ。
+//   コード自体が入るので、画面を他の人に見せない／使い終わったら閉じること。
+function inviteQrUrl(email, code, forPhone){
+  var base = APP_URL_OF[STOR] || APP_URL_OF['hub-v8-'];
+  return base + (forPhone ? 'mobile.html' : '') + '?inv=1&e=' + encodeURIComponent(email) + '&code=' + encodeURIComponent(code);
+}
+function showInviteQr(name, email, code, isDevice){
+  var old = document.getElementById('qrwrap'); if (old) old.remove();
+  var url = inviteQrUrl(email, code, true);
+  var svg = '';
+  try { if (typeof qrcode === 'function') { var q = qrcode(0, 'M'); q.addData(url); q.make(); svg = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true }); } } catch (e) { svg = ''; }
+  var w = document.createElement('div');
+  w.id = 'qrwrap';
+  w.style.cssText = 'position:fixed;inset:0;background:rgba(27,33,41,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px';
+  w.innerHTML = '<div style="background:white;border-radius:14px;max-width:420px;width:100%;max-height:92vh;overflow:auto;padding:18px 18px 16px;box-shadow:0 26px 70px rgba(0,0,0,.35)">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
+    + '<b style="font-size:16px">📱 招待 QR（メールが届かない時）</b>'
+    + '<button id="qrclose" style="border:none;background:#eef1f5;border-radius:8px;width:32px;height:32px;font-size:16px;cursor:pointer">✕</button></div>'
+    + '<div style="font-weight:700;margin-bottom:6px">' + esc(name) + '<span style="color:#6b7280;font-weight:400;font-size:12px">（' + esc(email) + '）</span></div>'
+    + (svg ? '<div style="width:220px;height:220px;margin:0 auto;padding:6px;border:1px solid #e5e7eb;border-radius:10px">' + svg.replace('<svg ', '<svg style="width:100%;height:100%" ') + '</div>'
+           : '<div style="font-size:12px;color:#6b7280;word-break:break-all;border:1px dashed #cbd5e1;border-radius:8px;padding:8px">QR を描けません。この URL を開いてください：<br>' + esc(url) + '</div>')
+    + '<div style="text-align:center;margin:10px 0 4px"><span style="font-size:12px;color:#6b7280">招待コード</span><br>'
+    + '<b style="font-size:30px;letter-spacing:5px">' + esc(code) + '</b></div>'
+    + '<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.8">'
+    + '<b>本人のスマホで</b><br>① カメラでこの QR を読む → 出てきたリンクを開く（<b>Safari／Chrome で</b>）<br>'
+    + '② アドレスと6桁が入った状態で開くので「登録する」を押す<br>'
+    + (isDevice ? '③ 共有端末として登録され、担当者を選ぶだけで使えます' : '③ 「自分専用」を選ぶ → そのまま「ホーム画面に追加」')
+    + '</div>'
+    + '<div style="font-size:11px;color:#9aa3ad;margin-top:8px">コードが入った QR です。他の人に見せない／使い終わったら閉じてください。パソコンで登録する人には上の6桁を伝えてください。</div>'
+    + '<div style="display:flex;gap:8px;margin-top:12px">'
+    + '<button id="qrcopy" class="btn ghost" style="flex:1">URL をコピー</button>'
+    + '<button id="qrok" class="btn" style="flex:1">閉じる</button></div></div>';
+  document.body.appendChild(w);
+  var close = function(){ w.remove(); };
+  w.addEventListener('click', function(e){ if (e.target === w) close(); });
+  w.querySelector('#qrclose').onclick = close;
+  w.querySelector('#qrok').onclick = close;
+  w.querySelector('#qrcopy').onclick = function(){
+    try { navigator.clipboard.writeText(url).then(function(){ toast('URL をコピーしました', 'LINE などで本人に送れます（コードが入っています）'); }); } catch (e) {}
+  };
 }
 function toast(msg, sub){
   S.toast = {msg:msg, sub:sub||''}; renderToast();
@@ -1215,6 +1260,7 @@ function bind(){
         onOk: function(){
           inviteByCode(s.loginEmail, {name:s.name, store:s.store, uid:s.uid, kind:'staff'}).then(function(r){
             var t = inviteResult(r, s.name + ' さん（' + s.loginEmail + '）'); toast(t[0], t[1]);
+            if (r && r.ok && r.mode === 'code') showInviteQr(s.name, s.loginEmail, r.code, false);
           });
         }
       };
@@ -1364,6 +1410,7 @@ function bind(){
         onOk: function(){
           inviteByCode(d.mail, {name:d.name, store:d.store || 'honten', uid:'', kind:'device', label:d.name}).then(function(r){
             var t = inviteResult(r, d.name + '（' + d.mail + '）'); toast(t[0], t[1]);
+            if (r && r.ok && r.mode === 'code') showInviteQr(d.name, d.mail, r.code, true);
           });
         }
       };

@@ -221,6 +221,8 @@ const SEED = {
     await page.evaluate(() => { const b = document.querySelector('[data-invite]'); if (b) b.click(); });
     await page.evaluate(() => { const b = document.querySelector('[data-dlg="ok"]'); if (b) b.click(); });
     t('コード：招待コードが画面に出る', await seeText(page, '招待コード：', 10000), await bodyText(page).then(x => x.slice(0, 300)));
+    t('コード：招待 QR（アドレス＋6桁入りの登録 URL）が出る', await page.waitForFunction(() => { const w = document.getElementById('qrwrap'); return !!w && (!!w.querySelector('svg') || w.innerText.includes('この URL を開いてください')); }, null, { timeout: 10000 }).then(() => true).catch(() => false), await page.evaluate(() => { const w = document.getElementById('qrwrap'); return w ? w.innerText.slice(0, 160) : '(QR なし)'; }));
+    await page.evaluate(() => { const b = document.getElementById('qrok'); if (b) b.click(); });
     const code1 = await page.evaluate(() => window.__fakeFb.pwOf('tikurin@midori-m.com'));
     t('コード：アカウントの合言葉が6桁のコードになる', /^[0-9]{6}$/.test(code1), code1);
     t('コード：GAS にメール送信を頼む（アドレス・コード・環境）', ctx.gasMails.length === 1 && ctx.gasMails[0].email === 'tikurin@midori-m.com' && ctx.gasMails[0].code === code1 && ctx.gasMails[0].prefix === STOR, ctx.gasMails);
@@ -251,10 +253,9 @@ const SEED = {
     await c3.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: route.request().url().indexOf('firebase-app-compat') >= 0 ? FAKE_FB : '' }));
     await c3.route('https://script.google.com/**', route => route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'Access-Control-Allow-Origin': '*' }, body: 'null' }));
     const p3 = await c3.newPage(); const e3 = watch(p3);
-    await p3.goto(U('mobile.html'), { waitUntil: 'domcontentloaded' });
+    await p3.goto(U('mobile.html?inv=1&e=tikurin@midori-m.com&code=' + code1), { waitUntil: 'domcontentloaded' });   // 招待 QR から開いた形
     await seeText(p3, '招待コード', 20000);
-    await p3.fill('input[type=email]', 'tikurin@midori-m.com');
-    await p3.fill('input[inputmode=numeric]', code1);
+    t('QR：アドレスと6桁が最初から入っている（打ち込み不要）', await p3.evaluate(() => { const e = document.querySelector('input[type=email]'); const c = document.querySelector('input[inputmode=numeric]'); return !!e && !!c && e.value === 'tikurin@midori-m.com' && /^[0-9]{6}$/.test(c.value); }), await p3.evaluate(() => { const c = document.querySelector('input[inputmode=numeric]'); return c ? c.value : '(欄なし)'; }));
     await clickText(p3, '登録する');
     t('コード：スマホも同じコードで登録できる', await seeText(p3, '竹林直行', 30000), await bodyText(p3).then(x => x.slice(0, 300)));
     t('コード：台帳に2台目の行が増える', (await p3.evaluate(() => window.__fakeFb.docs('devices'))).filter(d => (d.data.names || []).includes('竹林直行')).length === 2);
