@@ -94,7 +94,7 @@ const signedInInit = ([k, me, stor]) => {
     t('休日タブがある', await openTab(page));
     t('タブを開くとスタッフ休日のカレンダーが出る', await seeText(page, 'スタッフ休日', 8000), await page.evaluate(() => document.body.innerText.slice(0, 300)));
     t('会社の今月の休日数が出る', await seeText(page, `会社の${M + 1}月の休日 9日`, 3000));
-    t('各日に出勤人数が出る（3人中、竹林が休みの日は出2）', await page.evaluate(() => document.body.innerText.includes('出2')) && await page.evaluate(() => document.body.innerText.includes('出3')));
+    t('各日に休みの人数だけ出る（竹林が休みの日は「休み1人」、誰も休まない日は何も出ない）', await page.evaluate(() => { const cells = [...document.querySelectorAll('div')].filter(e => e.style && e.style.cursor === 'pointer' && e.firstElementChild && /^\d+$/.test(e.firstElementChild.textContent)); return cells.some(c => c.textContent.includes('休み1人')) && !cells.some(c => /出\d/.test(c.textContent)); }));
     t(`${D1}日をタップすると休みの人と出勤人数が出る`, await tapDay(page, D1) && await seeText(page, '出勤 2人 / 3人', 3000) && (await page.evaluate(() => document.body.innerText)).includes('竹林直行'));
     // 他端末（PC）で入れた休日が届く（自分が書く前に。書いた後70秒は writeGuard で反映を止める設計のため）
     await page.evaluate(([k, dk]) => { const v = window.__fakeFb.get(k + 'honten-dayoff') || {}; v[dk] = ['見取大介']; window.__fakeFb.set(k + 'honten-dayoff', v); }, [STOR, DK2]);

@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1790041642198';
+  window.__APP_BUILD='build-1790046748396';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.73';
+const MOBILE_VERSION='2.74';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -3005,8 +3005,7 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
                     ?<div style={{textAlign:'center',marginTop:6}}><span style={{fontSize:10,fontWeight:900,color:'white',background:'#1d4ed8',borderRadius:5,padding:'1px 6px',whiteSpace:'nowrap'}}>{pendT==='dayoff'?'＋休日':pendT==='leave'?'＋有給':'解除'}</span></div>
                     :<div style={{textAlign:'center',marginTop:2,lineHeight:1.2}}>
                       {(meOff||meLeave)&&<div style={{fontSize:9,fontWeight:900,color:meOff?'#ea580c':'#059669'}}>{meOff?(carry&&carry.carried.includes(d)?'🏖繰越':'🏖休'):'📋有'}</div>}
-                      <div style={{fontSize:9,fontWeight:700,color:working<=Math.max(1,Math.floor(staff.length/2))?'#dc2626':'#64748b'}}>出{working}</div>
-                      {(o.length+l.length)>0&&<div style={{fontSize:8,color:'#94a3b8'}}>休{o.length+l.length}</div>}
+                      {(o.length+l.length)>0&&<div style={{fontSize:9,fontWeight:700,color:working<=Math.max(1,Math.floor(staff.length/2))?'#dc2626':'#64748b'}}>休み{o.length+l.length}人</div>}   {/* A案（2026-09-22）：休みの人数だけ。誰も休まない日は出さない。内訳は日をタップ。人手が半数以下なら赤 */}
                     </div>}
                 </div>
               );
