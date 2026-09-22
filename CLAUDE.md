@@ -64,7 +64,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - iPhone の Safari／ホーム画面の引き継ぎ（`?hand=`）は `handoff/{code}`（本人だけが読める `users/{uid}` の合言葉を使う）。
 - 端末内の登録一覧（名前を選ぶログイン画面）は従来どおり `STOR+'auth-mine'`。
 - **スマホの QR 登録（v2.76・2026-09-22）**：PC の登録完了画面「スマホも登録しますか？」とログイン画面「📱 スマホを登録（QR）」で、サインイン中の人の引き継ぎの印を `mobile.html?hand=…&reg=1` の QR にする（qrcode-generator@1.4.4・CDN 版固定）。mobile 側は `HUB_HANDOFF_REG` なら `hubSignInByHandoff`（サインインだけ・BLOCK-B の hubTakeHandoff は使わない）→ `AuthAddScreen viaHandoff` で通常の登録の流れ（自分専用／共有 → 完了 → ホーム画面に追加）。PC でサインインしていない人は招待 URL（`?inv=1&e=`・要コード）の QR。
-- **招待 QR（v2.77）**：管理者コンソールで「招待を送る」を押すと、アドレス＋6桁を入れた  の QR が出る（メールが届かない人向け。）。index/mobile は  パラメータを登録欄に入れておく。コードが入った QR なので画面を他人に見せない運用。
+- **招待 QR（v2.77）**：管理者コンソールで「招待を送る」を押すと、アドレス＋6桁を入れた `mobile.html?inv=1&e=…&code=…` の QR が出る（メールが届かない人向け。`showInviteQr`。URL コピーも可）。index/mobile は URL の `code` を登録欄に入れておく。コードが入った QR なので画面を他人に見せない運用。
 - ルールの配備はコンソールに貼る（Claude の自動モードでは `node fb_rules.js --deploy` がブロックされる）。文法確認だけなら Admin SDK の createRuleset で行える。
 
 ### 時点保存／復旧（Firestore・2026-09-19）
