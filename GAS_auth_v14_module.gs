@@ -628,7 +628,7 @@ function mailInvite_(email, code, prefix, name, kind) {
     if (devv) {
       MailApp.sendEmail(email, authMailHead_(prefix) + '共有端末「' + devv.name + '」の登録のご案内',
         '共有端末「' + devv.name + '」の登録手順です。\n\n' +
-        '▼ 招待コード（30日有効）\n    ' + code + '\n\n' +
+        '▼ 招待コード（次に招待し直すまで有効。2台目の端末も同じコードで登録できます）\n    ' + code + '\n\n' +
         '▼ 手順（その端末の前で）\n' +
         '1. ' + link + ' を開く\n' +
         '2. このアドレス（' + email + '）と上の6桁を入れて「登録する」\n\n' +
@@ -640,7 +640,7 @@ function mailInvite_(email, code, prefix, name, kind) {
     MailApp.sendEmail(email, authMailHead_(prefix) + 'ログインの登録をお願いします',
       staff.name + ' さん\n\n' +
       'Hub a Nice Day のログイン用アドレスとして、このアドレス（' + email + '）が登録されました。\n\n' +
-      '▼ 招待コード（30日有効）\n    ' + code + '\n\n' +
+      '▼ 招待コード（次に招待し直すまで有効。2台目の端末も同じコードで登録できます）\n    ' + code + '\n\n' +
       '▼ 使いはじめる手順\n' +
       '1. 使いたい端末で ' + link + ' を開く\n' +
       '2. このアドレスと上の6桁を入れて「登録する」で完了です\n\n' +

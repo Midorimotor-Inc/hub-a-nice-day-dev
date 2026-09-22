@@ -133,6 +133,11 @@ const SEED = {
     t('スマホ版：同じ人としてサインインしている', (await p2.evaluate(() => window.__fakeFb.user()) || {}).email === 'tikurin@midori-m.com');
     t('スマホ版：同じ端末IDを引き継ぐ（台帳に行が増えない）', (await p2.evaluate(k => localStorage.getItem(k), STOR + 'auth-devid')) === devId && (await p2.evaluate(() => window.__fakeFb.docs('devices'))).length === 1);
     t('スマホ版：「ホーム画面に追加」の案内が出る', await seeText(p2, 'ホーム画面', 8000));
+    // 後日、通常のブラウザで開き直しても（URL に ?hand= が無くても）引き継ぎの印が付き直る（2026-09-22・iPad でコードを再度求められた件）
+    await p2.goto(U('mobile.html'), { waitUntil: 'domcontentloaded' });
+    t('スマホ版：登録済みの通常ブラウザで開き直すと URL に新しい ?hand= が付く（いつ「ホーム画面に追加」しても引き継げる）', await p2.waitForFunction(() => /[?&]hand=/.test(location.search), null, { timeout: 15000 }).then(() => true).catch(() => false), await p2.evaluate(() => location.search));
+    const hands2 = await p2.evaluate(() => window.__fakeFb.docs('handoff'));
+    t('スマホ版：付け直した印はサーバーにあり期限内', hands2.length >= 2 && hands2.every(h => h.data.exp > Date.now()) && hands2.some(h => h.data.email === 'tikurin@midori-m.com'), hands2.length);
     t('スマホ：JSエラーなし', errs.length === 0 && errs2.length === 0, errs.concat(errs2).slice(0, 3));
     await ctx2.close(); await ctx.close();
   }

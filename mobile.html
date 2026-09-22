@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1790046748396';
+  window.__APP_BUILD='build-1790054692084';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.74';
+const MOBILE_VERSION='2.75';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -3315,6 +3315,22 @@ const App=()=>{
       setHandPending(false);
     })();
   },[handPending]);
+  // 通常のブラウザ（Safari など）で開いている間は、いつ「ホーム画面に追加」しても登録が引き継がれるように、
+  // 引き継ぎの印（?hand=）を URL に付けておき、25分ごとに作り直す（印は30分で無効）。2026-09-22：登録直後だけ付けていたので、
+  // 後日ホーム画面に追加すると別の保管場所になりコードをもう一度求められた（iPad で発生）。ホーム画面のアイコンから開いている時は不要
+  useEffect(()=>{
+    if(!fbAuth||handPending)return;
+    if(navigator.standalone||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches))return;
+    let stop=false;
+    const refresh=async()=>{
+      if(stop||!fbUser||!hubLive(hubLoadMine()).length)return;
+      const h=await hubMakeHandoff();
+      if(h&&!stop){ try{history.replaceState(null,'',location.pathname+'?hand='+encodeURIComponent(h)+location.hash);}catch(e){} }
+    };
+    if(!/[?&]hand=/.test(location.search)) refresh();
+    const timer=setInterval(refresh,25*60*1000);
+    return()=>{stop=true;clearInterval(timer);};
+  },[handPending,authMine.length]);
   // 自分でログアウトした直後は自動ログインを止める（止めないと即座に入り直す）
   const [authAutoOff,setAuthAutoOff]=useState(false);
   // 自分専用の端末（＝自分のスマホ）は、番号すら打たずに開いた瞬間その人として使える。
