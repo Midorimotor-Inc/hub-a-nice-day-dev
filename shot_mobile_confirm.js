@@ -44,8 +44,11 @@ const clickText = (page, s) => page.evaluate(x => { const b = [...document.query
   await seeText(page, '江川京志', 20000); await clickText(page, '江川京志'); await seeText(page, 'カレンダー', 20000);
   await page.evaluate(() => { const el = [...document.querySelectorAll('div')].filter(e => e.textContent === '🏖休日' || (e.textContent.includes('休日') && e.textContent.length < 6)).pop(); if (el) el.click(); });
   await seeText(page, 'スタッフ休日', 8000); await page.waitForTimeout(500);
-  await clickText(page, '🏖 休日'); await page.waitForTimeout(300);
-  const box = await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(e => e.innerText.includes('✅ 確定')); const r = b.getBoundingClientRect(); return { y: r.top }; });
-  await page.screenshot({ path: path.join(DIR, 'shot-mobile-confirm.png'), clip: { x: 0, y: Math.max(0, box.y - 150), width: 400, height: 260 } });
+  await clickText(page, '休日を入力する'); await page.waitForTimeout(300);
+  const tapDay = d => page.evaluate(d => { const c = [...document.querySelectorAll('div')].filter(e => e.style && e.style.cursor === 'pointer' && e.firstElementChild && e.firstElementChild.textContent === String(d))[0]; if (c) c.click(); }, d);
+  const dim = new Date(Y, M + 1, 0).getDate(); const picks = []; for (let d = 5; d <= dim && picks.length < 3; d++) { const w = new Date(Y, M, d).getDay(); if (w !== 2 && w !== 3) picks.push(d); }
+  for (const d of picks) { await tapDay(d); await page.waitForTimeout(150); }
+  const box = await page.evaluate(() => { const b = document.querySelector('[data-edit-bar]'); const r = b.getBoundingClientRect(); return { y: r.top }; });
+  await page.screenshot({ path: path.join(DIR, 'shot-mobile-confirm.png'), clip: { x: 0, y: Math.max(0, box.y - 6), width: 400, height: 520 } });
   await browser.close(); server.close(); console.log('ok');
 })();

@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1790036944415';
+  window.__APP_BUILD='build-1790041642198';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.72';
+const MOBILE_VERSION='2.73';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -2856,27 +2856,52 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
   const selOffs=selDk?(offs[selDk]||[]):[], selLeaves=selDk?(leaves[selDk]||[]):[];
   const selWorking=selClosed?[]:staff.filter(s=>!selOffs.includes(s.name)&&!selLeaves.includes(s.name));
   const myState=selDk?(selOffs.includes(target)?'dayoff':selLeaves.includes(target)?'leave':''):'';
-  // 休日・有給はチップで選んでから「確定」で保存する（2026-09-22 ユーザー要望：タップ1つで確定すると誤操作しやすい）
-  const [pend,setPend]=useState(null);   // {dk, type:'dayoff'|'leave'|''} 未確定の選択。'' は解除
-  useEffect(()=>{ setPend(null); },[selDay,cy,cm,store,target]);
-  const shown=(pend&&pend.dk===selDk)?pend.type:myState;   // チップに出す状態（未確定があればそれ）
-  const dirty=pend&&pend.dk===selDk&&pend.type!==myState;
-  const tap=(type)=>{
-    if(!selDk||selClosed||busy||!canEditHere||!targetInStore)return;
-    const next=shown===type?'':type;   // もう一度押すと取り消し（解除の選択）
-    setPend({dk:selDk,type:next});
+  // 休日・有給の入力は「入力モード」でまとめて（2026-09-22 ユーザー要望：タップ1つで確定は誤操作しやすい／1日ずつ確定は面倒）
+  //   ✏ 休日を入力する → 種類（休日／有給／解除）を選ぶ → 日をいくつでもタップ（もう一度で取り消し）→ ✅ 確定 で一括保存
+  const [editMode,setEditMode]=useState(false);
+  const [editType,setEditType]=useState('dayoff');          // 'dayoff' | 'leave' | 'clear'
+  const [pendDays,setPendDays]=useState({});                 // { dk: 'dayoff'|'leave'|'clear' } 未確定の選択（月をまたいでも保持）
+  useEffect(()=>{ setEditMode(false); setPendDays({}); },[store,target]);   // 店や人を変えたら選択はやめる
+  const pendCount=Object.keys(pendDays).length;
+  const stateOf=(dk)=>((offs[dk]||[]).includes(target)?'dayoff':(leaves[dk]||[]).includes(target)?'leave':'');
+  const togglePend=(dk)=>{
+    setPendDays(p=>{const n={...p}; if(n[dk])delete n[dk]; else n[dk]=editType; return n;});
   };
-  const cancelPend=()=>setPend(null);
+  const startEdit=()=>{ if(!canEditHere||!targetInStore)return; setEditMode(true); setPendDays({}); setEditType('dayoff'); };
+  const cancelEdit=()=>{ setEditMode(false); setPendDays({}); };
   const commit=async()=>{
-    if(!dirty||busy)return;
-    let type=pend.type||myState;   // onToggle は「その種類を付ける／外す」なので、外す時は今の種類を渡す
-    // 今月の枠（会社の休日数＋繰越）を使い切っていたら、休日ではなく有給として入れる（2026-09-21 ユーザー決定）
-    if(pend.type==='dayoff'&&myState!=='dayoff'&&carry&&carry.quota!=null&&carry.taken>=carry.quota){
-      type='leave'; setAutoLeaveMsg(`${cm+1}月の休日の枠（${carry.quota}日）を使い切っているので、${cm+1}/${selDay} は有給として入れました`);
-    }
+    if(!pendCount||busy)return;
     setBusy(true);
-    try{ await onToggle(store,type,selDk,target); setPend(null); }finally{ setBusy(false); }
+    let saved=0, auto=[];
+    try{
+      // 月ごとに「今月の枠（会社の休日数＋繰越）」を見ながら、日付順に保存する。枠を使い切ったら休日は有給として入れる（2026-09-21 ユーザー決定）
+      const dks=Object.keys(pendDays).sort((x,y)=>{const a=x.split('-').map(Number),b=y.split('-').map(Number);return a[0]-b[0]||a[1]-b[1]||a[2]-b[2];});
+      const takenBy={};   // 'y-m' → その月の取得数（店休日を含む）
+      for(const dk of dks){
+        const [y,m1,d]=dk.split('-').map(Number); const mk=y+'-'+m1;
+        const c=calcHolidayCarry(target,y,m1-1,offs,(yy,mm,dd)=>calIsClosed(new Date(yy,mm,dd),cDays,cDates,overrideOpen),monthlyHolidays);
+        if(takenBy[mk]==null)takenBy[mk]=c?c.taken:0;
+        const quota=c&&c.quota!=null?c.quota:null;
+        const cur=stateOf(dk), want=pendDays[dk];
+        if(want==='dayoff'){
+          if(cur==='dayoff')continue;
+          if(quota!=null&&takenBy[mk]>=quota){ await onToggle(store,'leave',dk,target); auto.push(m1+'/'+d); }
+          else { await onToggle(store,'dayoff',dk,target); takenBy[mk]++; }
+          saved++;
+        }else if(want==='leave'){
+          if(cur==='leave')continue;
+          if(cur==='dayoff')takenBy[mk]--;
+          await onToggle(store,'leave',dk,target); saved++;
+        }else{ // clear
+          if(cur==='dayoff'){ await onToggle(store,'dayoff',dk,target); takenBy[mk]--; saved++; }
+          else if(cur==='leave'){ await onToggle(store,'leave',dk,target); saved++; }
+        }
+      }
+      setAutoLeaveMsg(saved?`${saved}日を保存しました${auto.length?'。'+auto.join('・')+' は休日の枠を使い切っているので有給として入れました':''}`:'変更はありませんでした');
+      setEditMode(false); setPendDays({});
+    }finally{ setBusy(false); }
   };
+
   const Chip=({on,color,bg,children,onClick,disabled})=>(
     <button onClick={onClick} disabled={disabled}
       style={{flex:1,padding:'10px 6px',borderRadius:10,border:`2px solid ${on?color:'#e2e8f0'}`,background:on?bg:'white',color:on?color:'#64748b',fontWeight:on?900:600,fontSize:13,opacity:disabled?.5:1}}>
@@ -2927,6 +2952,30 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
           </select>
         </div>
       )}
+      {/* 休日の入力（入力モード）：まとめて選んで確定 */}
+      {canEditHere&&targetInStore&&(
+        editMode
+          ?<div data-edit-bar style={{margin:'8px 8px 0',padding:'8px 10px',background:'#eff6ff',border:'2px solid #93c5fd',borderRadius:12}}>
+            <div style={{fontSize:11,color:'#1e40af',fontWeight:700,marginBottom:6}}>✏ <b>{target}</b>{target===user.name?'（自分）':''}の休日を入力：種類を選んで、日をタップ（複数OK・もう一度で取り消し）</div>
+            <div style={{display:'flex',gap:6}}>
+              <Chip on={editType==='dayoff'} color="#ea580c" bg="#fff7ed" disabled={busy} onClick={()=>setEditType('dayoff')}>🏖 休日</Chip>
+              <Chip on={editType==='leave'} color="#059669" bg="#d1fae5" disabled={busy} onClick={()=>setEditType('leave')}>📋 有給</Chip>
+              <Chip on={editType==='clear'} color="#475569" bg="#f1f5f9" disabled={busy} onClick={()=>setEditType('clear')}>✕ 解除</Chip>
+            </div>
+            <div style={{display:'flex',gap:6,marginTop:8}}>
+              <button onClick={commit} disabled={busy||!pendCount} style={{flex:2,padding:'11px 8px',borderRadius:10,border:'none',background:pendCount?'#1d4ed8':'#cbd5e1',color:'white',fontWeight:900,fontSize:14,opacity:busy?.6:1}}>
+                {busy?'保存中…':pendCount?`✅ 確定（${pendCount}日）`:'✅ 確定（日を選んでください）'}
+              </button>
+              <button onClick={cancelEdit} disabled={busy} style={{flex:1,padding:'11px 8px',borderRadius:10,border:'1px solid #cbd5e1',background:'white',color:'#475569',fontWeight:700,fontSize:13}}>やめる</button>
+            </div>
+            <div style={{fontSize:10,color:'#64748b',marginTop:6}}>「確定」を押すまで保存されません。確定すると PC のスタッフ休日カレンダーにもすぐ出ます。</div>
+          </div>
+          :<div style={{margin:'8px 8px 0',display:'flex',gap:8,alignItems:'center'}}>
+            <button onClick={startEdit} style={{flex:1,padding:'10px 12px',borderRadius:10,border:'2px solid #f97316',background:'#fff7ed',color:'#c2410c',fontWeight:900,fontSize:13}}>✏ 休日を入力する（複数の日をまとめて）</button>
+          </div>
+      )}
+      {autoLeaveMsg&&<div data-auto-leave style={{margin:'6px 8px 0',fontSize:11,fontWeight:700,color:'#065f46',background:'#d1fae5',border:'1px solid #6ee7b7',borderRadius:8,padding:'6px 9px'}}>📋 {autoLeaveMsg}</div>}
+
       <div style={{padding:'8px 8px 4px'}}>
         <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:4}}>
           {DOW.map((d,i)=><div key={d} style={{textAlign:'center',fontSize:11,fontWeight:700,color:i===0?'#ef4444':i===6?'#3b82f6':'#64748b',padding:'4px 0'}}>{d}</div>)}
@@ -2943,14 +2992,17 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
               const o=offs[dk]||[],l=leaves[dk]||[];
               const meOff=o.includes(target),meLeave=l.includes(target);
               const working=closed?0:staff.filter(s=>!o.includes(s.name)&&!l.includes(s.name)).length;
+              const pendT=pendDays[dk];   // 未確定の選択
               const bg=closed?CLOSED_BG:meOff?'#fff7ed':meLeave?'#d1fae5':'white';
-              const bd=isSel?'2px solid #1d4ed8':meOff?'2px solid #f97316':meLeave?'2px solid #10b981':isToday?'2px solid #93c5fd':'2px solid #f1f5f9';
+              const bd=pendT?'2px dashed #1d4ed8':isSel?'2px solid #1d4ed8':meOff?'2px solid #f97316':meLeave?'2px solid #10b981':isToday?'2px solid #93c5fd':'2px solid #f1f5f9';
               return(
-                <div key={di} onClick={()=>{setSelDay(d);setMemoOpen(false);}}
-                  style={{borderRadius:10,background:bg,border:bd,boxShadow:closed?CLOSED_BAR:'none',minHeight:54,padding:'4px 2px',cursor:'pointer'}}>
+                <div key={di} onClick={()=>{setSelDay(d);setMemoOpen(false);if(editMode&&!closed&&!busy)togglePend(dk);}}
+                  style={{borderRadius:10,background:pendT?'#dbeafe':bg,border:bd,boxShadow:closed?CLOSED_BAR:'none',minHeight:54,padding:'4px 2px',cursor:'pointer',position:'relative'}}>
                   <div style={{textAlign:'center',fontWeight:800,fontSize:14,color:isToday?'#1e40af':closed?CLOSED_FG:isSun||isHol?'#ef4444':isSat?'#3b82f6':'#1e293b'}}>{d}</div>
                   {closed
                     ?<div style={{textAlign:'center',fontSize:11,color:CLOSED_FG,fontWeight:900,marginTop:4}}>{CLOSED_LABEL}</div>
+                    :pendT
+                    ?<div style={{textAlign:'center',marginTop:6}}><span style={{fontSize:10,fontWeight:900,color:'white',background:'#1d4ed8',borderRadius:5,padding:'1px 6px',whiteSpace:'nowrap'}}>{pendT==='dayoff'?'＋休日':pendT==='leave'?'＋有給':'解除'}</span></div>
                     :<div style={{textAlign:'center',marginTop:2,lineHeight:1.2}}>
                       {(meOff||meLeave)&&<div style={{fontSize:9,fontWeight:900,color:meOff?'#ea580c':'#059669'}}>{meOff?(carry&&carry.carried.includes(d)?'🏖繰越':'🏖休'):'📋有'}</div>}
                       <div style={{fontSize:9,fontWeight:700,color:working<=Math.max(1,Math.floor(staff.length/2))?'#dc2626':'#64748b'}}>出{working}</div>
@@ -2990,20 +3042,7 @@ const HolidayView=({user,vsId,adminMode,staffH,staffS,dayOffH,dayOffS,pleaveH,pl
           )}
           {!selClosed&&canEditHere&&targetInStore&&(
             <div>
-              <div style={{fontSize:11,color:'#64748b',marginBottom:5}}><b>{target}</b>{target===user.name?'（自分）':''}のこの日：</div>
-              <div style={{display:'flex',gap:6}}>
-                <Chip on={shown==='dayoff'} color="#ea580c" bg="#fff7ed" disabled={busy} onClick={()=>tap('dayoff')}>🏖 休日</Chip>
-                <Chip on={shown==='leave'} color="#059669" bg="#d1fae5" disabled={busy} onClick={()=>tap('leave')}>📋 有給</Chip>
-              </div>
-              {dirty
-                ?<div style={{display:'flex',gap:6,marginTop:8}}>
-                  <button onClick={commit} disabled={busy} style={{flex:2,padding:'11px 8px',borderRadius:10,border:'none',background:'#1d4ed8',color:'white',fontWeight:900,fontSize:14,opacity:busy?.6:1}}>
-                    {busy?'保存中…':pend.type===''?`✅ 確定（${cm+1}/${selDay} の${myState==='leave'?'有給':'休日'}を解除）`:`✅ 確定（${cm+1}/${selDay} を${pend.type==='leave'?'有給':'休日'}に）`}
-                  </button>
-                  <button onClick={cancelPend} disabled={busy} style={{flex:1,padding:'11px 8px',borderRadius:10,border:'1px solid #cbd5e1',background:'white',color:'#475569',fontWeight:700,fontSize:13}}>やめる</button>
-                </div>
-                :<div style={{fontSize:10,color:'#94a3b8',marginTop:6}}>{myState?'もう一度押すと解除の選択になります。':'選んで'}「確定」を押すまで保存されません。確定すると PC のスタッフ休日カレンダーにもすぐ出ます。</div>}
-              {autoLeaveMsg&&<div data-auto-leave style={{marginTop:6,fontSize:11,fontWeight:700,color:'#065f46',background:'#d1fae5',border:'1px solid #6ee7b7',borderRadius:8,padding:'6px 9px'}}>📋 {autoLeaveMsg}</div>}
+              {!editMode&&<div style={{fontSize:11,color:'#94a3b8',marginBottom:4}}>休日・有給の入力は上の「✏ 休日を入力する」から（複数の日をまとめて確定できます）。</div>}
               {myState&&(
                 <div style={{marginTop:8}}>
                   {memoOpen
