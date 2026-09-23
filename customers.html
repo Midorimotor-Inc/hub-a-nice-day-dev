@@ -20,7 +20,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1790123950906';
+  window.__APP_BUILD='build-1790125196536';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -141,7 +141,7 @@ const hubRenew = async name => {};
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.79'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.80'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -982,6 +982,17 @@ const pendDrop=pid=>pendSave(pendLoad().filter(p=>p.pid!==pid));
 // ═══════════════════════════════════════════
 // ユーティリティ
 // ═══════════════════════════════════════════
+// 年の無い日付（__MD__MM-DD）に年を入れる。基準はファイル名の年月（202610 など）。
+//   例：202610 のファイルで「9/25」→ 2026-09-25、「1/5」→ 2027-01-05
+const fixMD=(v,baseY,baseM)=>{
+  if(typeof v!=='string'||v.indexOf('__MD__')!==0)return v||'';
+  const [mm,dd]=v.slice(6).split('-').map(Number);
+  if(!mm||!dd)return '';
+  let y=baseY;
+  if(baseM&&mm-baseM>6)y--;         // 基準より半年以上あと → 前の年
+  if(baseM&&baseM-mm>6)y++;         // 基準より半年以上まえ → 次の年
+  return `${y}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+};
 const parseExcelDate=v=>{
   if(v===null||v===undefined||v==='')return'';
   // Dateオブジェクトの場合
@@ -1002,6 +1013,12 @@ const parseExcelDate=v=>{
   // MM/DD/YYYY形式
   m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
   if(m){const y=m[3].length===2?`20${m[3]}`:m[3];return`${y}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;}
+  // 和式（2026年9月25日 / 9月25日）
+  m=s.match(/^(?:(\d{4})年)?\s*(\d{1,2})月\s*(\d{1,2})日/);
+  if(m)return m[1]?`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`:`__MD__${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  // 年の無い「9/25」「9-25」…どの年かは呼び出し側（ファイル名の年月）で決める
+  m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})\s*(?:[（(][^)）]*[)）])?$/);
+  if(m)return `__MD__${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
   // JavaScriptのDate.toString()の場合（Mon Jun 01 2026...）
   const d2=new Date(s);
   if(!isNaN(d2.getTime())&&s.length>6){
@@ -1140,7 +1157,14 @@ const parseExcelFile=async(file)=>{
         const cBook1f=bookColsStr[0]??cBook1??-1;
         const cBook2f=bookColsStr[1]??cBook2??-1;
 
-        const cEntry  =fc('入庫日','車検日','入庫予定日','入庫予定','来店日');   // 2026-09-23：元ファイルの見出しが「車検日」等でも拾う
+        let cEntry  =fc('入庫日','車検日','入庫予定日','入庫予定','来店日');   // 2026-09-23：元ファイルの見出しが「車検日」等でも拾う
+        if(cEntry<0){   // 見出しの言い回しが違う時：「入庫」「車検」を含む列（店舗・満期は除く）のうち、日付が入っている最初の列
+          const cand=headers.map((h,i)=>({h:norm(h),i})).filter(x=>/入庫|車検/.test(x.h)&&!/店舗|満期|点検/.test(x.h));
+          for(const c of cand){
+            const hit=rows.slice(headerRow+1,headerRow+80).some(r=>r&&parseExcelDate(r[c.i]));
+            if(hit){cEntry=c.i;break;}
+          }
+        }
         const cTok    =fc('特典');
         const cCourse =fc('種類','コース');
         const cStore  =fc('入庫店舗','店舗');
@@ -1156,6 +1180,9 @@ const parseExcelFile=async(file)=>{
         };
 
         const fileName=file.name.replace(/\.[^.]+$/,'');
+        const _fm=fileName.match(/(20\d{2})[^0-9]?(\d{1,2})/);   // 202610 / 2026-10 など
+        const baseY=_fm?Number(_fm[1]):new Date().getFullYear(), baseM=_fm?Number(_fm[2]):0;
+        const pd=v=>fixMD(parseExcelDate(v),baseY,baseM);
         const customers=[];
 
         for(let i=headerRow+1;i<rows.length;i++){
@@ -1163,14 +1190,14 @@ const parseExcelFile=async(file)=>{
           const name=String(row[cName]||'').trim();
           if(!name||name.includes('合計')||name.includes('件数'))continue;
 
-          const expiry =parseExcelDate(row[cExpiry]);
+          const expiry =pd(row[cExpiry]);
           const no     =String(row[cNo]||'').trim();
           const carType=String(row[cCar>=0?cCar:0]||'').trim();
-          const dm1Date=parseExcelDate(row[cDm1D>=0?cDm1D:null]);
-          const dm1Book=parseExcelDate(row[cBook1f>=0?cBook1f:null]);
-          const dm2Date=parseExcelDate(row[cDm2D>=0?cDm2D:null]);
-          const dm2Book=parseExcelDate(row[cBook2f>=0?cBook2f:null]);
-          const entryDate=parseExcelDate(row[cEntry>=0?cEntry:null]);
+          const dm1Date=pd(row[cDm1D>=0?cDm1D:null]);
+          const dm1Book=pd(row[cBook1f>=0?cBook1f:null]);
+          const dm2Date=pd(row[cDm2D>=0?cDm2D:null]);
+          const dm2Book=pd(row[cBook2f>=0?cBook2f:null]);
+          const entryDate=pd(row[cEntry>=0?cEntry:null]);
           const tokRaw =(()=>{const v=row[cTok>=0?cTok:null];return isDateLike(v)?'':String(v||'').trim();})(); // 日付が紛れていたら特典なし
           const courseRaw=(cCourse>=0?String(row[cCourse]||''):'').trim();
           const storeRaw=String(row[cStore>=0?cStore:null]||'').trim();
@@ -1225,9 +1252,10 @@ const parseExcelFile=async(file)=>{
           });
         }
         const colName=i=>i>=0?headers[i]:'';
+        const sampleOf=i=>{if(i<0)return '';for(let r=headerRow+1;r<Math.min(rows.length,headerRow+200);r++){const v=rows[r]&&rows[r][i];if(v!==undefined&&v!==null&&String(v).trim()!=='')return String(v instanceof Date?v.toLocaleDateString('ja-JP'):v).slice(0,20);}return '';};
         const cnt=k=>customers.filter(c=>c[k]).length;
         resolve({name:fileName,customers,cols:{
-          entryHeader:colName(cEntry), entryCount:cnt('entryDate'),
+          entryHeader:colName(cEntry), entryCount:cnt('entryDate'), entrySample:sampleOf(cEntry), entryCol:cEntry,
           expiryHeader:colName(cExpiry), expiryCount:cnt('expiry'),
           phoneHeader:[colName(cPhoneHome),colName(cPhoneMobile)].filter(Boolean).join('・'),
           phoneCount:customers.filter(c=>c.phoneHome||c.phoneMobile).length,
@@ -2712,7 +2740,7 @@ const App=()=>{
         const c=r.cols||{};
         const line=nm=>(x,h)=>`${nm} ${x}件${h?`（列「${h}」）`:'（列が見つかりません）'}`;
         return `・「${r.name}」${r.customers.length}件\n`+
-          `    ${line('入庫日')(c.entryCount||0,c.entryHeader)}\n`+
+          `    ${line('入庫日')(c.entryCount||0,c.entryHeader)}${(!c.entryCount&&c.entrySample)?`　※ 値の例「${c.entrySample}」を日付として読めません`:''}\n`+
           `    ${line('満期')(c.expiryCount||0,c.expiryHeader)}\n`+
           `    ${line('電話')(c.phoneCount||0,c.phoneHeader)}\n`+
           `    ${line('住所')(c.addressCount||0,c.addressHeader)}`;
