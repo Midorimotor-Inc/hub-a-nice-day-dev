@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1790145502073';
+    window.__APP_BUILD='build-1790149038865';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -123,7 +123,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.82';
+const APP_VERSION = '2.83';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -6628,7 +6628,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
           <div style={{display:'grid',gridTemplateColumns:isInsp?'1fr 1.5fr':'1fr',gap:8}}>
             <div>
               <label style={LBL}>電話 <span style={{fontWeight:400,color:'#9ca3af',fontSize:10}}>任意</span></label>
-              <input value={form.phone||''} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="090-0000-0000" inputMode="tel" style={INP}/>
+              <input value={form.phone||''} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="090-0000-0000" style={INP}/>   {/* PC では inputMode=tel を付けない：次の備考欄に移った時に日本語入力（ひらがな）が解除されるため（2026-09-23） */}
             </div>
             {isInsp&&<div>
               <label style={LBL}>住所 <span style={{fontWeight:400,color:'#9ca3af',fontSize:10}}>任意</span></label>
@@ -6967,7 +6967,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
               onChange={e=>setForm({...form,[isInsp?'note':'content']:e.target.value})}
               onFocus={()=>setKbField('note')} onBlur={()=>setKbField('')}
               onKeyDown={e=>{if(e.key==='ArrowUp'&&e.target.selectionStart===0){e.preventDefault();goPrev('note');}}}              
-              rows={3} placeholder="メモや特記事項（クイックバッジはマウスで選択）" style={{...INP,resize:'vertical',minHeight:65,...KB('note')}}/>
+              rows={3} lang="ja" placeholder="メモや特記事項（クイックバッジはマウスで選択）" style={{...INP,resize:'vertical',minHeight:65,...KB('note')}}/>
           </div>
           {/* ボタン */}
           <div style={{display:'flex',flexDirection:'column',gap:8,paddingBottom:28}}>
