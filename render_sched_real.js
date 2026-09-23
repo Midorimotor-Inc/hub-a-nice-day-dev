@@ -47,6 +47,7 @@ const clickText = (page, s) => page.evaluate(x => { const b = [...document.query
   await seeText(page, '江川京志', 25000); await clickText(page, '江川京志'); await clickText(page, 'でログイン');
   await seeText(page, 'スケジュール', 25000);
   await page.waitForTimeout(2500);
+  if (process.env.RENDER_VIEW) { await page.evaluate(v => { const b = [...document.querySelectorAll('button')].find(e => e.innerText.includes(v) && e.offsetParent !== null); if (b) b.click(); }, process.env.RENDER_VIEW); await page.waitForTimeout(2000); }
   await page.screenshot({ path: path.join(DIR, OUT) });
   console.log('日付:', DK, '／ 画面の車検:', await page.evaluate(() => (document.body.innerText.match(/車検[^\n]*/) || [''])[0]));
   if (errs.length) console.log('JSエラー:', errs.slice(0, 2));

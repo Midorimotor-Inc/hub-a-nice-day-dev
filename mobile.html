@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1790150546602';
+  window.__APP_BUILD='build-1790153350257';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.85';
+const MOBILE_VERSION='2.86';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -169,6 +169,24 @@ const WORKS=[
   {id:'M6',name:'メンパ6ヶ月点検'},{id:'N1',name:'新車1ヶ月点検'},{id:'N6',name:'新車6ヶ月点検'},
   {id:'B',name:'鈑金塗装'},{id:'R',name:'リコール'},{id:'商',name:'商談'},{id:'保',name:'保険'},{id:'試',name:'試乗'},{id:'納',name:'納車'},{id:'他',name:'その他'}
 ];
+// ── 車体色（2026-09-23 ユーザー要望）：代車管理・車両管理で色を目で分かるようにする ──
+//   車両には色の名前（color）と見本の色（colorHex）を持たせる。見本はここから選ぶか、自由に入れる。
+const CAR_COLORS=[
+  {name:'ホワイト',hex:'#ffffff'},{name:'パールホワイト',hex:'#f1f5f9'},{name:'シルバー',hex:'#c3c7cc'},
+  {name:'グレー',hex:'#8b9199'},{name:'ガンメタ',hex:'#4b5563'},{name:'ブラック',hex:'#1f2937'},
+  {name:'レッド',hex:'#dc2626'},{name:'ワインレッド',hex:'#7f1d1d'},{name:'オレンジ',hex:'#ea580c'},
+  {name:'イエロー',hex:'#eab308'},{name:'ベージュ',hex:'#e2cfa8'},{name:'ブラウン',hex:'#92400e'},
+  {name:'グリーン',hex:'#16a34a'},{name:'カーキ',hex:'#6b7f3a'},{name:'ライトブルー',hex:'#7dd3fc'},
+  {name:'オフブルー',hex:'#5b8ca8'},{name:'ブルー',hex:'#2563eb'},{name:'ネイビー',hex:'#1e3a8a'},
+  {name:'パープル',hex:'#7c3aed'},{name:'ピンク',hex:'#ec4899'},
+];
+const carColorHex=(c)=>{ if(!c)return ''; const s=String(c).trim();
+  if(/^#[0-9a-fA-F]{3,8}$/.test(s))return s;
+  const f=CAR_COLORS.find(x=>s.includes(x.name)); return f?f.hex:''; };
+// 色の四角（エクセルの塗りつぶしのように、ぱっと見で分かるように）
+const CarColorChip=({hex,label,size})=>{ const h=hex||''; if(!h)return null; const z=size||12;
+  return <span title={label||''} style={{display:'inline-block',width:z,height:z,borderRadius:3,background:h,
+    border:'1px solid rgba(0,0,0,.35)',boxShadow:'inset 0 0 0 1px rgba(255,255,255,.35)',flexShrink:0,verticalAlign:'middle'}}/>; };
 const SHIMIS=[{id:'',name:'なし'},{id:'指',name:'指示書'},{id:'見',name:'見積'},{id:'両',name:'両方'}];
 const TOKUENS=[{id:'①',name:'1ヶ月前予約'},{id:'②',name:'2ヶ月前予約'},{id:'-',name:'なし'}];
 const HOLIDAYS_2026=new Set(['2026-1-1','2026-1-12','2026-2-11','2026-2-23','2026-3-20','2026-4-29','2026-5-3','2026-5-4','2026-5-5','2026-7-20','2026-8-11','2026-9-21','2026-9-22','2026-9-23','2026-10-12','2026-11-3','2026-11-23','2026-12-23']);
@@ -2291,7 +2309,7 @@ const LoanerView=({loanerResH,loanerResS,rentalResData,rentalCars,loanerCarsH,lo
         <div key={car.id} style={{display:'flex',borderBottom:'1px solid #f1f5f9'}}>
           <div style={{width:80,minWidth:80,padding:'6px 7px',background:'#f8fafc',borderRight:'2px solid #e5e7eb',display:'flex',flexDirection:'column',justifyContent:'center',position:'sticky',left:0,zIndex:2}}>
             <div style={{fontWeight:700,fontSize:10,color:'#1e293b',lineHeight:1.3}}>{car.name}</div>
-            <div style={{fontSize:9,color:'#94a3b8'}}>{car.num}</div>
+            <div style={{fontSize:10,color:'#111827',fontWeight:800}}>{car.num}</div>
           </div>
           {dates.map(({y,m,d,num},di)=>{
             const r=getRes(res,car.id,num);

@@ -73,6 +73,7 @@ const signedInInit = ([k, me, stor]) => {
   await page.waitForTimeout(600);
   t('代車は本店・三田の2つのボタンが出る', await page.evaluate(() => { const b = [...document.querySelectorAll('button')].map(x => x.innerText); return b.some(x => x.includes('本店の代車に登録')) && b.some(x => x.includes('三田店の代車に登録')); }));
   await clickText(page, '本店の代車に登録');
+  t('代車管理に色の見本（colorHex）も入る', await page.evaluate(k => (window.__fakeFb.get(k + 'honten-cars') || []).some(c => c.num === '1234' && /^#/.test(c.colorHex || '')), STOR), await page.evaluate(k => window.__fakeFb.get(k + 'honten-cars'), STOR));
   t('honten-cars に入る（店の印つき）', await page.waitForFunction(k => { const v = window.__fakeFb.get(k + 'honten-cars') || []; return v.some(c => c.name === 'ワゴンRシルバー' && c.num === '1234' && c.store === 'honten'); }, STOR, { timeout: 10000 }).then(() => true).catch(() => false), await page.evaluate(k => window.__fakeFb.get(k + 'honten-cars'), STOR));
   t('もとからあった代車は消えない', await page.evaluate(k => (window.__fakeFb.get(k + 'honten-cars') || []).some(c => c.num === '8178'), STOR));
   t('JSエラーなし', errs.length === 0, errs.slice(0, 3));

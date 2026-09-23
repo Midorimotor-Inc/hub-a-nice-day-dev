@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1790150546602';
+    window.__APP_BUILD='build-1790153350257';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -123,7 +123,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.85';
+const APP_VERSION = '2.86';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -299,6 +299,24 @@ const STAFF = [...STAFF_HONTEN, ...STAFF_SANDA];
 // 作業項目バッジ（タイムスケジュール）: 略号スクエア＋名称。色は作業のカテゴリを表す
 // 整備・修理=シアン / 点検=インディゴ / 鈑金塗装=紫 / 営業=琥珀 / 納車=緑 / その他=グレー
 // （車検のコース色 マッハ赤・クイック青・レギュラー橙 とぶつからない配色）
+// ── 車体色（2026-09-23 ユーザー要望）：代車管理・車両管理で色を目で分かるようにする ──
+//   車両には色の名前（color）と見本の色（colorHex）を持たせる。見本はここから選ぶか、自由に入れる。
+const CAR_COLORS=[
+  {name:'ホワイト',hex:'#ffffff'},{name:'パールホワイト',hex:'#f1f5f9'},{name:'シルバー',hex:'#c3c7cc'},
+  {name:'グレー',hex:'#8b9199'},{name:'ガンメタ',hex:'#4b5563'},{name:'ブラック',hex:'#1f2937'},
+  {name:'レッド',hex:'#dc2626'},{name:'ワインレッド',hex:'#7f1d1d'},{name:'オレンジ',hex:'#ea580c'},
+  {name:'イエロー',hex:'#eab308'},{name:'ベージュ',hex:'#e2cfa8'},{name:'ブラウン',hex:'#92400e'},
+  {name:'グリーン',hex:'#16a34a'},{name:'カーキ',hex:'#6b7f3a'},{name:'ライトブルー',hex:'#7dd3fc'},
+  {name:'オフブルー',hex:'#5b8ca8'},{name:'ブルー',hex:'#2563eb'},{name:'ネイビー',hex:'#1e3a8a'},
+  {name:'パープル',hex:'#7c3aed'},{name:'ピンク',hex:'#ec4899'},
+];
+const carColorHex=(c)=>{ if(!c)return ''; const s=String(c).trim();
+  if(/^#[0-9a-fA-F]{3,8}$/.test(s))return s;
+  const f=CAR_COLORS.find(x=>s.includes(x.name)); return f?f.hex:''; };
+// 色の四角（エクセルの塗りつぶしのように、ぱっと見で分かるように）
+const CarColorChip=({hex,label,size})=>{ const h=hex||''; if(!h)return null; const z=size||12;
+  return <span title={label||''} style={{display:'inline-block',width:z,height:z,borderRadius:3,background:h,
+    border:'1px solid rgba(0,0,0,.35)',boxShadow:'inset 0 0 0 1px rgba(255,255,255,.35)',flexShrink:0,verticalAlign:'middle'}}/>; };
 const WORK_COLORS = {
   'Q':'#0891b2',
   '⑫':'#4f46e5','M12':'#4f46e5','M6':'#4f46e5','N1':'#4f46e5','N6':'#4f46e5',
@@ -1254,7 +1272,7 @@ const CustLoanerDatePicker = ({isOpen, onClose, initFrom, initTo, selectedId, lo
                 <tr key={car.id}>
                   <td style={{background:'#f0f9ff',border:'1px solid #bae6fd',padding:'4px 7px',fontWeight:600,fontSize:10,whiteSpace:'nowrap',position:'sticky',left:0,zIndex:5}}>
                     <div style={{fontWeight:700,color:'#0c4a6e'}}>{car.name}</div>
-                    <div style={{color:'#94a3b8',fontSize:9}}>{car.num}</div>
+                    <div style={{color:'#111827',fontSize:10,fontWeight:800}}>{car.num}</div>
                   </td>
                   {dateRange.map((d,i)=>{
                     const st=getCellState(car.id,d);
@@ -7293,8 +7311,8 @@ const TireEditModal=memo(({isOpen,onClose,allCarsH,allCarsS,rentalCars,tireData,
                 return(
                   <div key={car.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',marginBottom:5,background:'#f8fafc',borderRadius:8,border:'1px solid #e5e7eb'}}>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontWeight:700,fontSize:13,color:'#111827'}}>{car.name}</div>
-                      <div style={{fontSize:10,color:'#9ca3af'}}>{car.num||'—'}</div>
+                      <div style={{fontWeight:700,fontSize:13,color:'#111827',display:'flex',alignItems:'center',gap:5}}><CarColorChip hex={car.colorHex} label={car.colorHex?'車体色':''} size={13}/>{car.name}</div>
+                      <div style={{fontSize:11,color:'#111827',fontWeight:700}}>{car.num||'—'}</div>
                     </div>
                     <div style={{display:'flex',gap:5,flexShrink:0}}>
                       {TIRE_TYPES.map(t=>(
@@ -7356,8 +7374,8 @@ const RentalLocationModal=memo(({isOpen,onClose,rentalCars,locationData,onSave})
             return(
               <div key={car.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',marginBottom:6,background:'#f0fdf4',borderRadius:9,border:'1px solid #a7f3d0'}}>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:700,fontSize:13,color:'#065f46'}}>{car.name}</div>
-                  <div style={{fontSize:10,color:'#6b7280'}}>{car.num||'—'}</div>
+                  <div style={{fontWeight:700,fontSize:13,color:'#065f46',display:'flex',alignItems:'center',gap:5}}><CarColorChip hex={car.colorHex} label={car.colorHex?'車体色':''} size={13}/>{car.name}</div>
+                  <div style={{fontSize:11,color:'#111827',fontWeight:700}}>{car.num||'—'}</div>
                 </div>
                 <div style={{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap',justifyContent:'flex-end'}}>
                   {LOC_TYPES.map(t=>(
@@ -7416,11 +7434,12 @@ const VehicleView=memo(({vehicleData,setVehicleData,loanerH,loanerS,rentalList,o
     const at=list.findIndex(c=>String(c.num||'').trim()===num&&num);
     if(at>=0){
       if(!window.confirm(`同じナンバー（${num}）の車がすでにあります。\n「${list[at].name}」→「${name}」に更新しますか？`))return;
-      list[at]={...list[at],name,num};
+      list[at]={...list[at],name,num,colorHex:v.colorHex||carColorHex(v.color)||list[at].colorHex||''};
     }else{
       if(list.length>=20){alert('代車管理に入れられるのは20台までです。');return;}
       const id=(kind==='rental'?'r':kind==='honten'?'h':'s')+Date.now();
-      list.push(kind==='rental'?{id,name,num}:{id,name,num,store:kind});
+      const hex=v.colorHex||carColorHex(v.color)||'';
+      list.push(kind==='rental'?{id,name,num,colorHex:hex}:{id,name,num,store:kind,colorHex:hex});
     }
     (kind==='rental'?onSaveRental:kind==='honten'?onSaveLoanerH:onSaveLoanerS)(list);
     alert(`${kind==='rental'?'レンタカー':(kind==='honten'?'本店の代車':'三田店の代車')}に「${name}（${num}）」を${at>=0?'更新':'登録'}しました。\n代車管理の画面に出ます。`);
@@ -7494,6 +7513,7 @@ const VehicleView=memo(({vehicleData,setVehicleData,loanerH,loanerS,rentalList,o
       name:addForm.name.trim(),
       num:addForm.num.trim(),
       color:(addForm.color||'').trim(),
+      colorHex:addForm.colorHex||carColorHex(addForm.color)||'',
       category:addForm.category,
       regDate:addForm.regDate,
       note:addForm.note.trim(),
@@ -7623,7 +7643,16 @@ const VehicleView=memo(({vehicleData,setVehicleData,loanerH,loanerS,rentalList,o
               <div style={{fontWeight:700,fontSize:12,color:'#0369a1',marginBottom:8}}>＋ 車両を追加</div>
               <div style={{display:'flex',flexDirection:'column',gap:6}}>
                 <input value={addForm.name} onChange={e=>setAddForm(p=>({...p,name:e.target.value}))} placeholder="車両名 *" style={INP_S} onFocus={e=>e.target.style.borderColor='#0891b2'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
-                <input value={addForm.color||''} onChange={e=>setAddForm(p=>({...p,color:e.target.value}))} placeholder="色（例：オフブルー）" style={INP_S} onFocus={e=>e.target.style.borderColor='#0891b2'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <CarColorChip hex={addForm.colorHex||carColorHex(addForm.color)} label={addForm.color} size={18}/>
+                  <input value={addForm.color||''} onChange={e=>setAddForm(p=>({...p,color:e.target.value,colorHex:carColorHex(e.target.value)||p.colorHex||''}))} placeholder="色（例：オフブルー）" style={{...INP_S,flex:1}} onFocus={e=>e.target.style.borderColor='#0891b2'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
+                </div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:3}}>
+                  {CAR_COLORS.map(c=>(
+                    <button key={c.name} title={c.name} onClick={()=>setAddForm(p=>({...p,color:c.name,colorHex:c.hex}))}
+                      style={{width:20,height:20,borderRadius:4,background:c.hex,border:(addForm.colorHex||carColorHex(addForm.color))===c.hex?'3px solid #0891b2':'1px solid #cbd5e1',cursor:'pointer',padding:0}}/>
+                  ))}
+                </div>
                 <input value={addForm.num} onChange={e=>setAddForm(p=>({...p,num:e.target.value}))} placeholder="ナンバー" style={INP_S} onFocus={e=>e.target.style.borderColor='#0891b2'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                 <select value={addForm.category} onChange={e=>setAddForm(p=>({...p,category:e.target.value}))} style={{...INP_S,background:'white'}}>
                   {VEHICLE_CATS.map(c=><option key={c.id} value={c.id}>{c.icon}{c.label}</option>)}
@@ -7697,11 +7726,18 @@ const VehicleView=memo(({vehicleData,setVehicleData,loanerH,loanerS,rentalList,o
                       <div style={{display:'flex',flexDirection:'column',gap:6}}>
                         <input value={editVehicle.name} onChange={e=>setEditVehicle(p=>({...p,name:e.target.value}))} style={{...INP_S,fontSize:16,fontWeight:700}} onFocus={e=>e.target.style.borderColor='#c2410c'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                         <div style={{display:'flex',gap:6}}>
-                          <input value={editVehicle.color||''} onChange={e=>setEditVehicle(p=>({...p,color:e.target.value}))} placeholder="色" style={{...INP_S,flex:1}} onFocus={e=>e.target.style.borderColor='#c2410c'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
+                          <CarColorChip hex={editVehicle.colorHex||carColorHex(editVehicle.color)} label={editVehicle.color} size={18}/>
+                          <input value={editVehicle.color||''} onChange={e=>setEditVehicle(p=>({...p,color:e.target.value,colorHex:carColorHex(e.target.value)||p.colorHex||''}))} placeholder="色" style={{...INP_S,flex:1}} onFocus={e=>e.target.style.borderColor='#c2410c'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                           <input value={editVehicle.num} onChange={e=>setEditVehicle(p=>({...p,num:e.target.value}))} placeholder="ナンバー" style={{...INP_S,flex:1}} onFocus={e=>e.target.style.borderColor='#c2410c'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                           <select value={editVehicle.category} onChange={e=>setEditVehicle(p=>({...p,category:e.target.value}))} style={{...INP_S,flex:1,background:'white'}}>
                             {VEHICLE_CATS.map(c=><option key={c.id} value={c.id}>{c.icon}{c.label}</option>)}
                           </select>
+                        </div>
+                        <div style={{display:'flex',flexWrap:'wrap',gap:3}}>
+                          {CAR_COLORS.map(c=>(
+                            <button key={c.name} title={c.name} onClick={()=>setEditVehicle(p=>({...p,color:c.name,colorHex:c.hex}))}
+                              style={{width:20,height:20,borderRadius:4,background:c.hex,border:(editVehicle.colorHex||carColorHex(editVehicle.color))===c.hex?'3px solid #c2410c':'1px solid #cbd5e1',cursor:'pointer',padding:0}}/>
+                          ))}
                         </div>
                         <div style={{display:'flex',gap:6,alignItems:'center'}}>
                           <label style={{fontSize:11,color:'#374151',fontWeight:600,whiteSpace:'nowrap'}}>登録日</label>
@@ -7709,7 +7745,7 @@ const VehicleView=memo(({vehicleData,setVehicleData,loanerH,loanerS,rentalList,o
                         </div>
                         <textarea value={editVehicle.note||''} onChange={e=>setEditVehicle(p=>({...p,note:e.target.value}))} placeholder="メモ" rows={2} style={{...INP_S,resize:'vertical'}} onFocus={e=>e.target.style.borderColor='#c2410c'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                         <div style={{display:'flex',gap:6}}>
-                          <button onClick={()=>saveVehicleEdit(selVehicle.id,{name:editVehicle.name,num:editVehicle.num,color:editVehicle.color||'',category:editVehicle.category,regDate:editVehicle.regDate,note:editVehicle.note})} style={{flex:1,padding:'7px',background:'#c2410c',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>✓ 保存</button>
+                          <button onClick={()=>saveVehicleEdit(selVehicle.id,{name:editVehicle.name,num:editVehicle.num,color:editVehicle.color||'',colorHex:editVehicle.colorHex||carColorHex(editVehicle.color)||'',category:editVehicle.category,regDate:editVehicle.regDate,note:editVehicle.note})} style={{flex:1,padding:'7px',background:'#c2410c',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>✓ 保存</button>
                           <button onClick={()=>setEditVehicle(null)} style={{padding:'7px 12px',background:'#f3f4f6',border:'none',borderRadius:7,fontSize:11,cursor:'pointer'}}>キャンセル</button>
                         </div>
                       </div>
@@ -7718,7 +7754,7 @@ const VehicleView=memo(({vehicleData,setVehicleData,loanerH,loanerS,rentalList,o
                         <div style={{fontWeight:900,fontSize:18,color:'#1e293b'}}>{selVehicle.name}</div>
                         <div style={{display:'flex',gap:8,marginTop:3,flexWrap:'wrap',alignItems:'center'}}>
                           {selVehicle.num&&<span style={{fontSize:11,background:'#f1f5f9',padding:'1px 7px',borderRadius:5,color:'#374151'}}>{selVehicle.num}</span>}
-                          {selVehicle.color&&<span style={{fontSize:11,background:'#fff7ed',padding:'1px 7px',borderRadius:5,color:'#9a3412'}}>🎨 {selVehicle.color}</span>}
+                          {selVehicle.color&&<span style={{fontSize:11,background:'#fff7ed',padding:'1px 7px',borderRadius:5,color:'#9a3412',display:'inline-flex',alignItems:'center',gap:4}}><CarColorChip hex={selVehicle.colorHex||carColorHex(selVehicle.color)} label={selVehicle.color}/>{selVehicle.color}</span>}
                           <span style={{fontSize:11,background:cat?.color+'22',color:cat?.color,padding:'1px 7px',borderRadius:5,fontWeight:700}}>{cat?.icon}{cat?.label}</span>
                           {selVehicle.regDate&&<span style={{fontSize:11,color:'#6b7280'}}>登録日：{fmtDate(selVehicle.regDate)}</span>}
                           {selVehicle.fileName&&<span style={{fontSize:10,color:'#0891b2',background:'#e0f2fe',padding:'1px 6px',borderRadius:4}}>📄 {selVehicle.fileName}</span>}
@@ -8005,8 +8041,14 @@ const LoanerSettingsModal = memo(({isOpen, onClose, listH, listS, onSaveH, onSav
                 /* 表示モード */
                 <>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontWeight:700,fontSize:13,color:'#111827'}}>{car.name}</div>
-                    <div style={{fontSize:10,color:'#9ca3af'}}>{car.num||'—'}</div>
+                    <div style={{fontWeight:700,fontSize:13,color:'#111827',display:'flex',alignItems:'center',gap:5}}><CarColorChip hex={car.colorHex} label={car.colorHex?'車体色':''} size={13}/>{car.name}</div>
+                    <div style={{fontSize:11,color:'#111827',fontWeight:700}}>{car.num||'—'}</div>
+                  </div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:2,maxWidth:230,justifyContent:'flex-end'}}>
+                    {CAR_COLORS.map(c=>(
+                      <button key={c.name} title={c.name} onClick={()=>setItems(p=>p.map((x,idx)=>idx===i?{...x,colorHex:x.colorHex===c.hex?'':c.hex}:x))}
+                        style={{width:15,height:15,borderRadius:3,background:c.hex,border:car.colorHex===c.hex?'3px solid #c2410c':'1px solid #cbd5e1',cursor:'pointer',padding:0}}/>
+                    ))}
                   </div>
                   <button onClick={()=>startEdit(i)}
                     style={{padding:'4px 10px',background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:6,fontSize:11,fontWeight:700,color:'#c2410c',cursor:'pointer',flexShrink:0}}>編集</button>
@@ -8478,8 +8520,8 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
                         <div style={{display:'flex',alignItems:'center',gap:5}}>
                           {tireInfo&&<span title={tireInfo.label} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:22,height:18,borderRadius:4,background:tireInfo.bg,color:tireInfo.color,fontSize:9,fontWeight:900,flexShrink:0,letterSpacing:'-0.5px'}}>{tireInfo.icon}</span>}
                           <div>
-                            <div style={{fontWeight:700,color:'#7c2d12'}}>{car.name}</div>
-                            <div style={{color:'#9ca3af',fontSize:9}}>{car.num}</div>
+                            <div style={{fontWeight:700,color:'#7c2d12',display:'flex',alignItems:'center',gap:4}}><CarColorChip hex={car.colorHex} label={car.colorHex?'車体色':''} size={11}/>{car.name}</div>
+                            <div style={{color:'#111827',fontSize:10,fontWeight:800}}>{car.num}</div>
                           </div>
                         </div>
                       );
@@ -8821,7 +8863,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onDeleteRes,onRepla
                             {tireInfo&&<span title={tireInfo.label} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:22,height:16,borderRadius:3,background:tireInfo.bg,color:tireInfo.color,fontSize:9,fontWeight:900,flexShrink:0}}>{tireInfo.icon}</span>}
                             <div style={{minWidth:0,overflow:'hidden'}}>
                               <div style={{fontWeight:700,color:'#065f46',overflow:'hidden',textOverflow:'ellipsis'}}>{car.name}</div>
-                              <div style={{color:'#9ca3af',fontSize:9}}>{car.num}</div>
+                              <div style={{color:'#111827',fontSize:10,fontWeight:800}}>{car.num}</div>
                             </div>
                             {locId==='honten'&&<span title="本店" style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:18,height:18,borderRadius:3,background:'#2563eb',color:'white',fontSize:10,fontWeight:900,flexShrink:0,lineHeight:1}}>本</span>}
                             {locId==='sanda' &&<span title="三田店" style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:18,height:18,borderRadius:3,background:'#dc2626',color:'white',fontSize:10,fontWeight:900,flexShrink:0,lineHeight:1}}>三</span>}
