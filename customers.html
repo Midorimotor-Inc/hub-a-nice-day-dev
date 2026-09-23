@@ -20,7 +20,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1790125196536';
+  window.__APP_BUILD='build-1790126361514';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -141,7 +141,7 @@ const hubRenew = async name => {};
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.80'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.81'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -1163,6 +1163,18 @@ const parseExcelFile=async(file)=>{
           for(const c of cand){
             const hit=rows.slice(headerRow+1,headerRow+80).some(r=>r&&parseExcelDate(r[c.i]));
             if(hit){cEntry=c.i;break;}
+          }
+        }
+        // ★見出しが日付そのもの（DM表の形）で「入庫日」の文字が無いファイル対策（2026-09-23）。
+        //   投函①・予約①・投函②・予約② に使っていない日付列のうち、いちばん右で実際に日付が入っている列を入庫日とみなす。
+        //   （元ファイル 202608 では H=投函① I=予約① J=投函② K=予約② L=入庫日 の並び）
+        if(cEntry<0&&allDateCols.length>=1){
+          const used=new Set([cDm1D,cDm2D,cBook1f,cBook2f].filter(x=>x>=0));
+          const rest=allDateCols.filter(i=>!used.has(i));
+          for(let k=rest.length-1;k>=0;k--){
+            const i=rest[k];
+            const n=rows.slice(headerRow+1).filter(r=>r&&parseExcelDate(r[i])).length;
+            if(n>0){cEntry=i;break;}
           }
         }
         const cTok    =fc('特典');
