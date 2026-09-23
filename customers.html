@@ -20,7 +20,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1790068504369';
+  window.__APP_BUILD='build-1790122907984';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -141,7 +141,7 @@ const hubRenew = async name => {};
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.77'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.78'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -1124,7 +1124,7 @@ const parseExcelFile=async(file)=>{
         const cBook1f=bookColsStr[0]??cBook1??-1;
         const cBook2f=bookColsStr[1]??cBook2??-1;
 
-        const cEntry  =fc('入庫日');
+        const cEntry  =fc('入庫日','車検日','入庫予定日','入庫予定','来店日');   // 2026-09-23：元ファイルの見出しが「車検日」等でも拾う
         const cTok    =fc('特典');
         const cCourse =fc('種類','コース');
         const cStore  =fc('入庫店舗','店舗');
@@ -1208,7 +1208,16 @@ const parseExcelFile=async(file)=>{
             linkedInspDate:'',
           });
         }
-        resolve({name:fileName,customers});
+        const colName=i=>i>=0?headers[i]:'';
+        const cnt=k=>customers.filter(c=>c[k]).length;
+        resolve({name:fileName,customers,cols:{
+          entryHeader:colName(cEntry), entryCount:cnt('entryDate'),
+          expiryHeader:colName(cExpiry), expiryCount:cnt('expiry'),
+          phoneHeader:[colName(cPhoneHome),colName(cPhoneMobile)].filter(Boolean).join('・'),
+          phoneCount:customers.filter(c=>c.phoneHome||c.phoneMobile).length,
+          addressHeader:colName(cAddress), addressCount:cnt('address'),
+          headers:headers.filter(Boolean).join(' / '),
+        }});
       }catch(err){reject(err);}
     };
     reader.onerror=()=>reject(new Error('ファイル読み込みエラー'));
@@ -2643,7 +2652,7 @@ const App=()=>{
       results.forEach(r=>{
         const i=next.findIndex(f=>f.name===r.name);
         if(i>=0)next[i]=r;else next.push(r);
-        try{localStorage.setItem(STOR+'cf-'+safeName(r.name),JSON.stringify(r));}catch(_e){}
+        try{localStorage.setItem(STOR+'cf-'+safeName(r.name),JSON.stringify({name:r.name,customers:r.customers}));}catch(_e){}
       });
       filesRef.current=next;
       setFiles(next);
@@ -2659,8 +2668,20 @@ const App=()=>{
       const _bars=results.reduce((a,r)=>a+Math.ceil(r.customers.length/CHUNK_SIZE),0);
       const _writes=_bars+results.length+1;
       const _mins=Math.max(1,Math.ceil(_writes*25/60));
+      const _colReport=results.map(r=>{
+        const c=r.cols||{};
+        const line=nm=>(x,h)=>`${nm} ${x}件${h?`（列「${h}」）`:'（列が見つかりません）'}`;
+        return `・「${r.name}」${r.customers.length}件\n`+
+          `    ${line('入庫日')(c.entryCount||0,c.entryHeader)}\n`+
+          `    ${line('満期')(c.expiryCount||0,c.expiryHeader)}\n`+
+          `    ${line('電話')(c.phoneCount||0,c.phoneHeader)}\n`+
+          `    ${line('住所')(c.addressCount||0,c.addressHeader)}`;
+      }).join('\n');
+      const _missing=results.filter(r=>!(r.cols&&r.cols.entryHeader));
       if(!window.confirm(
         `${results.map(r=>`「${r.name}」${r.customers.length}件`).join('、')} を取り込みます。\n\n`+
+        `▼ 読めた内容（元ファイルの列）\n${_colReport}\n\n`+
+        (_missing.length?`⚠ ${_missing.map(r=>'「'+r.name+'」').join('')}に入庫日の列が見つかりません。元ファイルの見出し（入庫日・車検日など）をご確認ください。\n\n`:'')+
         `サーバーへの保存に【約${_mins}分】かかります（保存${_writes}回 × 15〜30秒）。\n`+
         `画面に「保存中」と残りが出ます。終わるまでこの画面を閉じたり再読み込みしないでください。\n\n`+
         `開始しますか？`)){
