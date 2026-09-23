@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1790149846690';
+    window.__APP_BUILD='build-1790150546602';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -123,7 +123,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.84';
+const APP_VERSION = '2.85';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -7400,12 +7400,36 @@ const VEHICLE_CATS=[
   {id:'other',   label:'その他', icon:'📋', color:'#6b7280'},
 ];
 
-const VehicleView=memo(({vehicleData,setVehicleData})=>{
+const VehicleView=memo(({vehicleData,setVehicleData,loanerH,loanerS,rentalList,onSaveLoanerH,onSaveLoanerS,onSaveRental})=>{
+  // ── 車両管理 → 代車管理へ登録（2026-09-23 ユーザー要望）──
+  //   車両管理で登録した「代車」「レンタカー」を、代車管理の一覧（車種＋色・ナンバー）に入れる。
+  //   ナンバーは「神戸582わ1741パール」のような書き方でも、最後の数字のかたまりを拾う。
+  const carNumOf=(v)=>{const m=String(v&&v.num||'').match(/(\d{1,4})(?!.*\d)/);return m?m[1]:String(v&&v.num||'').trim();};
+  const carNameOf=(v)=>[String(v&&v.name||'').trim(),String(v&&v.color||'').trim()].filter(Boolean).join('').trim();
+  const listOf=(kind)=>kind==='rental'?(rentalList||[]):(kind==='honten'?(loanerH||[]):(loanerS||[]));
+  const isRegistered=(v)=>{const n=carNumOf(v);if(!n)return '';
+    for(const k of ['rental','honten','sanda'])if(listOf(k).some(c=>String(c.num||'').trim()===n))return k;return '';};
+  const registerToLoaner=(v,kind)=>{
+    const name=carNameOf(v), num=carNumOf(v);
+    if(!name){alert('車種（車両名）を入れてください。');return;}
+    const list=listOf(kind).slice();
+    const at=list.findIndex(c=>String(c.num||'').trim()===num&&num);
+    if(at>=0){
+      if(!window.confirm(`同じナンバー（${num}）の車がすでにあります。\n「${list[at].name}」→「${name}」に更新しますか？`))return;
+      list[at]={...list[at],name,num};
+    }else{
+      if(list.length>=20){alert('代車管理に入れられるのは20台までです。');return;}
+      const id=(kind==='rental'?'r':kind==='honten'?'h':'s')+Date.now();
+      list.push(kind==='rental'?{id,name,num}:{id,name,num,store:kind});
+    }
+    (kind==='rental'?onSaveRental:kind==='honten'?onSaveLoanerH:onSaveLoanerS)(list);
+    alert(`${kind==='rental'?'レンタカー':(kind==='honten'?'本店の代車':'三田店の代車')}に「${name}（${num}）」を${at>=0?'更新':'登録'}しました。\n代車管理の画面に出ます。`);
+  };
   const [filterCat,setFilterCat]=useState('all');
   const [filterAlert,setFilterAlert]=useState(false);
   const [selId,setSelId]=useState(null); // 選択中の車両ID
   const [showAddVehicle,setShowAddVehicle]=useState(false);
-  const [addForm,setAddForm]=useState({name:'',num:'',category:'loaner',regDate:'',inspName:'',inspDays:'',note:''});
+  const [addForm,setAddForm]=useState({name:'',num:'',color:'',category:'loaner',regDate:'',inspName:'',inspDays:'',note:''});
   const [showAddInsp,setShowAddInsp]=useState(false);
   const [addInspForm,setAddInspForm]=useState({name:'',days:'',note:''});
   const fileInputRef=useRef(null);
@@ -7469,6 +7493,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
       id:'v_'+Date.now(),
       name:addForm.name.trim(),
       num:addForm.num.trim(),
+      color:(addForm.color||'').trim(),
       category:addForm.category,
       regDate:addForm.regDate,
       note:addForm.note.trim(),
@@ -7598,6 +7623,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
               <div style={{fontWeight:700,fontSize:12,color:'#0369a1',marginBottom:8}}>＋ 車両を追加</div>
               <div style={{display:'flex',flexDirection:'column',gap:6}}>
                 <input value={addForm.name} onChange={e=>setAddForm(p=>({...p,name:e.target.value}))} placeholder="車両名 *" style={INP_S} onFocus={e=>e.target.style.borderColor='#0891b2'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
+                <input value={addForm.color||''} onChange={e=>setAddForm(p=>({...p,color:e.target.value}))} placeholder="色（例：オフブルー）" style={INP_S} onFocus={e=>e.target.style.borderColor='#0891b2'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                 <input value={addForm.num} onChange={e=>setAddForm(p=>({...p,num:e.target.value}))} placeholder="ナンバー" style={INP_S} onFocus={e=>e.target.style.borderColor='#0891b2'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                 <select value={addForm.category} onChange={e=>setAddForm(p=>({...p,category:e.target.value}))} style={{...INP_S,background:'white'}}>
                   {VEHICLE_CATS.map(c=><option key={c.id} value={c.id}>{c.icon}{c.label}</option>)}
@@ -7671,6 +7697,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
                       <div style={{display:'flex',flexDirection:'column',gap:6}}>
                         <input value={editVehicle.name} onChange={e=>setEditVehicle(p=>({...p,name:e.target.value}))} style={{...INP_S,fontSize:16,fontWeight:700}} onFocus={e=>e.target.style.borderColor='#c2410c'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                         <div style={{display:'flex',gap:6}}>
+                          <input value={editVehicle.color||''} onChange={e=>setEditVehicle(p=>({...p,color:e.target.value}))} placeholder="色" style={{...INP_S,flex:1}} onFocus={e=>e.target.style.borderColor='#c2410c'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                           <input value={editVehicle.num} onChange={e=>setEditVehicle(p=>({...p,num:e.target.value}))} placeholder="ナンバー" style={{...INP_S,flex:1}} onFocus={e=>e.target.style.borderColor='#c2410c'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                           <select value={editVehicle.category} onChange={e=>setEditVehicle(p=>({...p,category:e.target.value}))} style={{...INP_S,flex:1,background:'white'}}>
                             {VEHICLE_CATS.map(c=><option key={c.id} value={c.id}>{c.icon}{c.label}</option>)}
@@ -7682,7 +7709,7 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
                         </div>
                         <textarea value={editVehicle.note||''} onChange={e=>setEditVehicle(p=>({...p,note:e.target.value}))} placeholder="メモ" rows={2} style={{...INP_S,resize:'vertical'}} onFocus={e=>e.target.style.borderColor='#c2410c'} onBlur={e=>e.target.style.borderColor='#e5e7eb'}/>
                         <div style={{display:'flex',gap:6}}>
-                          <button onClick={()=>saveVehicleEdit(selVehicle.id,{name:editVehicle.name,num:editVehicle.num,category:editVehicle.category,regDate:editVehicle.regDate,note:editVehicle.note})} style={{flex:1,padding:'7px',background:'#c2410c',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>✓ 保存</button>
+                          <button onClick={()=>saveVehicleEdit(selVehicle.id,{name:editVehicle.name,num:editVehicle.num,color:editVehicle.color||'',category:editVehicle.category,regDate:editVehicle.regDate,note:editVehicle.note})} style={{flex:1,padding:'7px',background:'#c2410c',color:'white',border:'none',borderRadius:7,fontWeight:700,fontSize:12,cursor:'pointer'}}>✓ 保存</button>
                           <button onClick={()=>setEditVehicle(null)} style={{padding:'7px 12px',background:'#f3f4f6',border:'none',borderRadius:7,fontSize:11,cursor:'pointer'}}>キャンセル</button>
                         </div>
                       </div>
@@ -7691,11 +7718,33 @@ const VehicleView=memo(({vehicleData,setVehicleData})=>{
                         <div style={{fontWeight:900,fontSize:18,color:'#1e293b'}}>{selVehicle.name}</div>
                         <div style={{display:'flex',gap:8,marginTop:3,flexWrap:'wrap',alignItems:'center'}}>
                           {selVehicle.num&&<span style={{fontSize:11,background:'#f1f5f9',padding:'1px 7px',borderRadius:5,color:'#374151'}}>{selVehicle.num}</span>}
+                          {selVehicle.color&&<span style={{fontSize:11,background:'#fff7ed',padding:'1px 7px',borderRadius:5,color:'#9a3412'}}>🎨 {selVehicle.color}</span>}
                           <span style={{fontSize:11,background:cat?.color+'22',color:cat?.color,padding:'1px 7px',borderRadius:5,fontWeight:700}}>{cat?.icon}{cat?.label}</span>
                           {selVehicle.regDate&&<span style={{fontSize:11,color:'#6b7280'}}>登録日：{fmtDate(selVehicle.regDate)}</span>}
                           {selVehicle.fileName&&<span style={{fontSize:10,color:'#0891b2',background:'#e0f2fe',padding:'1px 6px',borderRadius:4}}>📄 {selVehicle.fileName}</span>}
                         </div>
                         {selVehicle.note&&<div style={{marginTop:5,fontSize:12,color:'#6b7280'}}>📝 {selVehicle.note}</div>}
+                        {/* 代車管理へ登録（代車・レンタカーだけ） */}
+                        {(selVehicle.category==='loaner'||selVehicle.category==='rental')&&(()=>{
+                          const reg=isRegistered(selVehicle);
+                          const nm=carNameOf(selVehicle), nu=carNumOf(selVehicle);
+                          return(
+                            <div style={{marginTop:8,padding:'8px 10px',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:9}}>
+                              <div style={{fontSize:11,color:'#475569',marginBottom:6}}>
+                                代車管理に入れる内容：<b>{nm||'（車種を入れてください）'}</b>{nu?`（${nu}）`:'（ナンバーなし）'}
+                                {reg&&<span style={{marginLeft:6,color:'#059669',fontWeight:700}}>✔ {reg==='rental'?'レンタカー':reg==='honten'?'本店の代車':'三田店の代車'}に登録済み</span>}
+                              </div>
+                              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                                {selVehicle.category==='rental'
+                                  ?<button onClick={()=>registerToLoaner(selVehicle,'rental')} style={{padding:'6px 12px',background:'#ede9fe',border:'2px solid #c4b5fd',borderRadius:8,fontSize:12,fontWeight:700,color:'#6d28d9',cursor:'pointer'}}>🔑 レンタカーに登録</button>
+                                  :<>
+                                    <button onClick={()=>registerToLoaner(selVehicle,'honten')} style={{padding:'6px 12px',background:'#dbeafe',border:'2px solid #93c5fd',borderRadius:8,fontSize:12,fontWeight:700,color:'#1d4ed8',cursor:'pointer'}}>🚗 本店の代車に登録</button>
+                                    <button onClick={()=>registerToLoaner(selVehicle,'sanda')} style={{padding:'6px 12px',background:'#fee2e2',border:'2px solid #fca5a5',borderRadius:8,fontSize:12,fontWeight:700,color:'#b91c1c',cursor:'pointer'}}>🚗 三田店の代車に登録</button>
+                                  </>}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </>
                     )}
                   </div>
@@ -12955,7 +13004,9 @@ function AppInner() {
         )}
         {view==='vehicle'&&(
           <div style={{padding:'0 16px 16px'}}>
-            <VehicleView vehicleData={vehicleData} setVehicleData={setVehicleData}/>
+            <VehicleView vehicleData={vehicleData} setVehicleData={setVehicleData}
+              loanerH={dynLoanerListH} loanerS={dynLoanerListS} rentalList={dynRentalCars}
+              onSaveLoanerH={v=>setLoanerListH(v)} onSaveLoanerS={v=>setLoanerListS(v)} onSaveRental={v=>setRentalCars(v)}/>
           </div>
         )}
       </main>
