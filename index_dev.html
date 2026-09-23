@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1790149038865';
+    window.__APP_BUILD='build-1790149846690';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -123,7 +123,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.83';
+const APP_VERSION = '2.84';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -1494,7 +1494,7 @@ const CustListModal = memo(({isOpen, onClose, mode:initMode, cust, existingData,
             <input value={staffInput} onChange={e=>setStaffInput(e.target.value)}
               onBlur={handleStaffBlur} onDoubleClick={()=>setShowStaff(p=>!p)}
               onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();handleStaffBlur();}}}
-              placeholder="担当者名 or 番号" style={CINP}/>
+              autoComplete="off" placeholder="担当者名 or 番号" style={CINP}/>
             {showStaff&&(
               <div style={{display:'flex',gap:4,marginTop:5,flexWrap:'wrap'}}>
                 {STAFF.map(s=>(
@@ -6602,16 +6602,22 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
           </div>
           {/* 担当 */}
           <div>
-            <label style={LBL}>担当 <span style={{fontWeight:400,color:'#9ca3af',fontSize:10}}>番号入力可・ダブルクリックで一覧</span></label>
+            <label style={LBL}>担当 <span style={{fontWeight:400,color:'#9ca3af',fontSize:10}}>番号を打って Enter で名前に変わります・ダブルクリックで一覧</span></label>
             <input ref={staffRef} value={staffInput} onChange={e=>setStaffInput(e.target.value)}
               onFocus={()=>setKbField('staff')}
               onBlur={()=>{handleStaffBlur();setKbField('');}}
               onDoubleClick={()=>setShowStaff(p=>!p)}
               onKeyDown={e=>{
-                if(e.key==='Enter'||e.key==='ArrowDown'){e.preventDefault();handleStaffBlur();goNext('staff');}
+                if(e.key==='Enter'||e.key==='ArrowDown'){
+                  e.preventDefault();
+                  const r=resolveStaff(staffInput);
+                  // 番号を打った1回目の Enter は、その場で担当者名に変えるだけ（欄から出ない）
+                  if(e.key==='Enter'&&r&&r!==staffInput){ setStaffInput(r); setForm(p=>({...p,staff:r})); return; }
+                  handleStaffBlur(); goNext('staff');
+                }
                 else if(e.key==='ArrowUp'){e.preventDefault();handleStaffBlur();goPrev('staff');}
               }}
-              placeholder="担当者名 or 番号" style={{...INP,...KB('staff')}}/>
+              autoComplete="off" placeholder="担当者名 or 番号" style={{...INP,...KB('staff')}}/>
             {showStaff&&<div style={{display:'flex',gap:4,marginTop:5,flexWrap:'wrap'}}>
               {STAFF.map(s=><button key={s.id} onClick={()=>{setStaffInput(s.name);setForm(p=>({...p,staff:s.name}));setShowStaff(false);carRef.current?.focus();}} style={{padding:'2px 8px',fontSize:11,borderRadius:4,border:'1px solid #e5e7eb',cursor:'pointer',background:form.staff===s.name?'#c2410c':'white',color:form.staff===s.name?'white':'#374151'}}>{s.id}.{s.name}</button>)}
             </div>}
