@@ -4,7 +4,7 @@
 //                    "carType":"ハスラー", "work":"Q", "content":"オイル交換", "staff":"", "shimi":"" }, ...]
 //   ・time は 09:00〜18:00 の30分刻み、または 午前 / 午後 / 未定
 //   ・同じ時刻にすでに予定があれば `09:30__1` のように枝番で足す（既存は消さない）
-//   ・work は Q ⑫ M12 M6 N1 N6 B 商 保 試 納 他
+//   ・work は Q ⑫ M12 M6 N1 N6 B R 商 保 試 納 他
 const path = require('path'), fs = require('fs');
 const MOD = path.join(process.env.LOCALAPPDATA || '', 'Temp', 'hub-verify', 'node_modules');
 const args = process.argv.slice(2);
@@ -15,7 +15,7 @@ const admin = require(path.join(MOD, 'firebase-admin'));
 admin.initializeApp({ credential: admin.credential.cert(JSON.parse(fs.readFileSync(process.env.HUB_FB_KEY || 'C:\\Users\\A\\Documents\\Hub重要書類\\firebase-admin.json', 'utf8'))) });
 const db = admin.firestore();
 const get = async k => { const d = await db.doc('kv/' + k).get(); return d.exists ? JSON.parse(d.data().v || 'null') : null; };
-const WORKS = ['Q', '⑫', 'M12', 'M6', 'N1', 'N6', 'B', '商', '保', '試', '納', '他'];
+const WORKS = ['Q', '⑫', 'M12', 'M6', 'N1', 'N6', 'B', 'R', '商', '保', '試', '納', '他'];
 const SLOTS = (() => { const s = ['午前', '午後', '未定']; for (let h = 9; h <= 18; h++) { s.push(String(h).padStart(2, '0') + ':00'); if (h < 18) s.push(String(h).padStart(2, '0') + ':30'); } return s; })();
 const jp = dk => { const [y, m, d] = dk.split('-').map(Number); return `${m}/${d}(${'日月火水木金土'[new Date(y, m - 1, d).getDay()]})`; };
 (async () => {
