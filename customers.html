@@ -20,7 +20,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1790122907984';
+  window.__APP_BUILD='build-1790123950906';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -141,7 +141,7 @@ const hubRenew = async name => {};
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.78'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.79'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -271,6 +271,22 @@ const saveFilesIndex=async(files,opts)=>{
 const deleteFileFromCache=(file)=>{
   const sn=safeName(file.name);
   try{localStorage.removeItem(STOR+'cf-'+sn);}catch(e){}
+};
+// ★削除したファイルの中身もサーバーから消す（2026-09-23）。
+//   以前は一覧（cf-index）から名前を外すだけで、チャンクはそのまま残していた。
+//   そのため「消したはずの月」が他のPCの画面に残り続け、そのPCが何かを保存すると
+//   一覧に名前が戻って全員のところに復活しうる状態だった。
+const deleteFileOnServer=async(name,onStep)=>{
+  const sn=safeName(name);
+  let chunks=0;
+  try{ const idx=await sGet(STOR+'cf-'+sn+'-index'); if(idx&&idx.chunks)chunks=idx.chunks; }catch(e){}
+  let done=0;
+  for(let i=0;i<chunks;i++){
+    try{ await sSet(STOR+'cf-'+sn+'-chunk-'+i,null); }catch(e){}
+    done++; if(onStep)onStep(done,chunks+1);
+  }
+  try{ await sSet(STOR+'cf-'+sn+'-index',null); }catch(e){}
+  if(onStep)onStep(chunks+1,chunks+1);
 };
 const RES_COLORS=['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#f97316','#e11d48','#14b8a6','#a855f7'];
 
@@ -2105,6 +2121,7 @@ const App=()=>{
   },[]);
   const [files,setFiles]=useState([]);
   const filesRef = useRef([]); // setFilesと同期して常に最新値を保持
+  const recentImportRef = useRef({});   // この画面で取り込んだ直後のファイル名（一覧に載る前に消されないように）
   useEffect(()=>{filesRef.current=files;},[files]); // 初回ロード含めfilesを常にfilesRefへ反映（最初の予約でchangedFileがnullになりリスト未保存になるのを防ぐ）
   const pollUpdatesRef = useRef(null);
   const reconcileRef = useRef(null); // スケジュール→リスト突き合わせ（自己修復）
@@ -2201,6 +2218,23 @@ const App=()=>{
   // ★サーバーから読んだファイルを画面へ反映する。取り込みは全員共有なので、
   //   読めなかったPCは「元のExcelを選び直す」のではなく、ここでサーバーから取り直せばよい
   //   （2026-08-27にユーザーが指摘：一人が取り込んだら全員で共有のはず）。
+  // ★サーバーの一覧（cf-index）から消えたファイルは、この画面からも下ろす（2026-09-23）。
+  //   他のPCで削除しても、開きっぱなしの画面には残り続けていた。
+  //   取り込んだ直後（10分以内）のファイルは、一覧への書き込みが終わる前に消さないよう残す。
+  const pruneMissing=useCallback((idx)=>{
+    if(!Array.isArray(idx))return;
+    const names=new Set(idx.map(x=>x&&x.name).filter(Boolean));
+    setFiles(prev=>{
+      const keep=prev.filter(f=>names.has(f.name)||(Date.now()-(recentImportRef.current[f.name]||0))<600000);
+      if(keep.length===prev.length)return prev;
+      prev.filter(f=>!keep.includes(f)).forEach(f=>{ try{localStorage.removeItem(STOR+'cf-'+safeName(f.name));}catch(e){} });
+      filesRef.current=keep;
+      setActiveIdx(p=>Math.max(0,Math.min(p,keep.length-1)));
+      return keep;
+    });
+  },[]);
+  const pruneMissingRef=useRef(null);
+  useEffect(()=>{ pruneMissingRef.current=pruneMissing; },[pruneMissing]);
   const applyServerFile=useCallback((f)=>{
     if(!f)return;
     const SAFE=n=>n.replace(/[^a-zA-Z0-9　-鿿゠-ヿ぀-ゟ]/g,'_').slice(0,30);
@@ -2328,6 +2362,7 @@ const App=()=>{
         if(Array.isArray(ov))setOverrideOpen(ov);
         if(ilim&&typeof ilim==='object')setInspLimits(ilim);
         // GASから最新ファイルデータを取得してキャッシュ更新
+        if(Array.isArray(fileIndex)){ pruneMissing(fileIndex); try{localStorage.setItem(STOR+'cf-index',JSON.stringify(fileIndex));}catch(e){} setCfIndexCount(fileIndex.length); }
         if(Array.isArray(fileIndex)&&fileIndex.length>0){
           __lastCfIndex=fileIndex;
           localStorage.setItem(STOR+'cf-index',JSON.stringify(fileIndex));
@@ -2512,7 +2547,10 @@ const App=()=>{
     const pollTimer=setInterval(pollUpdates,15000);
     // ★Firestore：通知キュー(cust-updates)と顧客ファイル一覧(cf-index)を購読しておく。
     //   以後の sGet は手元の最新値を返すので、15秒ごとの読みはサーバーに行かず、変更は即座に届く。
-    const unLive=fbLive([STOR+'cust-updates',STOR+'cf-index'],()=>{ try{ pollUpdates(); }catch(e){} });
+    const unLive=fbLive([STOR+'cust-updates',STOR+'cf-index'],()=>{ try{ pollUpdates(); }catch(e){}
+      // 他のPCがファイルを消したら、この画面からもすぐ下ろす（2026-09-23）
+      try{ sGet(STOR+'cf-index').then(v=>pruneMissingRef.current&&pruneMissingRef.current(v)).catch(()=>{}); }catch(e){}
+    });
     return()=>{ clearInterval(pollTimer); unLive(); };
   },[]);
 
@@ -2523,7 +2561,9 @@ const App=()=>{
     const pickup=async()=>{
       if(__saveCount>0||(window.__hubWriteBusy||0)>0)return; // 自分が保存中はさわらない
       const idx=await sGet(STOR+'cf-index');
-      if(!Array.isArray(idx)||idx.length===0)return;
+      if(!Array.isArray(idx))return;
+      pruneMissing(idx);
+      if(idx.length===0)return;
       const have=new Set((filesRef.current||[]).map(f=>f.name));
       for(const fi of idx){
         if(have.has(fi.name))continue;
@@ -2539,7 +2579,7 @@ const App=()=>{
     };
     const t=setInterval(pickup,60000);
     return()=>clearInterval(t);
-  },[]);
+  },[pruneMissing]);
 
   // 画面復帰時（タブ切替・スリープ復帰）に即時リフレッシュ
   useEffect(()=>{
@@ -2716,6 +2756,7 @@ const App=()=>{
       // 一覧(cf-index)には「確実に保存できたファイル」だけを載せる。
       // 失敗した分を載せると、他のPCが開いた時に中身の無いファイル名だけが見える状態になる。
       setImportMsg('一覧を更新中…');
+      results.forEach(r=>{ recentImportRef.current[r.name]=Date.now(); });   // 一覧に載る前に prune されないように
       const okFiles=next.filter(f=>!failed.includes(f.name));
       const idxOk=await saveFilesIndex(okFiles);
       setImportMsg('');
@@ -2736,16 +2777,25 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
   },[]);
 
   // ファイル削除
-  const handleDeleteFile=useCallback(idx=>{
-    if(!confirm(`「${files[idx].name}」を削除しますか？`))return;
+  const handleDeleteFile=useCallback(async(idx)=>{
     const deletedFile=files[idx];
-    setFiles(prev=>{
-      const next=prev.filter((_,i)=>i!==idx);
-      saveFilesIndex(next,{remove:[deletedFile.name]}); // 削除だけは明示的に一覧から外す
-      return next;
-    });
+    if(!deletedFile)return;
+    if(!confirm(`「${deletedFile.name}」${deletedFile.customers.length}件を削除します。\n\nサーバーからも消えるので、他のPC・スマホからも見えなくなります。\n（戻すには、もう一度ファイルを取り込んでください）\n\n削除しますか？`))return;
+    delete recentImportRef.current[deletedFile.name];
+    const next=files.filter((_,i)=>i!==idx);
+    filesRef.current=next;
+    setFiles(next);
     deleteFileFromCache(deletedFile);
     setActiveIdx(p=>Math.max(0,p>=idx?p-1:p));
+    setImportMsg(`「${deletedFile.name}」を削除中…`);
+    try{
+      await saveFilesIndex(next,{remove:[deletedFile.name]});   // 一覧から外す（これで他のPCからも消える）
+      await deleteFileOnServer(deletedFile.name,(n,total)=>setImportMsg(`「${deletedFile.name}」を削除中… ${n}/${total}`));
+      setImportMsg('');
+    }catch(e){
+      setImportMsg('');
+      alert('⚠ 削除の途中で通信に失敗しました。\nもう一度お試しください（一覧からは外れています）。');
+    }
   },[files]);
 
   // 予約保存（スケジュール・代車に連動）
