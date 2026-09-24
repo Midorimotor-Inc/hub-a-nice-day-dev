@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1790210519628';
+    window.__APP_BUILD='build-1790214783097';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -123,7 +123,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.87';
+const APP_VERSION = '2.88';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -342,6 +342,11 @@ const COURSES = [
   {id:2,name:'クイック車検',color:'#1d4ed8',bg:'#bfdbfe',initial:'ク'},
   {id:3,name:'レギュラー車検',color:'#d97706',bg:'#fde68a',initial:'レ'}
 ];
+// ── 今日の枠（全カレンダー共通・2026-09-24 ユーザー要望）──
+//   以前は日付の数字を赤丸で囲っていたが、パッと見て分かるようにセルごと太線で囲う。
+//   outlineOffset を内側にして、枠線が隣のセルと重なっても崩れないようにする。
+const TODAY_CELL={outline:'3px solid #c2410c',outlineOffset:'-3px',zIndex:3};
+const TODAY_NUM={color:'#c2410c',fontWeight:900};
 // ── 休業日の見た目（全画面共通）──
 //   定休日・第2火曜・手動の休業日は「色分けせず同じ見た目」にする（2026-07-30 ユーザー決定・A案）。
 //   従来は極薄の斜線（#f9fafb/#f3f4f6）で、しかも空の6コマが営業日と同じに描かれるため
@@ -756,10 +761,10 @@ const MySchedCalendar=({cy,cm,user,pub,secret,isClosedDay,onPickDay,storeLabelOf
               const baseBg=isCl?(typeof CLOSED_BG!=='undefined'?CLOSED_BG:'#f3f4f6'):off?(off.kind==='leave'?'#f0fdf4':'#fff7ed'):'white';
               return(
                 <div key={di} onClick={()=>onPickDay(dkk)}
-                  style={{minHeight:110,padding:'5px 4px',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:baseBg,boxShadow:off?`inset 3px 0 0 ${off.kind==='leave'?'#10b981':'#f97316'}`:'none',cursor:'pointer',position:'relative'}}
+                  style={{minHeight:110,padding:'5px 4px',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:baseBg,boxShadow:off?`inset 3px 0 0 ${off.kind==='leave'?'#10b981':'#f97316'}`:'none',cursor:'pointer',position:'relative',...(isToday?TODAY_CELL:{})}}
                   onMouseEnter={e=>{e.currentTarget.style.background=isCl?'#e5e7eb':off?(off.kind==='leave'?'#dcfce7':'#ffedd5'):'#f8fafc';}} onMouseLeave={e=>{e.currentTarget.style.background=baseBg;}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:3}}>
-                    <span style={isToday?{background:'#2563eb',color:'white',borderRadius:'50%',width:21,height:21,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800}:{fontWeight:800,fontSize:14,color:dow===0?'#dc2626':dow===6?'#1d4ed8':'#111'}}>{day}</span>
+                    <span style={isToday?{fontWeight:900,fontSize:14,...TODAY_NUM}:{fontWeight:800,fontSize:14,color:dow===0?'#dc2626':dow===6?'#1d4ed8':'#111'}}>{day}</span>
                     {isCl&&<span style={{fontSize:11,color:'#9ca3af',fontWeight:800}}>休業日</span>}
                     {off&&<span title={`${user.name}の${off.kind==='leave'?'有給':'休日'}${off.carried?'（'+off.carried+'）':''}${off.note?'：'+off.note:''}`} style={{fontSize:10,fontWeight:800,color:off.kind==='leave'?'#059669':'#ea580c',background:'white',border:`1px solid ${off.kind==='leave'?'#6ee7b7':'#fdba74'}`,borderRadius:4,padding:'0 5px',whiteSpace:'nowrap'}}>{off.kind==='leave'?'📋 有給':'🏖 休日'}</span>}
                   </div>
@@ -5039,7 +5044,7 @@ const HolidayModal=memo(({isOpen,onClose,closedDays,setClosedDays,closedDates,se
 
                     return (
                       <div key={di}
-                        style={{minHeight:36,borderTop:wi>0?'1px solid #f3f4f6':'none',borderLeft:di>0?'1px solid #f3f4f6':'none',background:bg,boxShadow:bar,cursor:'pointer',position:'relative',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'2px 1px'}}
+                        style={{minHeight:36,borderTop:wi>0?'1px solid #f3f4f6':'none',borderLeft:di>0?'1px solid #f3f4f6':'none',background:bg,boxShadow:bar,cursor:'pointer',position:'relative',display:'flex',flexDirection:'column',...(isToday?TODAY_CELL:{}),alignItems:'center',justifyContent:'center',padding:'2px 1px'}}
                         onMouseDown={e=>{
                           e.preventDefault();
                           if(isWeeklyClosed) return;
@@ -5051,8 +5056,7 @@ const HolidayModal=memo(({isOpen,onClose,closedDays,setClosedDays,closedDates,se
                         }}
                         onMouseEnter={()=>{if(isDragging)setDragEnd(ds);}}
                       >
-                        <span style={{fontSize:12,fontWeight:isToday?900:600,color:isToday?'white':isClosed&&!inDrag?CLOSED_FG:dow===0||isHol?'#dc2626':dow===6?'#1d4ed8':'#374151',
-                          ...(isToday?{background:'#c2410c',borderRadius:'50%',width:20,height:20,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11}:{})}}>
+                        <span style={{fontSize:12,fontWeight:isToday?900:600,color:isToday?'#c2410c':isClosed&&!inDrag?CLOSED_FG:dow===0||isHol?'#dc2626':dow===6?'#1d4ed8':'#374151'}}>
                           {day}
                         </span>
                         {isManualClosed&&!isWeeklyClosed&&<span style={{fontSize:8,color:'#dc2626',fontWeight:800,lineHeight:1.1}}>休</span>}
@@ -5800,13 +5804,13 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
                       onClick={()=>handleDayClick(dkk,cy,cm,day)}
                       style={{minHeight:82,padding:'5px 4px',borderTop:'1px solid #e5e7eb',
                         borderLeft:di>0?'1px solid #e5e7eb':'none',
-                        background:cellBg,outline:cellBorder,boxShadow:isCl?CLOSED_BAR:'none',position:'relative',
+                        background:cellBg,outline:isToday?TODAY_CELL.outline:cellBorder,outlineOffset:isToday?TODAY_CELL.outlineOffset:0,zIndex:isToday?3:'auto',boxShadow:isCl?CLOSED_BAR:'none',position:'relative',
                         cursor:isCl?'not-allowed':selStaff?'pointer':'default',
                         transition:'opacity 0.1s'}}
                       onMouseEnter={e=>{if(selStaff&&!isCl)e.currentTarget.style.opacity='0.75';}}
                       onMouseLeave={e=>{e.currentTarget.style.opacity='1';}}>
                       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:3}}>
-                        <span style={isToday?{background:'#c2410c',color:'white',borderRadius:'50%',width:20,height:20,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800}:{fontWeight:700,fontSize:13,color:numCol}}>
+                        <span style={isToday?{fontWeight:900,fontSize:13,...TODAY_NUM}:{fontWeight:700,fontSize:13,color:numCol}}>
                           {day}
                         </span>
                         <span style={{display:'flex',gap:2,alignItems:'center'}}>
@@ -12211,12 +12215,12 @@ function AppInner() {
                       return (
                         <div key={di}
                           onClick={()=>{if(!isCl){setSelDate(new Date(cy,cm,day));setView('schedule');setTimeout(()=>window.scrollTo({top:0,behavior:'instant'}),50);}}}
-                          style={{minHeight:105,padding:'5px',cursor:isCl?'not-allowed':'pointer',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:cellBg,boxShadow:isCl?CLOSED_BAR:'none',position:'relative'}}
+                          style={{minHeight:105,padding:'5px',cursor:isCl?'not-allowed':'pointer',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:cellBg,boxShadow:isCl?CLOSED_BAR:'none',position:'relative',...(isToday?TODAY_CELL:{})}}
                           onMouseEnter={e=>{if(!isCl)e.currentTarget.style.background='#f0f0ff';}}
                           onMouseLeave={e=>{e.currentTarget.style.background=cellBg;}}>
                           {isCl&&<ClosedMark/>}
                           <div style={{fontWeight:800,fontSize:15,marginBottom:3,color:isCl?CLOSED_FG:numCol,display:'flex',alignItems:'center',gap:3}}>
-                            <span style={isToday?{background:'#c2410c',color:'white',borderRadius:'50%',width:22,height:22,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:12,flexShrink:0}:{flexShrink:0}}>{day}</span>
+                            <span style={isToday?{flexShrink:0,...TODAY_NUM}:{flexShrink:0}}>{day}</span>
                             {isHol&&<span style={{fontSize:8,color:isCl?CLOSED_FG:'#dc2626',flexShrink:0}}>祝</span>}
                           </div>
                           {/* 休業日は6コマを描かない（営業日と見分けがつくように） */}
@@ -12332,10 +12336,10 @@ function AppInner() {
                             const highlightBg=cellIsOff?'#fff7ed':cellIsLeave?'#f0fdf4':baseBg;
                             const highlightOutline=cellIsOff?'2px solid #f97316':cellIsLeave?'2px solid #10b981':'none';
                             return(
-                              <div key={di} style={{minHeight:120,padding:'5px 4px',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:highlightBg,boxShadow:isCl?CLOSED_BAR:'none',outline:highlightOutline,position:'relative',transition:'background 0.15s'}}>
+                              <div key={di} style={{minHeight:120,padding:'5px 4px',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:highlightBg,boxShadow:isCl?CLOSED_BAR:'none',outline:isToday?TODAY_CELL.outline:highlightOutline,outlineOffset:isToday?TODAY_CELL.outlineOffset:0,zIndex:isToday?3:'auto',position:'relative',transition:'background 0.15s'}}>
                                 {isCl&&<ClosedMark/>}
                                 <div style={{fontWeight:800,fontSize:14,marginBottom:4,color:isCl?CLOSED_FG:numCol,display:'flex',alignItems:'center',gap:3}}>
-                                  <span style={isToday?{background:'#c2410c',color:'white',borderRadius:'50%',width:21,height:21,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,flexShrink:0}:{flexShrink:0}}>{day}</span>
+                                  <span style={isToday?{flexShrink:0,...TODAY_NUM}:{flexShrink:0}}>{day}</span>
                                   {isHol&&<span style={{fontSize:8,color:isCl?CLOSED_FG:'#dc2626'}}>祝</span>}
                                   {cellIsOff&&<span style={{marginLeft:'auto',fontSize:13}}>🏖</span>}
                                   {cellIsLeave&&<span style={{marginLeft:'auto',fontSize:13}}>📋</span>}
