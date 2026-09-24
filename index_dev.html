@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1790214783097';
+    window.__APP_BUILD='build-1790217315128';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -123,7 +123,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.88';
+const APP_VERSION = '2.89';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -345,7 +345,7 @@ const COURSES = [
 // ── 今日の枠（全カレンダー共通・2026-09-24 ユーザー要望）──
 //   以前は日付の数字を赤丸で囲っていたが、パッと見て分かるようにセルごと太線で囲う。
 //   outlineOffset を内側にして、枠線が隣のセルと重なっても崩れないようにする。
-const TODAY_CELL={outline:'3px solid #c2410c',outlineOffset:'-3px',zIndex:3};
+const TODAY_CELL={outline:'4px solid #c2410c',outlineOffset:'-4px',borderRadius:10,zIndex:3};
 const TODAY_NUM={color:'#c2410c',fontWeight:900};
 // ── 休業日の見た目（全画面共通）──
 //   定休日・第2火曜・手動の休業日は「色分けせず同じ見た目」にする（2026-07-30 ユーザー決定・A案）。
@@ -5804,7 +5804,7 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,adminMode,
                       onClick={()=>handleDayClick(dkk,cy,cm,day)}
                       style={{minHeight:82,padding:'5px 4px',borderTop:'1px solid #e5e7eb',
                         borderLeft:di>0?'1px solid #e5e7eb':'none',
-                        background:cellBg,outline:isToday?TODAY_CELL.outline:cellBorder,outlineOffset:isToday?TODAY_CELL.outlineOffset:0,zIndex:isToday?3:'auto',boxShadow:isCl?CLOSED_BAR:'none',position:'relative',
+                        background:cellBg,outline:isToday?TODAY_CELL.outline:cellBorder,outlineOffset:isToday?TODAY_CELL.outlineOffset:0,borderRadius:isToday?10:0,zIndex:isToday?3:'auto',boxShadow:isCl?CLOSED_BAR:'none',position:'relative',
                         cursor:isCl?'not-allowed':selStaff?'pointer':'default',
                         transition:'opacity 0.1s'}}
                       onMouseEnter={e=>{if(selStaff&&!isCl)e.currentTarget.style.opacity='0.75';}}
@@ -12336,7 +12336,7 @@ function AppInner() {
                             const highlightBg=cellIsOff?'#fff7ed':cellIsLeave?'#f0fdf4':baseBg;
                             const highlightOutline=cellIsOff?'2px solid #f97316':cellIsLeave?'2px solid #10b981':'none';
                             return(
-                              <div key={di} style={{minHeight:120,padding:'5px 4px',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:highlightBg,boxShadow:isCl?CLOSED_BAR:'none',outline:isToday?TODAY_CELL.outline:highlightOutline,outlineOffset:isToday?TODAY_CELL.outlineOffset:0,zIndex:isToday?3:'auto',position:'relative',transition:'background 0.15s'}}>
+                              <div key={di} style={{minHeight:120,padding:'5px 4px',borderTop:'1px solid #e5e7eb',borderLeft:di>0?'1px solid #e5e7eb':'none',background:highlightBg,boxShadow:isCl?CLOSED_BAR:'none',outline:isToday?TODAY_CELL.outline:highlightOutline,outlineOffset:isToday?TODAY_CELL.outlineOffset:0,borderRadius:isToday?10:0,zIndex:isToday?3:'auto',position:'relative',transition:'background 0.15s'}}>
                                 {isCl&&<ClosedMark/>}
                                 <div style={{fontWeight:800,fontSize:14,marginBottom:4,color:isCl?CLOSED_FG:numCol,display:'flex',alignItems:'center',gap:3}}>
                                   <span style={isToday?{flexShrink:0,...TODAY_NUM}:{flexShrink:0}}>{day}</span>
