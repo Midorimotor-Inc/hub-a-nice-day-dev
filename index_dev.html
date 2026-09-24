@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1790218446994';
+    window.__APP_BUILD='build-1790219362169';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -123,7 +123,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.90';
+const APP_VERSION = '2.91';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -9511,7 +9511,8 @@ function AppInner() {
       window.removeEventListener('pagehide',onHide);
     };
   },[]);
-  useEffect(()=>{ if(!fsHint)return; const t=setTimeout(()=>setFsHint(false),6000); return()=>clearTimeout(t); },[fsHint]);
+  //   ブラウザの通知（画面の上・中央）に上のボタンが隠れてしまうので、その間だけ画面全体を下げる。
+  useEffect(()=>{ if(!fsHint)return; const t=setTimeout(()=>setFsHint(false),4500); return()=>clearTimeout(t); },[fsHint]);
   // 案内からワンクリックで全画面に入る。文字が青く選ばれないよう、押した時の選択は止める。
   const fsAskGo=useCallback(()=>{
     setFsAsk(false);
@@ -11840,7 +11841,7 @@ function AppInner() {
   const dayMemos=dk?memoData[dk]||[]:[];
 
   return (
-    <div style={{height:'100vh',overflow:'hidden',background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)',fontFamily:'system-ui,-apple-system,sans-serif'}}>
+    <div style={{height:'100vh',overflow:'hidden',boxSizing:'border-box',paddingTop:(fsHint&&isFullscreen)?46:0,transition:'padding-top .2s ease',background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)',fontFamily:'system-ui,-apple-system,sans-serif'}}>
       <style>{GCSS}</style>
 
       {/* -- 全画面のお誘い（2026-09-24）。開いた直後に一度だけ。ここをワンクリックで全画面に入る -- */}
@@ -11942,21 +11943,12 @@ function AppInner() {
                       border:isFullscreen?'2px solid white':'2px solid rgba(255,255,255,0.55)',
                       borderRadius:8,cursor:'pointer',fontWeight:isFullscreen?900:700,fontSize:isFullscreen?12:11,
                       color:isFullscreen?'#c2410c':'white',whiteSpace:'nowrap',
-                      animation:fsHint?'hubFsNudge .7s ease-in-out 4':'none'}}
+                      animation:fsHint?'hubFsNudge .7s ease-in-out 1':'none'}}
                     onMouseEnter={e=>{if(!isFullscreen)e.currentTarget.style.background='rgba(255,255,255,0.32)';}}
                     onMouseLeave={e=>{if(!isFullscreen)e.currentTarget.style.background='rgba(255,255,255,0.18)';}}>
                     {isFullscreen?<Shrink size={14}/>:<Expand size={14}/>}{isFullscreen?'元に戻す':'全画面'}
                   </button>
-                  {/* 入った直後の数秒だけ、やめ方を吹き出しで知らせる（クリックの邪魔をしない） */}
-                  {fsHint&&isFullscreen&&(
-                    <div style={{position:'absolute',top:'calc(100% + 8px)',right:0,zIndex:1200,pointerEvents:'none',
-                      background:'#111827',color:'white',borderRadius:10,padding:'8px 12px',fontSize:12,fontWeight:700,whiteSpace:'nowrap',
-                      boxShadow:'0 10px 30px rgba(0,0,0,.35)',animation:'hubFsHint .25s ease-out'}}>
-                      <span style={{position:'absolute',top:-6,right:18,width:12,height:12,background:'#111827',transform:'rotate(45deg)',borderRadius:2}}/>
-                      ⬆ 全画面をやめる時は、この「元に戻す」を押してください
-                    </div>
-                  )}
-                  <style>{'@keyframes hubFsNudge{0%,100%{transform:translateY(0) scale(1);box-shadow:0 0 0 0 rgba(255,255,255,.9)}20%{transform:translateY(3px) scale(1.06);box-shadow:0 0 0 6px rgba(255,255,255,.45)}40%{transform:translateY(-2px) scale(1.06)}60%{transform:translateY(2px) scale(1.04);box-shadow:0 0 0 10px rgba(255,255,255,0)}}@keyframes hubFsHint{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}'}</style>
+                  <style>{'@keyframes hubFsNudge{0%,100%{transform:translateY(0) scale(1);box-shadow:0 0 0 0 rgba(255,255,255,.9)}20%{transform:translateY(3px) scale(1.06);box-shadow:0 0 0 6px rgba(255,255,255,.45)}40%{transform:translateY(-2px) scale(1.06)}60%{transform:translateY(2px) scale(1.04);box-shadow:0 0 0 10px rgba(255,255,255,0)}}'}</style>
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:5,padding:'3px 10px',background:userStore.bg,borderRadius:8,border:`2px solid ${userStore.color}33`}}>
                   <span style={{width:22,height:22,borderRadius:'50%',background:userStore.color,color:'white',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:11}}>{String(currentUser?.name||'').charAt(0)}</span>
