@@ -68,70 +68,56 @@ const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction
     await r2.ctx.close();
   }
 
-  // ── ② 既定で全画面（index_dev.html）──
+  // ── ② 開いた直後の「全画面で使いますか？」（2026-09-24 変更）──
+  //   以前は画面のどこを触っても全画面に入ったため、意図しない時に入っていた。
+  //   いまは案内を出し、そのワンクリックだけで入る。「このまま使う」を押したらそのタブでは出さない。
   //   headless では requestFullscreen が拒否されることがあるので、呼ばれたかどうかを記録して確かめる
   const spy = () => {
     window.__fsCalls = 0;
     const orig = Element.prototype.requestFullscreen;
     Element.prototype.requestFullscreen = function () { window.__fsCalls++; return orig ? orig.apply(this, arguments).catch(() => {}) : Promise.resolve(); };
   };
+  const login = async (page) => {
+    await seeText(page, '担当者を選択してください');
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => x.innerText.includes('江川京志')); if (b) b.click(); });
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => x.innerText.includes('でログイン')); if (b) b.click(); });
+    await page.waitForTimeout(1200);
+  };
+  const askShown = page => page.evaluate(() => document.body.innerText.includes('全画面で使いますか'));
   {
     const { ctx, page } = await open('index_dev.html');
     await page.evaluate(spy);
-    await seeText(page, '担当者を選択してください');
-    await page.mouse.click(700, 500);          // 最初の操作
-    await page.waitForTimeout(500);
-    t('初めて開いたタブ：最初の操作で全画面に入ろうとする', (await page.evaluate(() => window.__fsCalls)) >= 1);
+    await login(page);
+    t('ログインすると「全画面で使いますか？」の案内が出る', await askShown(page), await page.evaluate(() => document.body.innerText.slice(0, 160)));
+    t('案内が出るまでは、画面を触っても全画面に入らない', (await page.evaluate(() => window.__fsCalls)) === 0);
+    await page.mouse.click(700, 500);      // 案内の上をワンクリック
+    await page.waitForTimeout(400);
+    t('案内をクリックすると全画面に入ろうとする', (await page.evaluate(() => window.__fsCalls)) >= 1);
+    t('クリックしたら案内は消える', !(await askShown(page)));
+    t('文字が青く選ばれない（選択なし）', (await page.evaluate(() => String(window.getSelection()))) === '');
     await ctx.close();
   }
   {
-    // 「元に戻す」の記憶はタブの間だけ（sessionStorage）。古い localStorage の 'off' は無視され、開き直せば最初の操作で入る（2026-09-20）
+    const { ctx, page } = await open('index_dev.html');
+    await page.evaluate(spy);
+    await login(page);
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => x.innerText.includes('このまま使う')); if (b) b.click(); });
+    await page.waitForTimeout(300);
+    t('「このまま使う」で案内が消える', !(await askShown(page)));
+    t('「このまま使う」では全画面に入らない', (await page.evaluate(() => window.__fsCalls)) === 0);
+    await page.mouse.click(700, 500);
+    await page.waitForTimeout(300);
+    t('そのあと画面を触っても勝手に全画面にならない', (await page.evaluate(() => window.__fsCalls)) === 0);
+    t('このタブでは「聞かない」と覚える', (await page.evaluate(() => sessionStorage.getItem('hub-v8-dev-fs-pref2'))) === 'off');
+    await ctx.close();
+  }
+  {
+    // 古い localStorage の 'off' は無視して消す（2026-09-20）
     const { ctx, page } = await open('index_dev.html', { before: () => { try { localStorage.setItem('hub-v8-dev-fs-pref2', 'off'); } catch (e) {} } });
     await page.evaluate(spy);
-    await seeText(page, '担当者を選択してください');
-    await page.mouse.click(700, 500);
-    await page.waitForTimeout(500);
-    t('古い localStorage の off が残っていても、開き直せば最初の操作で全画面に入る', (await page.evaluate(() => window.__fsCalls)) === 1, await page.evaluate(() => window.__fsCalls));
+    await login(page);
+    t('古い localStorage の off が残っていても案内は出る', await askShown(page));
     t('古い localStorage の off は消される', (await page.evaluate(() => localStorage.getItem('hub-v8-dev-fs-pref2'))) === null);
-    await ctx.close();
-  }
-  {
-    // Escで抜けた／閉じた時の fs-restore='0' が残っていても、開き直せばまた入る（2回目以降も効く）
-    const { ctx, page } = await open('index_dev.html', { before: () => { try { sessionStorage.setItem('hub-v8-dev-fs-restore', '0'); } catch (e) {} } });
-    await page.evaluate(spy);
-    await seeText(page, '担当者を選択してください');
-    await page.mouse.click(700, 500);
-    await page.waitForTimeout(500);
-    t('fs-restore=0 が残っていても開き直せば全画面に入る（2回目以降）', (await page.evaluate(() => window.__fsCalls)) >= 1);
-    await ctx.close();
-  }
-
-  {
-    // 全画面が外れた（Escなど）後は、この画面ではもう自動で入らない（B案・v2.50）。外れたのを模擬するため fullscreenchange を投げる
-    const { ctx, page } = await open('index_dev.html');
-    await page.evaluate(spy);
-    await seeText(page, '担当者を選択してください');
-    await page.mouse.click(700, 500);
-    await page.waitForTimeout(300);
-    await page.evaluate(async () => { if (document.fullscreenElement) await document.exitFullscreen(); else document.dispatchEvent(new Event('fullscreenchange')); });   // 外れた
-    await page.waitForTimeout(300);
-    await page.mouse.click(700, 500);
-    await page.waitForTimeout(300);
-    t('外れた後は次の操作でも自動では入らない（B案）', (await page.evaluate(() => window.__fsCalls)) === 1, await page.evaluate(() => window.__fsCalls));
-    await ctx.close();
-  }
-  {
-    // 「元に戻す」（fs-pref='off'）で外した後は、次の操作でも入らない
-    const { ctx, page } = await open('index_dev.html');
-    await page.evaluate(spy);
-    await seeText(page, '担当者を選択してください');
-    await page.mouse.click(700, 500);
-    await page.waitForTimeout(300);
-    await page.evaluate(async () => { sessionStorage.setItem('hub-v8-dev-fs-pref2', 'off'); if (document.fullscreenElement) await document.exitFullscreen(); else document.dispatchEvent(new Event('fullscreenchange')); });
-    await page.waitForTimeout(300);
-    await page.mouse.click(700, 500);
-    await page.waitForTimeout(300);
-    t('「元に戻す」で外した後は次の操作でも入らない', (await page.evaluate(() => window.__fsCalls)) === 1, await page.evaluate(() => window.__fsCalls));
     await ctx.close();
   }
   {
@@ -147,6 +133,8 @@ const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction
     await page.evaluate(async () => { if (document.fullscreenElement) await document.exitFullscreen(); });
     await page.waitForTimeout(300);
     const before = await page.evaluate(() => window.__fsCalls);
+    await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => x.innerText.includes('このまま使う')); if (b) b.click(); });   // 案内が出ていたら先に閉じる
+    await page.waitForTimeout(300);
     const btn = await page.$('button[data-fs-toggle]');
     t('「全画面」ボタンがある', !!btn);
     if (btn) { await btn.click(); await page.waitForTimeout(600); }

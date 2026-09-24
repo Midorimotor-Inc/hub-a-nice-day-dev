@@ -24,6 +24,8 @@ const INDEX_RULES = [
   //   本番のデータは fb_migrate.js --prod --write で写してから移植する（GAS 側はその時点で控えになる）。
   // タイトル
   ['<title>Hub a Nice Day [テスト版]</title>', '<title>Hub a Nice Day</title>', 1],
+  // PWA の設定ファイル名（テスト版 manifest_dev.json ／ メイン manifest.json）
+  ['<link rel="manifest" href="manifest_dev.json" />', '<link rel="manifest" href="manifest.json" />', 1],
   // 環境識別の配色: 全体背景・ログイン画面（オレンジ→青）
   ['linear-gradient(140deg,#7c2d12,#EA580C,#f97316)', 'linear-gradient(140deg,#1e3a8a,#1d4ed8,#2563eb)', 3],
   // ヘッダー背景（オレンジ単色→青グラデーション）
@@ -44,6 +46,7 @@ const INDEX_REGEX_RULES = [
 ];
 const CUST_RULES = [
   ["const STOR='hub-v8-dev-';", "const STOR='hub-v8-';", 1],
+  ['<link rel="manifest" href="manifest_dev.json"/>', '<link rel="manifest" href="manifest.json"/>', 1],
 ];
 const CUST_REGEX_RULES = [
   // 自動アップデート検知のビルド識別子をデプロイ毎に更新
