@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## ビルド・テスト・実行
 
 - **ビルド/lint は存在しない。** 静的HTMLをGitHub Pagesが直接配信する。
-- **検査は Playwright の `*_test.js`**（`%LOCALAPPDATA%/Temp/hub-verify/node_modules` の playwright を使う）。Firebase には繋がず `fake_firebase.js`（にせの firebase）を差し込む：`node fb_auth_test.js`（本人認証）・`node fb_mode_test.js`（Firestore 経路）・`node fb_holiday_test.js`（休日タブ・休日メモ・繰り越し）・`node fb_mysched_test.js`（マイスケジュール・シークレット暗号化）・`node fb_contact_test.js`（住所・電話）・`node cust_delete_test.js`（顧客ファイルの削除）・`node staff_input_test.js`（予約カードの担当欄）・`node vehicle_loaner_test.js`（車両管理→代車管理の登録）・`node merge_scalar_test.js`（共有データのマージ）・`node batch_poll_test.js` ほか（GAS 模擬・`BACKEND='gas'` に固定して動かす）。構文だけなら `node smoke_dev_check.js <file>`。
+- **検査は Playwright の `*_test.js`**（`%LOCALAPPDATA%/Temp/hub-verify/node_modules` の playwright を使う）。Firebase には繋がず `fake_firebase.js`（にせの firebase）を差し込む：`node fb_auth_test.js`（本人認証）・`node fb_mode_test.js`（Firestore 経路）・`node fb_holiday_test.js`（休日タブ・休日メモ・繰り越し）・`node fb_mysched_test.js`（マイスケジュール・シークレット暗号化）・`node fb_contact_test.js`（住所・電話）・`node cust_delete_test.js`（顧客ファイルの削除）・`node staff_input_test.js`（予約カードの担当欄）・`node vehicle_loaner_test.js`（車両管理→代車管理の登録）・`node merge_scalar_test.js`（共有データのマージ）・`node mobile_cust_test.js`（スマホの検索・顧客リスト・リストからの予約）・`node batch_poll_test.js` ほか（GAS 模擬・`BACKEND='gas'` に固定して動かす）。構文だけなら `node smoke_dev_check.js <file>`。
 - 動作確認はブラウザでHTMLを開く（PWA。**Service Workerは使っていない**ので、ブラウザの通常キャッシュだけ。念のため確認時は**強制リロード Ctrl+Shift+R**）。
 - デプロイ = `git push`。GitHub Pages反映に1〜3分。
 - Babelのin-browser変換のため、構文エラーは実行時まで出ない（上の検査で拾う）。
@@ -81,6 +81,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `${STOR}{store}-lres` — 代車予約。**オブジェクト構造** `{ carId: { key: 予約 } }`（配列ではない）。
 - `${STOR}rres` — レンタカー予約。これも**オブジェクト構造** `{ carId: { key: 予約 } }`。
 - `${STOR}cf-index` / `${STOR}cf-{name}-chunk-{i}` — 顧客ファイル（Excelインポート結果）をチャンク分割保存。
+  - **スマホから（v2.95・2026-09-24）**：mobile.html も同じ置き方で読む（`cfLoadAll`。開いた時に1回・本番で4ファイル1,090件0.4MB）。予約でその人の行が変わる時は、サーバーの最新チャンクを読み直して**その1本だけ**書き戻す（`cfSaveRow`）。取り込み・削除・列の直しは PC のまま。リストからの予約はスケジュール（insp）・顧客ファイル・`custbk` の3つを揃えて書く（仮予約は insp に載せない＝PC と同じ）。
   - **削除（v2.79・2026-09-23）**：`cf-index` から名前を外すだけでなく、`cf-{name}-index` と全チャンクも `null` にする（`deleteFileOnServer`）。各画面は一覧に無いファイルを `pruneMissing` で下ろす（起動時・cf-index の購読・60秒ごとの拾い上げ）。取り込み直後10分は prune の対象外。検査は `node cust_delete_test.js`。
 - `${STOR}{store}-dayoff` / `-pleave` — スタッフ休日／有給 `{"YYYY-M-D":[氏名]}`。`{store}-offnote` — 休日メモ `{"YYYY-M-D::氏名":"メモ"}`。`mholidays` — 会社の月間休日数 `{"YYYY-M":N}`（繰り越し計算 `calcHolidayCarry` の元。**会社の休日数が未設定の月で繰越は途切れる**＝繰越は連続して設定した月の間だけ流れる。**枠を超えた分はマイナス繰越にせず有給扱い**：枠を使い切った後に休日を入れると PC・スマホとも自動で pleave に入る（v2.67）。**A案（v2.69）：繰り越した日数は翌月の一番早い休日から順に充て（`carried`）「○月繰り越し分」と表示、集計は「休日N（うち店休日X＋繰り越し休日Y）」、バッジは翌月へ回る分だけ「繰り越しN日」で使い切れば出さない**。index/mobile に同じコード）。
 - `${STOR}mysched` — マイスケジュール（公開予定）`{id:{dk,time,title,memo,owner,uid,at}}`。`${STOR}mysec-{スタッフuid}` — シークレット予定の**暗号化書庫**（`{hint,salt,iter,checkIv,check,iv,data}`。AES-GCM、鍵は「ヒントの答え」から PBKDF2。**答えを忘れると復元不能・運営も読めない**。共通コードは index/mobile 両方にある `HubSecret`/`useHubSecret`/`MySchedPanel`）。

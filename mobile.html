@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1790234765348';
+  window.__APP_BUILD='build-1790242295093';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.94';
+const MOBILE_VERSION='2.95';
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -863,6 +863,70 @@ const sGetMany=async ks=>{
   }catch{return null;}
 };
 const isPlainObj=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
+
+// ══ 顧客ファイル（PC で取り込んだ Excel）をスマホから読む／1行だけ書き戻す（v2.95・2026-09-24）══
+//   置き方は PC の顧客リスト（customers.html）と同じ： cf-index → cf-{名前}-index → cf-{名前}-chunk-i。
+//   スマホでするのは「見る・探す・予約する」だけ。取り込み・削除・列の編集は PC のまま。
+const CF_CHUNK=100;
+const cfSafeName=n=>String(n).replace(/[^a-zA-Z0-9　-鿿゠-ヿ぀-ゟ]/g,'_').slice(0,30);
+// 全ファイルを読む（新しい月が先頭）。本番で4ファイル・1,090件・0.4MB 程度なので、開いた時に1回読む
+const cfLoadAll=async()=>{
+  const idx=await sGet(STOR+'cf-index');
+  const names=(Array.isArray(idx)?idx:[]).map(f=>f&&f.name).filter(Boolean).sort().reverse();
+  const files=[];
+  for(const name of names){
+    const sn=cfSafeName(name);
+    const fi=await sGet(STOR+'cf-'+sn+'-index');
+    const n=(fi&&Number(fi.chunks))||0;
+    if(!n)continue;
+    // チャンクは並列で読む。読めなかった本だけ2回まで取り直す（PC版と同じ用心）
+    const chunks=await Promise.all(Array.from({length:n},async(_,i)=>{
+      let c=await sGet(STOR+'cf-'+sn+'-chunk-'+i);
+      for(let a=0;!Array.isArray(c)&&a<2;a++){await new Promise(r=>setTimeout(r,700*(a+1)));c=await sGet(STOR+'cf-'+sn+'-chunk-'+i);}
+      return Array.isArray(c)?c:null;
+    }));
+    files.push({name,customers:chunks.filter(Boolean).flat(),complete:chunks.every(Boolean)});
+  }
+  return files;
+};
+// 1人ぶんだけ書き戻す。サーバーの最新チャンクを読み直して、その人の行だけ差し替え、
+// 変わった1本だけ書く（他の人の行を巻き添えにしない。PC の saveFileChunked と同じ考え方）
+const cfSaveRow=async(fileName,cust)=>{
+  const sn=cfSafeName(fileName);
+  const fi=await sGet(STOR+'cf-'+sn+'-index');
+  const n=(fi&&Number(fi.chunks))||0;
+  if(!n)throw new Error('顧客ファイルを読めませんでした');
+  for(let i=0;i<n;i++){
+    const key=STOR+'cf-'+sn+'-chunk-'+i;
+    const c=await sGet(key);
+    if(!Array.isArray(c))continue;
+    const ci=c.findIndex(r=>r&&r.custId===cust.custId);
+    if(ci<0)continue;
+    const next=[...c];next[ci]=cust;
+    await sSet(key,next);
+    const back=await sGet(key);                     // 書けたか1回だけ読み返す
+    const b=Array.isArray(back)?back[ci]:null;
+    if(!(b&&b.custId===cust.custId&&b.status===cust.status&&String(b.entryDate||'')===String(cust.entryDate||'')))
+      throw new Error('顧客リストへの反映を確認できませんでした');
+    return true;
+  }
+  throw new Error('顧客リストにこの方の行が見つかりませんでした');
+};
+// 予約の控え（カレンダーの仮予約枠 custbk）。PC のリストから予約した時と同じ形で書く
+const cfCustbkEntry=(cust,dk,form,isTemp)=>({
+  status:isTemp?'provisional':'confirmed',
+  formData:{
+    name:cust.name,staff:form.staff||'',carType:cust.carType||'',
+    phone:cfPhones(cust)[0]||'',address:String(cust.address||'').trim(),
+    course:form.course||0,tokuten:form.tokuten||'-',
+    loaner:'',loanerId:null,rentalLabel:'',rentalCarId:null,
+    time:form.time||'',note:form.note||'',
+    bookingStatus:isTemp?'provisional':'confirmed',
+    custId:cust.custId,store:form.store||cust.store||'honten',
+  },
+  custMonth:null,custRowIdx:null,dk,idx:0,savedAt:Date.now(),
+});
+const cfPhones=c=>[c&&c.phoneMobile,c&&c.phoneHome].map(v=>String(v||'').trim()).filter(Boolean);
 
 // ── 保存リクエストの永続記録 ──
 // 保存はバックグラウンドで継続するため、確認が取れる前にアプリが閉じられる/スマホがロック
@@ -3281,6 +3345,256 @@ const MobileRestoreModal=({user,onClose,inspData})=>{
   );
 };
 
+
+// ══════════════════════════════════════════════════════════════════
+//  検索（v2.95・2026-09-24）：PC のスケジュール画面の検索と同じ中身をスマホでも。
+//  氏名・車種・顧客No・電話で、車検（保管箱の過去分も）・整備（両店）・顧客ファイルから探す。
+// ══════════════════════════════════════════════════════════════════
+const _hubNorm=s=>String(s==null?'':s).normalize('NFKC').toLowerCase().replace(/[\s　\-‐ー－()（）]/g,'');
+const _dkNum=dk=>{const p=String(dk).split('-').map(Number);return p.length===3?p[0]*10000+p[1]*100+p[2]:0;};
+const _dkLab=dk=>{const p=String(dk).split('-').map(Number);if(p.length!==3)return String(dk||'');const d=new Date(p[0],p[1]-1,p[2]);const y=p[0]!==new Date().getFullYear()?String(p[0]).slice(2)+'/':'';return`${y}${p[1]}/${p[2]}（${'日月火水木金土'[d.getDay()]}）`;};
+const _storeLab=st=>(st==='sanda'||st==='三田店')?'三田店':'本店';
+const SHEET={position:'fixed',inset:0,zIndex:7000,background:'white',display:'flex',flexDirection:'column'};
+const SHEET_HEAD={flexShrink:0,background:'linear-gradient(135deg,#1e1b4b,#1d4ed8)',color:'white',padding:'calc(env(safe-area-inset-top,0px) + 9px) 12px 9px',display:'flex',alignItems:'center',gap:8};
+const XBTN={flexShrink:0,width:30,height:30,borderRadius:'50%',border:'none',background:'rgba(255,255,255,.18)',color:'white',fontSize:15};
+const CHIP=(on,c)=>({padding:'5px 12px',borderRadius:16,fontSize:11.5,fontWeight:800,border:`1.5px solid ${on?(c||'#1d4ed8'):'#cbd5e1'}`,background:on?(c||'#1d4ed8'):'white',color:on?'white':'#475569'});
+
+const FindSheet=({inspData,schedDataH,schedDataS,cust,custBusy,onGo,onGoCust,onClose})=>{
+  const [q,setQ]=useState('');
+  const [tab,setTab]=useState('all');
+  const inputRef=useRef(null);
+  useEffect(()=>{const t=setTimeout(()=>{try{inputRef.current&&inputRef.current.focus();}catch(e){}},120);return()=>clearTimeout(t);},[]);
+  const nq=_hubNorm(q);
+  const hit=(...vals)=>!!nq&&vals.some(v=>v!=null&&_hubNorm(v).includes(nq));
+  // 車検
+  const inspHits=[];
+  if(nq)Object.keys(inspData||{}).forEach(dk=>{(inspData[dk]||[]).forEach((r,ix)=>{
+    if(!r||!r.name)return;
+    if(hit(r.name,r.carType,r.no,r.note))inspHits.push({dk,ix,r,n:_dkNum(dk)});
+  });});
+  // 整備（両店）
+  const schedHits=[];
+  if(nq)[['honten',schedDataH],['sanda',schedDataS]].forEach(([st,sd])=>{Object.keys(sd||{}).forEach(dk=>{Object.keys(sd[dk]||{}).forEach(sk=>{
+    const r=sd[dk][sk];if(!r||!r.name)return;
+    if(hit(r.name,r.carType,r.content,r.work))schedHits.push({dk,sk,r,store:st,n:_dkNum(dk)});
+  });});});
+  const custHits=nq?(cust||[]).filter(r=>hit(r.name,r.carType,r.no,r.phoneHome,r.phoneMobile,r.address)):[];
+  const byDate=(a,b)=>b.n-a.n;
+  inspHits.sort(byDate);schedHits.sort(byDate);
+  const total=inspHits.length+schedHits.length+custHits.length;
+  const showI=tab==='all'||tab==='insp',showS=tab==='all'||tab==='sched',showC=tab==='all'||tab==='cust';
+  const mark=t0=>{
+    const t=String(t0==null?'':t0);if(!nq||!t)return t;
+    const j=t.toLowerCase().normalize('NFKC').indexOf(nq);if(j<0)return t;
+    return<>{t.slice(0,j)}<mark style={{background:'#fef08a',padding:'0 1px',borderRadius:3}}>{t.slice(j,j+nq.length)}</mark>{t.slice(j+nq.length)}</>;
+  };
+  const Pill=({c,children})=><span style={{flexShrink:0,fontSize:9.5,fontWeight:800,borderRadius:20,padding:'1px 7px',color:'white',background:c}}>{children}</span>;
+  const Row=({onClick,date,pill,name,sub})=>(
+    <div onClick={onClick} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 12px',borderBottom:'1px solid #f1f5f9'}}>
+      <span style={{flexShrink:0,width:74,fontSize:11,fontWeight:800,color:'#1d4ed8'}}>{date}</span>
+      {pill}
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:13.5,fontWeight:800,color:'#111827'}}>{name}</div>
+        <div style={{fontSize:10.5,color:'#64748b',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{sub}</div>
+      </div>
+    </div>
+  );
+  return(
+    <div style={SHEET}>
+      <div style={SHEET_HEAD}>
+        <span style={{fontSize:16}}>🔍</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,fontWeight:800}}>検索</div>
+          <div style={{fontSize:10,opacity:.8}}>氏名・車種・顧客No・電話で、予約と顧客リストから探します</div>
+        </div>
+        <button onClick={onClose} style={XBTN}>✕</button>
+      </div>
+      <div style={{flexShrink:0,padding:10,borderBottom:'1px solid #e5e7eb',background:'#f8fafc'}}>
+        <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)} placeholder="例：セリエ／ハイエース／1386／090"
+          style={{width:'100%',boxSizing:'border-box',padding:'11px 12px',border:'2px solid #93c5fd',borderRadius:10,fontSize:16,outline:'none'}}/>
+        <div style={{display:'flex',gap:5,marginTop:8,overflowX:'auto'}}>
+          <button onClick={()=>setTab('all')} style={CHIP(tab==='all')}>すべて {nq?total:''}</button>
+          <button onClick={()=>setTab('insp')} style={CHIP(tab==='insp','#3730a3')}>車検 {nq?inspHits.length:''}</button>
+          <button onClick={()=>setTab('sched')} style={CHIP(tab==='sched','#0e7490')}>整備 {nq?schedHits.length:''}</button>
+          <button onClick={()=>setTab('cust')} style={CHIP(tab==='cust','#047857')}>顧客 {nq?custHits.length:''}</button>
+        </div>
+      </div>
+      <div style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch'}}>
+        {!nq&&<div style={{padding:'34px 18px',textAlign:'center',color:'#94a3b8',fontSize:12.5,lineHeight:1.8}}>
+          2文字ほど入れると、その場で絞り込まれます{custBusy?<><br/>（顧客リストを読み込んでいます…）</>:null}</div>}
+        {!!nq&&total===0&&!custBusy&&<div style={{padding:'34px 18px',textAlign:'center',color:'#94a3b8',fontSize:12.5}}>見つかりませんでした</div>}
+        {showI&&inspHits.slice(0,60).map(h=>(
+          <Row key={'i'+h.dk+'-'+h.ix} onClick={()=>onGo(h.dk)} date={_dkLab(h.dk)}
+            pill={<Pill c={h.r.bookingStatus==='cancelled'?'#9ca3af':'#c2410c'}>{h.r.bookingStatus==='cancelled'?'取消':'車検'}</Pill>}
+            name={mark(h.r.name)}
+            sub={<>{mark(h.r.carType||'')}{h.r.carType?' ・ ':''}{_storeLab(h.r.store)}{h.r.time?' ・ '+h.r.time:''}{h.r.no?' ・ No.'+h.r.no:''}</>}/>
+        ))}
+        {showS&&schedHits.slice(0,60).map(h=>(
+          <Row key={'s'+h.store+h.dk+'-'+h.sk} onClick={()=>onGo(h.dk)} date={_dkLab(h.dk)}
+            pill={<Pill c="#0e7490">整備</Pill>} name={mark(h.r.name)}
+            sub={<>{mark(h.r.carType||'')}{h.r.carType?' ・ ':''}{_storeLab(h.store)} ・ {getBaseSlot(h.sk)}{h.r.work?' ・ '+h.r.work:''}</>}/>
+        ))}
+        {showC&&custHits.slice(0,80).map((r,i)=>(
+          <Row key={'c'+(r._file||'')+'-'+(r.custId||i)} onClick={()=>onGoCust(r)} date={r._file||''}
+            pill={<Pill c="#047857">顧客</Pill>} name={mark(r.name)}
+            sub={<>{mark(r.carType||'')}{r.no?' ・ No.'+r.no:''}{cfPhones(r)[0]?' ・ '+cfPhones(r)[0]:''}{r.status==='confirm'?' ・ 予約済':''}</>}/>
+        ))}
+        {showC&&!!nq&&custBusy&&<div style={{padding:'12px 16px',fontSize:11.5,color:'#94a3b8'}}>顧客リストを読み込んでいます…</div>}
+        <div style={{height:40}}/>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════
+//  顧客リスト（v2.95・2026-09-24）：スマホからは「見る・探す・電話する・予約する」。
+//  取り込み・削除・列の直しは PC の顧客リスト（customers.html）のまま。
+// ══════════════════════════════════════════════════════════════════
+const CustSheet=({files,busy,initCust,initQuery,vsId,isClosedDk,inspData,onBook,onTemp,onClose,onReload})=>{
+  const names=(files||[]).map(f=>f.name);
+  const [file,setFile]=useState(()=>(initCust&&initCust._file)||names[0]||'');
+  const [q,setQ]=useState(initQuery||'');
+  const [filt,setFilt]=useState('all');      // all / yet / done
+  const [sel,setSel]=useState(initCust||null);
+  const [bookDk,setBookDk]=useState('');     // 予約する日（<input type=date> の値）
+  const [bookOpen,setBookOpen]=useState(false);
+  useEffect(()=>{if(initCust&&initCust._file&&initCust._file!==file)setFile(initCust._file);},[initCust]);
+  const cur=(files||[]).find(f=>f.name===file)||{name:'',customers:[]};
+  const nq=_hubNorm(q);
+  const list=(cur.customers||[]).filter(c=>{
+    if(filt==='done'&&c.status!=='confirm')return false;
+    if(filt==='yet'&&c.status==='confirm')return false;
+    if(!nq)return true;
+    return [c.name,c.carType,c.no,c.phoneHome,c.phoneMobile,c.address].some(v=>v!=null&&_hubNorm(v).includes(nq));
+  });
+  const st=c=>c.status==='confirm'?{t:'予約済',c:'#047857',bg:'#ecfdf5'}:c.status==='temp'?{t:'仮予約',c:'#b45309',bg:'#fffbeb'}:{t:'未予約',c:'#64748b',bg:'#f8fafc'};
+  const fmtD=v=>{const s=String(v||'');const p=s.split('-');return p.length===3?`${Number(p[1])}/${Number(p[2])}`:s;};
+  const phones=cfPhones(sel||{});
+  // 予約シート：日付を選んで「詳細を入れて本予約」か「仮予約だけ入れる」
+  const dkOfInput=v=>{const p=String(v||'').split('-').map(Number);return p.length===3&&p[0]?`${p[0]}-${p[1]}-${p[2]}`:'';};
+  const bookClosed=bookDk&&isClosedDk&&isClosedDk(dkOfInput(bookDk));
+  return(
+    <div style={SHEET}>
+      <div style={SHEET_HEAD}>
+        <span style={{fontSize:16}}>👥</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,fontWeight:800}}>顧客リスト</div>
+          <div style={{fontSize:10,opacity:.8}}>{busy?'読み込んでいます…':`${cur.name||'—'}　${list.length}件${(cur.customers||[]).length!==list.length?` / ${(cur.customers||[]).length}件`:''}`}</div>
+        </div>
+        <button onClick={onReload} style={{...XBTN,fontSize:13}}>🔄</button>
+        <button onClick={onClose} style={XBTN}>✕</button>
+      </div>
+      <div style={{flexShrink:0,padding:'8px 10px',borderBottom:'1px solid #e5e7eb',background:'#f8fafc'}}>
+        <div style={{display:'flex',gap:5,overflowX:'auto',paddingBottom:6}}>
+          {names.map(n=>(
+            <button key={n} onClick={()=>{setFile(n);setSel(null);}} style={CHIP(file===n,'#3730a3')}>{n}</button>
+          ))}
+        </div>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="氏名・車種・No・電話で絞り込む"
+          style={{width:'100%',boxSizing:'border-box',padding:'10px 12px',border:'2px solid #c7d2fe',borderRadius:10,fontSize:16,outline:'none'}}/>
+        <div style={{display:'flex',gap:5,marginTop:7}}>
+          <button onClick={()=>setFilt('all')} style={CHIP(filt==='all')}>すべて</button>
+          <button onClick={()=>setFilt('yet')} style={CHIP(filt==='yet','#b45309')}>未予約</button>
+          <button onClick={()=>setFilt('done')} style={CHIP(filt==='done','#047857')}>予約済</button>
+        </div>
+      </div>
+      <div style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch'}}>
+        {busy&&!list.length&&<div style={{padding:'34px 18px',textAlign:'center',color:'#94a3b8',fontSize:12.5}}>読み込んでいます…</div>}
+        {!busy&&!list.length&&<div style={{padding:'34px 18px',textAlign:'center',color:'#94a3b8',fontSize:12.5}}>この条件の方はいません</div>}
+        {list.slice(0,400).map((c,i)=>{
+          const s=st(c);
+          return(
+            <div key={(c.custId||i)} onClick={()=>{setSel(c);setBookOpen(false);setBookDk('');}}
+              style={{display:'flex',alignItems:'center',gap:9,padding:'10px 12px',borderBottom:'1px solid #f1f5f9'}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:14.5,fontWeight:800,color:'#111827'}}>{c.name}</div>
+                <div style={{fontSize:10.5,color:'#64748b',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                  {c.carType||'車種なし'}{c.no?' ・ No.'+c.no:''}{c.expiry?' ・ 満了 '+fmtD(c.expiry):''}
+                </div>
+              </div>
+              <span style={{flexShrink:0,fontSize:10,fontWeight:800,color:s.c,background:s.bg,border:`1px solid ${s.c}33`,borderRadius:14,padding:'2px 8px'}}>{s.t}</span>
+              {c.status==='confirm'&&c.entryDate&&<span style={{flexShrink:0,fontSize:10.5,fontWeight:800,color:'#047857'}}>{fmtD(c.entryDate)}</span>}
+            </div>
+          );
+        })}
+        <div style={{height:40}}/>
+      </div>
+
+      {/* 1人ぶんの詳細 */}
+      {sel&&(
+        <div style={{position:'fixed',inset:0,zIndex:7100,background:'rgba(15,23,42,.55)',display:'flex',alignItems:'flex-end'}} onClick={()=>setSel(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{width:'100%',background:'white',borderRadius:'16px 16px 0 0',maxHeight:'88%',overflowY:'auto',paddingBottom:'calc(env(safe-area-inset-bottom,0px) + 14px)'}}>
+            <div style={{padding:'12px 14px 8px',borderBottom:'1px solid #f1f5f9',display:'flex',alignItems:'flex-start',gap:8}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:18,fontWeight:900,color:'#111827'}}>{sel.name}</div>
+                <div style={{fontSize:11.5,color:'#64748b',marginTop:2}}>{sel.carType||'車種なし'}{sel.no?' ・ No.'+sel.no:''}　{cur.name}</div>
+              </div>
+              <button onClick={()=>setSel(null)} style={{...XBTN,background:'#f1f5f9',color:'#475569'}}>✕</button>
+            </div>
+            <div style={{padding:'10px 14px',display:'flex',flexDirection:'column',gap:8}}>
+              {phones.map((p,i)=>(
+                <a key={i} href={'tel:'+p.replace(/[^0-9+]/g,'')}
+                  style={{display:'flex',alignItems:'center',gap:10,padding:'11px 12px',borderRadius:10,background:'#eff6ff',border:'1.5px solid #bfdbfe',textDecoration:'none'}}>
+                  <span style={{fontSize:17}}>📞</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:15,fontWeight:800,color:'#1d4ed8'}}>{p}</div>
+                    <div style={{fontSize:10,color:'#64748b'}}>{i===0&&sel.phoneMobile?'携帯':'自宅'}　タップで発信</div>
+                  </div>
+                </a>
+              ))}
+              {!phones.length&&<div style={{fontSize:11.5,color:'#94a3b8',padding:'4px 2px'}}>電話番号は入っていません</div>}
+              <div style={{display:'flex',gap:8,flexWrap:'wrap',fontSize:12,color:'#334155'}}>
+                <span style={{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:8,padding:'6px 10px'}}>満了日　<b>{sel.expiry||'—'}</b></span>
+                <span style={{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:8,padding:'6px 10px'}}>店舗　<b>{_storeLab(sel.store)}</b></span>
+                {sel.tokuten&&sel.tokuten!=='-'&&<span style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:8,padding:'6px 10px'}}>特典　<b>{sel.tokuten}</b></span>}
+              </div>
+              {sel.address&&<div style={{fontSize:12,color:'#475569',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:8,padding:'8px 10px',lineHeight:1.6}}>{sel.address}</div>}
+              {sel.status==='confirm'&&(
+                <div style={{fontSize:12,color:'#047857',background:'#ecfdf5',border:'1.5px solid #6ee7b7',borderRadius:10,padding:'9px 11px',lineHeight:1.6}}>
+                  <b>予約済み</b>　{_dkLab(sel.entryDate)}{sel.bookingTime?' '+sel.bookingTime:''}（{_storeLab(sel.store)}）
+                </div>
+              )}
+              {sel.status==='temp'&&(
+                <div style={{fontSize:12,color:'#b45309',background:'#fffbeb',border:'1.5px solid #fcd34d',borderRadius:10,padding:'9px 11px',lineHeight:1.6}}>
+                  <b>仮予約</b>{sel.entryDate?'　'+_dkLab(sel.entryDate):''}　スケジュールにはまだ載っていません
+                </div>
+              )}
+              {sel.note&&<div style={{fontSize:11.5,color:'#64748b'}}>メモ：{sel.note}</div>}
+
+              {!bookOpen&&(
+                <button onClick={()=>{setBookOpen(true);setBookDk(sel.entryDate?dkToInputDate(sel.entryDate):'');}}
+                  style={{marginTop:4,padding:'13px 0',borderRadius:11,border:'none',background:'#1d4ed8',color:'white',fontSize:15,fontWeight:800}}>
+                  🚗 {sel.status==='confirm'?'予約を入れ直す':'この方を予約する'}
+                </button>
+              )}
+              {bookOpen&&(
+                <div style={{marginTop:4,border:'1.5px solid #c7d2fe',borderRadius:12,padding:'11px 12px',background:'#f8faff'}}>
+                  <div style={{fontSize:12,fontWeight:800,color:'#3730a3',marginBottom:7}}>車検の日（入庫日）を選んでください</div>
+                  <input type="date" value={bookDk} onChange={e=>setBookDk(e.target.value)}
+                    style={{width:'100%',boxSizing:'border-box',padding:'11px 12px',border:'2px solid #c7d2fe',borderRadius:10,fontSize:16,outline:'none'}}/>
+                  {bookClosed&&<div style={{marginTop:7,fontSize:11.5,color:'#b91c1c',fontWeight:700}}>🏖 その日は休業日です。別の日を選んでください</div>}
+                  <div style={{display:'flex',flexDirection:'column',gap:7,marginTop:10}}>
+                    <button disabled={!bookDk||bookClosed} onClick={()=>onBook(sel,dkOfInput(bookDk),cur.name)}
+                      style={{padding:'13px 0',borderRadius:11,border:'none',background:(!bookDk||bookClosed)?'#cbd5e1':'#1d4ed8',color:'white',fontSize:15,fontWeight:800}}>
+                      本予約（続けて時間・コースを入れる）
+                    </button>
+                    <button disabled={!bookDk||bookClosed} onClick={()=>onTemp(sel,dkOfInput(bookDk),cur.name)}
+                      style={{padding:'12px 0',borderRadius:11,border:'1.5px solid #f59e0b',background:'white',color:'#b45309',fontSize:14,fontWeight:800}}>
+                      仮予約だけ入れる（スケジュールには載せない）
+                    </button>
+                    <button onClick={()=>setBookOpen(false)}
+                      style={{padding:'9px 0',borderRadius:10,border:'none',background:'transparent',color:'#64748b',fontSize:12.5,fontWeight:700}}>やめる</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const App=()=>{
   const [user,setUser]=useState(null);
   const [fadeIn,setFadeIn]=useState(false);
@@ -3289,6 +3603,11 @@ const App=()=>{
   const [gasOk,setGasOk]=useState(null);
   const [dayDetail,setDayDetail]=useState(null);
   const [schedInitDate,setSchedInitDate]=useState(null);
+  // 検索・顧客リスト（v2.95・2026-09-24）
+  const [showFind,setShowFind]=useState(false);
+  const [custSheet,setCustSheet]=useState(null);   // {cust?:選んだ行, query?:最初の絞り込み}
+  const [cfFiles,setCfFiles]=useState(null);       // null=まだ読んでいない
+  const [cfBusy,setCfBusy]=useState(false);
   // マイスケジュール：シークレット予定（暗号化書庫）。保存は下の writeShared 経由
   const mySecret=useHubSecret(user?user.uid:null,k=>sGet(k),(k,m)=>writeShared(k,{},m,()=>{},null,false).then(()=>true).catch(()=>false));
   const [hotInsp,setInspData]=useState({});   // hot=今日以降＋直近。保存はサーバー最新(hot)から構築
@@ -3724,7 +4043,7 @@ const App=()=>{
     const key=req.type==='insp'?lockKeyOf('insp',req.dk,req.idx):lockKeyOf('sched',req.dk,null,req.slot);
     let initial;
     if(req.type==='insp'){
-      initial=req.isNew?{}:{...((inspData[req.dk]||[])[req.idx]||{})};
+      initial=req.isNew?(req.initial||{}):{...((inspData[req.dk]||[])[req.idx]||{})};
     }else{
       const sd=vsId==='honten'?schedDataH:schedDataS;
       initial=req.isNew?{}:{...((sd[req.dk]||{})[req.slot]||{})};
@@ -3734,6 +4053,69 @@ const App=()=>{
       if(lockedBy)setEditMode(m=>(m&&m.type===req.type&&m.dk===req.dk&&m.idx===req.idx&&m.slot===req.slot)?{...m,lockedBy}:m);
     }).catch(()=>{});
   },[user,inspData,schedDataH,schedDataS,vsId]);
+
+  // ── 顧客リスト（PC で取り込んだファイル）──────────────────────────
+  //   検索か顧客リストを開いた時に1回だけ読む（本番で4ファイル・1,090件・0.4MB）。
+  const loadCf=useCallback(async(force)=>{
+    if(cfBusy||(cfFiles&&!force))return;
+    setCfBusy(true);
+    try{ setCfFiles(await cfLoadAll()); }
+    catch(e){ console.warn('[CF] 顧客リストを読めません',e&&e.message); setCfFiles([]); }
+    finally{ setCfBusy(false); }
+  },[cfFiles,cfBusy]);
+  const cfAll=useMemo(()=>{
+    const out=[];(cfFiles||[]).forEach(f=>(f.customers||[]).forEach(r=>{if(r&&r.name)out.push({...r,_file:f.name});}));
+    return out;
+  },[cfFiles]);
+  // 検索結果をタップ → その日のスケジュールを開く
+  const goDay=useCallback(dk=>{
+    const p=String(dk).split('-').map(Number);
+    if(p.length===3&&p[0]){setSchedInitDate({y:p[0],m:p[1]-1,d:p[2]});setTab('sched');}
+    setShowFind(false);setCustSheet(null);
+  },[]);
+  // 顧客リストの1人ぶんを、予約後の姿に直す（画面とサーバーの両方）
+  const applyCustBooking=async(cust,dk,form,isTemp)=>{
+    const upd={...cust,status:isTemp?'temp':'confirm',entryDate:dk,
+      store:normStore(form.store)||normStore(cust.store)||vsId,
+      bookingTime:form.time||'',course:Number(form.course)||0,tokuten:form.tokuten||'-',
+      staff:form.staff||'',note:form.note||'',linkedInspDate:isTemp?'':dk};
+    const file=cust._file;delete upd._file;
+    await cfSaveRow(file,upd);
+    setCfFiles(prev=>(prev||[]).map(f=>f.name!==file?f:{...f,customers:(f.customers||[]).map(c=>c&&c.custId===cust.custId?upd:c)}));
+    // カレンダーの予約枠（custbk）にも控えを置く。PC のリストから予約した時と同じ形
+    const bkKey=String(cust.name||'').trim()+'::'+dk;
+    await writeShared(STOR+'custbk',{},base=>({...base,[bkKey]:cfCustbkEntry(cust,dk,{...form,store:upd.store},!!isTemp)}),()=>{},null,true);
+  };
+  // 本予約：スケジュールの「＋追加」と同じ入力画面を、名前・車種・電話を入れた状態で開く
+  const bookFromCust=useCallback((cust,dk,fileName)=>{
+    if(isClosedDk(dk)){alert('🏖 その日は休業日です。別の日を選んでください');return;}
+    if(inspLimits[dk]!=null){
+      const cnt=(inspData[dk]||[]).filter(r=>r&&r.name&&r.bookingStatus!=='cancelled').length;
+      if(cnt>=inspLimits[dk]){alert('🚫 その日は台数制限（最大'+inspLimits[dk]+'台）に達しているため、車検の予約はできません');return;}
+    }
+    const rows=(inspData[dk]||[]);
+    let idx=0;while(idx<rows.length&&rows[idx]&&rows[idx].name)idx++;
+    setCustSheet(null);setShowFind(false);
+    openEdit({type:'insp',dk,idx,isNew:true,
+      initial:{...blankInsp(),name:cust.name,carType:cust.carType||'',no:cust.no,
+        course:Number(cust.course)||0,tokuten:cust.tokuten||'-',staff:cust.staff||'',note:cust.note||'',
+        phone:cfPhones(cust)[0]||'',address:String(cust.address||'').trim(),
+        custId:cust.custId,store:normStore(cust.store)||vsId,bookingStatus:'confirmed'},
+      cust:{...cust,_file:fileName||cust._file||''}});
+  },[inspData,inspLimits,vsId,isClosedDk,openEdit]);
+  // 仮予約：スケジュールには載せず、顧客リストと予約枠（custbk）にだけ残す（PC のリストと同じ）
+  const tempFromCust=useCallback(async(cust,dk,fileName)=>{
+    const pid=Date.now()+'-'+Math.random().toString(36).slice(2,6);
+    const label=cust.name+'さんの仮予約';
+    setCustSheet(null);
+    upsertBanner({pid,phase:'saving',label});
+    try{
+      await applyCustBooking({...cust,_file:fileName||cust._file||''},dk,{store:cust.store,staff:user?.name||'',time:'',course:cust.course||0,tokuten:cust.tokuten||'-',note:cust.note||''},true);
+      upsertBanner({pid,phase:'done',label});setTimeout(()=>removeBanner(pid),6000);
+    }catch(e){
+      upsertBanner({pid,phase:'fail',label,detail:String(e&&e.message||e)});
+    }
+  },[user,vsId]);
 
   const closeEdit=useCallback(()=>{
     setEditMode(null);
@@ -3853,7 +4235,7 @@ const App=()=>{
         const editingActive=!!(prevRow&&prevRow.name&&prevRow.bookingStatus!=='cancelled');
         const seq=editingActive?(prevRow.seq!=null?prevRow.seq:Date.now()):Date.now();
         placedSeq=seq;
-        rows[req.idx]={...entry,store:normStore(prevRow?.store)||vsId,seq,bookingStatus:'confirmed'};
+        rows[req.idx]={...entry,store:normStore(prevRow?.store)||normStore(entry.store)||vsId,seq,bookingStatus:'confirmed'};
         const dayLimit=inspLimits[req.dk]??6;
         const wasPending=editingActive&&!!prevRow.pendingApproval;
         const recomputed=recomputeInspApproval(rows,dayLimit);
@@ -3991,6 +4373,7 @@ const App=()=>{
     (async()=>{
       try{
         await saveCore(req,form,loanerAction);
+        if(req.cust&&req.cust._file)await applyCustBooking(req.cust,req.dk,form,false);   // 顧客リストからの予約（v2.95）
         upsertBanner({pid,phase:'done',label});
         setTimeout(()=>removeBanner(pid),6000);
         dropOverlays(pid,75000); // GAS読み取りキャッシュ(60s)が入れ替わるまで重ね続ける
@@ -4130,6 +4513,10 @@ const App=()=>{
           <div style={{width:6,height:6,borderRadius:'50%',background:gasOk===true?'#4ade80':gasOk===false?'#f87171':'#fbbf24',marginLeft:2}}/>
           <span style={{color:'rgba(255,255,255,.55)',fontSize:10,fontWeight:700}}>{user.name}（{vsId==='honten'?'本店':'三田店'}）</span>
           <div style={{marginLeft:'auto',display:'flex',gap:6}}>
+            <button onClick={()=>{setShowFind(true);loadCf();}} title="検索"
+              style={{padding:'3px 9px',background:'rgba(255,255,255,.15)',border:'none',borderRadius:6,color:'white',fontSize:11,cursor:'pointer'}}> 🔍 </button>
+            <button onClick={()=>{setCustSheet({});loadCf();}} title="顧客リスト"
+              style={{padding:'3px 9px',background:'rgba(255,255,255,.15)',border:'none',borderRadius:6,color:'white',fontSize:11,cursor:'pointer'}}> 👥 </button>
             <button onClick={()=>fetchAll(true)} disabled={loading}
               style={{padding:'3px 10px',background:'rgba(255,255,255,.15)',border:'none',borderRadius:6,color:'white',fontSize:10,fontWeight:700,cursor:'pointer'}}> {loading?'⏳':'🔄'} </button>
             <button onClick={()=>setMailModal(true)}
@@ -4226,6 +4613,14 @@ const App=()=>{
         onSave={handleSave}
         onDelete={editMode.isNew?null:handleDelete}
         onClose={closeEdit}/>}
+      {showFind&&<FindSheet inspData={inspData} schedDataH={schedDataH} schedDataS={schedDataS}
+        cust={cfAll} custBusy={cfBusy} onGo={goDay}
+        onGoCust={c=>{setShowFind(false);setCustSheet({cust:c});}}
+        onClose={()=>setShowFind(false)}/>}
+      {custSheet&&<CustSheet files={cfFiles||[]} busy={cfBusy} initCust={custSheet.cust||null} initQuery={custSheet.query||''}
+        vsId={vsId} isClosedDk={isClosedDk} inspData={inspData}
+        onBook={bookFromCust} onTemp={tempFromCust} onReload={()=>loadCf(true)}
+        onClose={()=>setCustSheet(null)}/>}
       {mailModal&&<MailModal user={user} onClose={()=>setMailModal(false)} onSaveEmail={saveNotifyEmail}/>}
       {restoreModal&&<MobileRestoreModal user={user} onClose={()=>setRestoreModal(false)} inspData={inspData}/>}
     </div>
