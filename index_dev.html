@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1790234364356';
+    window.__APP_BUILD='build-1790234765348';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -123,7 +123,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.93';
+const APP_VERSION = '2.94';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -11987,15 +11987,15 @@ function AppInner() {
             </div>
             {/* 2行目：ナビ（同じ幅・中央揃え）＋ 店舗切替（2026-09-24 仕様書どおりに作り直し） */}
             <div style={{display:'flex',alignItems:'center',gap:10,paddingBottom:4}}>
-              <div style={{flex:1,minWidth:0,display:'flex',gap:10,alignItems:'center',justifyContent:'center',flexWrap:'nowrap'}}>
+              <div style={{flex:1,minWidth:0,display:'flex',gap:8,alignItems:'center',justifyContent:'center',flexWrap:'nowrap'}}>
                 {(()=>{
                   // 共通の見た目（仕様書：幅160・角丸10・14px/600・アイコン17・中央揃え）
-                  // 幅は160px。画面が狭い時だけ均等に縮む（折り返して2段になるのを防ぐ）
-                  const NAV={boxSizing:'border-box',width:160,flex:'0 1 160px',minWidth:104,padding:'11px 8px',borderRadius:10,border:'none',
-                    display:'flex',alignItems:'center',justifyContent:'center',gap:7,fontSize:14,fontWeight:600,
+                  // 以前のカレンダー・スケジュールと同じ大きさ（12px・角丸7）で、幅だけ揃えて中央に並べる（2026-09-24 ユーザー指示）
+                  const NAV={boxSizing:'border-box',width:118,flex:'0 1 118px',minWidth:92,padding:'6px 12px',borderRadius:7,border:'none',
+                    display:'flex',alignItems:'center',justifyContent:'center',gap:4,fontSize:12,fontWeight:700,
                     whiteSpace:'nowrap',cursor:'pointer',textDecoration:'none',position:'relative'};
                   const RING='0 0 0 2px #1A3FA6';
-                  const ExtMark=()=>(<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:.8}}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>);
+                  const ExtMark=()=>(<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:.8}}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>);
                   const today=new Date();today.setHours(0,0,0,0);
                   const alertCnt=Array.isArray(vehicleData)?vehicleData.filter(v=>{
                     if(!Array.isArray(v.inspections))return false;
@@ -12008,26 +12008,26 @@ function AppInner() {
                   return(<>
                     <button onClick={()=>setView('calendar')}
                       style={{...NAV,background:'#FFFFFF',color:'#1A2550',boxShadow:view==='calendar'?RING:'none'}}>
-                      <Calendar size={17}/>カレンダー
+                      <Calendar size={13}/>カレンダー
                     </button>
                     {selDate&&(
                       <button onClick={()=>setView('schedule')}
                         style={{...NAV,background:'#FFFFFF',color:'#1A2550',boxShadow:view==='schedule'?RING:'none'}}>
-                        <Clock size={17}/>スケジュール
+                        <Clock size={13}/>スケジュール
                       </button>
                     )}
                     <button onClick={()=>{if(selDate)setLoanerMonth(new Date(selDate.getFullYear(),selDate.getMonth(),1));setPickMode(false);setView('loaner');}}
                       style={{...NAV,background:'#FFFFFF',color:'#1A2550',boxShadow:view==='loaner'?RING:'none'}}>
-                      <Car size={17}/>代車管理
+                      <Car size={13}/>代車管理
                     </button>
                     <button onClick={()=>setShowFind(true)}
                       style={{...NAV,background:'#E8492E',color:'#FFFFFF'}}>
-                      <Search size={17}/>検索
+                      <Search size={13}/>検索
                     </button>
                     {/* 顧客リスト・料金表は別タブで開く（2026-09-24 ユーザー指示） */}
                     <a href="./customers.html" target="_blank" rel="noopener noreferrer"
                       style={{...NAV,background:'#3CB371',color:'#FFFFFF'}}>
-                      <Users size={17}/>顧客リスト<ExtMark/>
+                      <Users size={13}/>顧客リスト<ExtMark/>
                     </a>
                     <a href="https://www.midori-m.com/syaken/" target="_blank" rel="noopener noreferrer"
                       style={{...NAV,background:'#FFFFFF',color:'#1A2550'}}>
