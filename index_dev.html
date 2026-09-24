@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1790219362169';
+    window.__APP_BUILD='build-1790219923895';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -123,7 +123,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.91';
+const APP_VERSION = '2.92';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -11909,7 +11909,7 @@ function AppInner() {
       )}
 
       {/* -- ヘッダー -- */}
-      <header ref={headerRef} style={{background:'#EA580C',borderBottom:`3px solid ${vsStore.color}`,padding:'9px 18px',position:'fixed',top:0,left:0,right:0,zIndex:500,boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}}>
+      <header ref={headerRef} style={{background:'#EA580C',borderBottom:`3px solid ${vsStore.color}`,padding:'9px 18px',position:'fixed',top:(fsHint&&isFullscreen)?46:0,transition:'top .2s ease',left:0,right:0,zIndex:500,boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}}>
         {(()=>{
           const userStore=STORES.find(s=>s.id===(currentUser?.store?.id||'honten'))||STORES[0];
           return(
@@ -11943,7 +11943,7 @@ function AppInner() {
                       border:isFullscreen?'2px solid white':'2px solid rgba(255,255,255,0.55)',
                       borderRadius:8,cursor:'pointer',fontWeight:isFullscreen?900:700,fontSize:isFullscreen?12:11,
                       color:isFullscreen?'#c2410c':'white',whiteSpace:'nowrap',
-                      animation:fsHint?'hubFsNudge .7s ease-in-out 1':'none'}}
+                      animation:fsHint?'hubFsNudge .7s ease-in-out 2':'none'}}
                     onMouseEnter={e=>{if(!isFullscreen)e.currentTarget.style.background='rgba(255,255,255,0.32)';}}
                     onMouseLeave={e=>{if(!isFullscreen)e.currentTarget.style.background='rgba(255,255,255,0.18)';}}>
                     {isFullscreen?<Shrink size={14}/>:<Expand size={14}/>}{isFullscreen?'元に戻す':'全画面'}
