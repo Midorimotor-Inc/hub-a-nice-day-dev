@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1790297159886';
+  window.__APP_BUILD='build-1790299640718';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,13 +90,13 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.96';
+const MOBILE_VERSION='2.97';
 // ★画面の色（環境の見分け）：テスト版＝オレンジ／メイン＝青。PC（index）と同じ決まり。
 //   この4つだけを port_to_main.js が本番用に書き換えるので、色は必ずここを使うこと。
-const UI_BG='linear-gradient(160deg,#7c2d12,#EA580C 60%,#f97316)';   // ログイン・登録・引き継ぎ画面の背景
-const UI_HEAD='linear-gradient(135deg,#7c2d12,#EA580C)';             // ヘッダー・全画面シートの見出し
-const UI_TAB='linear-gradient(180deg,#7c2d12,#431407)';              // タブの帯
-const UI_ACC='#c2410c';                                              // 選んでいるタブの文字色
+const UI_BG='#FF9500';                                               // ログイン・登録・引き継ぎ画面の背景（べた塗り）
+const UI_HEAD='#FF9500';                                             // ヘッダー・全画面シートの見出し
+const UI_TAB='#F97316';                                              // タブの帯（見出しより少しだけ濃く）
+const UI_ACC='#b45309';                                              // 選んでいるタブの文字色
 // 三田店の色。メインでは赤（PC の三田店と同じ）。テスト版は両店ともオレンジのまま
 //   ＝どちらの店で開いても「テスト版だ」と分かるようにするため。ここも port_to_main.js が書き換える。
 const UI_BG_S=UI_BG;

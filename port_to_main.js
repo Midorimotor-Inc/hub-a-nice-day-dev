@@ -55,10 +55,11 @@ const CUST_REGEX_RULES = [
 // mobile.html の環境固有差分：STOR と 配色（2026-09-25 追加。テスト版＝オレンジ／メイン＝青。PC と同じ見分け方）
 const MOBILE_RULES = [
   ["const STOR='hub-v8-dev-';", "const STOR='hub-v8-';", 1],
-  ["const UI_BG='linear-gradient(160deg,#7c2d12,#EA580C 60%,#f97316)';", "const UI_BG='linear-gradient(160deg,#1e1b4b,#3730a3 60%,#6d28d9)';", 1],
-  ["const UI_HEAD='linear-gradient(135deg,#7c2d12,#EA580C)';", "const UI_HEAD='linear-gradient(135deg,#1e1b4b,#1d4ed8)';", 1],
-  ["const UI_TAB='linear-gradient(180deg,#7c2d12,#431407)';", "const UI_TAB='linear-gradient(180deg,#1e1b4b,#1e293b)';", 1],
-  ["const UI_ACC='#c2410c';", "const UI_ACC='#1d4ed8';", 1],
+  // テスト版はべた塗りの明るいオレンジ（2026-09-25。グラデーションだと三田店の赤と見間違えるため）
+  ["const UI_BG='#FF9500';", "const UI_BG='linear-gradient(160deg,#1e1b4b,#3730a3 60%,#6d28d9)';", 1],
+  ["const UI_HEAD='#FF9500';", "const UI_HEAD='linear-gradient(135deg,#1e1b4b,#1d4ed8)';", 1],
+  ["const UI_TAB='#F97316';", "const UI_TAB='linear-gradient(180deg,#1e1b4b,#1e293b)';", 1],
+  ["const UI_ACC='#b45309';", "const UI_ACC='#1d4ed8';", 1],
   // 三田店（メインだけ赤。テスト版は両店ともオレンジ＝テスト版と分かるように）
   ["const UI_BG_S=UI_BG;", "const UI_BG_S='linear-gradient(160deg,#450a0a,#dc2626 60%,#ef4444)';", 1],
   ["const UI_HEAD_S=UI_HEAD;", "const UI_HEAD_S='linear-gradient(135deg,#7f1d1d,#dc2626)';", 1],
@@ -73,8 +74,7 @@ const MOBILE_REGEX_RULES = [
 const FORBIDDEN = ['hub-v8-dev', '[DEV]', '[テスト版]', 'テスト版（DEV）', 'スケジュールシステム テスト版', 'DEV版警告バナー',
   'linear-gradient(140deg,#7c2d12', "header ref={headerRef} style={{background:'#EA580C'",
   // mobile.html の配色（この4つの定義だけ。同じ色を使う modal は本番にもあるので、const の形で見る）
-  "const UI_BG='linear-gradient(160deg,#7c2d12", "const UI_HEAD='linear-gradient(135deg,#7c2d12",
-  "const UI_TAB='linear-gradient(180deg,#7c2d12", "const UI_ACC='#c2410c'",
+  "const UI_BG='#FF9500'", "const UI_HEAD='#FF9500'", "const UI_TAB='#F97316'", "const UI_ACC='#b45309'",
   'const UI_BG_S=UI_BG;', 'const UI_HEAD_S=UI_HEAD;', 'const UI_TAB_S=UI_TAB;', 'const UI_ACC_S=UI_ACC;'];
 
 let failed = false;
