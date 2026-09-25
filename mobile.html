@@ -17,7 +17,7 @@
   // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
   // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
   // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
-  window.__APP_BUILD='build-1790242295093';
+  window.__APP_BUILD='build-1790297159886';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -90,7 +90,23 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script id="app-jsx" type="text/plain">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='2.95';
+const MOBILE_VERSION='2.96';
+// ★画面の色（環境の見分け）：テスト版＝オレンジ／メイン＝青。PC（index）と同じ決まり。
+//   この4つだけを port_to_main.js が本番用に書き換えるので、色は必ずここを使うこと。
+const UI_BG='linear-gradient(160deg,#7c2d12,#EA580C 60%,#f97316)';   // ログイン・登録・引き継ぎ画面の背景
+const UI_HEAD='linear-gradient(135deg,#7c2d12,#EA580C)';             // ヘッダー・全画面シートの見出し
+const UI_TAB='linear-gradient(180deg,#7c2d12,#431407)';              // タブの帯
+const UI_ACC='#c2410c';                                              // 選んでいるタブの文字色
+// 三田店の色。メインでは赤（PC の三田店と同じ）。テスト版は両店ともオレンジのまま
+//   ＝どちらの店で開いても「テスト版だ」と分かるようにするため。ここも port_to_main.js が書き換える。
+const UI_BG_S=UI_BG;
+const UI_HEAD_S=UI_HEAD;
+const UI_TAB_S=UI_TAB;
+const UI_ACC_S=UI_ACC;
+// 店舗で色をまとめて選ぶ
+const uiTheme=st=>(st==='sanda')
+  ?{bg:UI_BG_S,head:UI_HEAD_S,tab:UI_TAB_S,acc:UI_ACC_S}
+  :{bg:UI_BG,head:UI_HEAD,tab:UI_TAB,acc:UI_ACC};
 // 本人認証を必須にするか。index_dev.html の AUTH_REQUIRED と必ず同じ値にすること。
 //   false … 従来どおり番号を打てば入れる（移行期間）。登録の入口だけ増える。
 //   true  … この端末で本人確認を済ませた人しか入れない。
@@ -1204,7 +1220,7 @@ const AuthAddScreen=({onDone,onCancel,staffH,staffS,viaHandoff})=>{
 
   return(
     <div style={{height:'100%',display:'flex',flexDirection:'column',justifyContent:'center',padding:22,
-      background:'linear-gradient(160deg,#1e1b4b,#3730a3 60%,#6d28d9)',overflowY:'auto'}}>
+      background:UI_BG,overflowY:'auto'}}>
       <div style={{textAlign:'center',marginBottom:18}}>
         <div style={{fontSize:40,marginBottom:6}}>🔑</div>
         <div style={{color:'white',fontSize:19,fontWeight:900}}>この端末にスタッフを追加</div>
@@ -1403,7 +1419,7 @@ const LoginScreen=({onLogin,onAddAuth})=>{
     );
   }
   return(
-    <div style={{height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,background:'linear-gradient(160deg,#1e1b4b,#3730a3 60%,#6d28d9)'}}>
+    <div style={{height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,background:UI_BG}}>
       <div style={{marginBottom:32,textAlign:'center'}}>
         <div style={{fontSize:48,marginBottom:10}}>🚗</div>
         <div style={{color:'white',fontSize:22,fontWeight:900,letterSpacing:1}}>Hub a Nice Day</div>
@@ -3355,11 +3371,11 @@ const _dkNum=dk=>{const p=String(dk).split('-').map(Number);return p.length===3?
 const _dkLab=dk=>{const p=String(dk).split('-').map(Number);if(p.length!==3)return String(dk||'');const d=new Date(p[0],p[1]-1,p[2]);const y=p[0]!==new Date().getFullYear()?String(p[0]).slice(2)+'/':'';return`${y}${p[1]}/${p[2]}（${'日月火水木金土'[d.getDay()]}）`;};
 const _storeLab=st=>(st==='sanda'||st==='三田店')?'三田店':'本店';
 const SHEET={position:'fixed',inset:0,zIndex:7000,background:'white',display:'flex',flexDirection:'column'};
-const SHEET_HEAD={flexShrink:0,background:'linear-gradient(135deg,#1e1b4b,#1d4ed8)',color:'white',padding:'calc(env(safe-area-inset-top,0px) + 9px) 12px 9px',display:'flex',alignItems:'center',gap:8};
+const sheetHeadStyle=bg=>({flexShrink:0,background:bg||UI_HEAD,color:'white',padding:'calc(env(safe-area-inset-top,0px) + 9px) 12px 9px',display:'flex',alignItems:'center',gap:8});
 const XBTN={flexShrink:0,width:30,height:30,borderRadius:'50%',border:'none',background:'rgba(255,255,255,.18)',color:'white',fontSize:15};
 const CHIP=(on,c)=>({padding:'5px 12px',borderRadius:16,fontSize:11.5,fontWeight:800,border:`1.5px solid ${on?(c||'#1d4ed8'):'#cbd5e1'}`,background:on?(c||'#1d4ed8'):'white',color:on?'white':'#475569'});
 
-const FindSheet=({inspData,schedDataH,schedDataS,cust,custBusy,onGo,onGoCust,onClose})=>{
+const FindSheet=({inspData,schedDataH,schedDataS,cust,custBusy,onGo,onGoCust,onClose,headBg})=>{
   const [q,setQ]=useState('');
   const [tab,setTab]=useState('all');
   const inputRef=useRef(null);
@@ -3401,7 +3417,7 @@ const FindSheet=({inspData,schedDataH,schedDataS,cust,custBusy,onGo,onGoCust,onC
   );
   return(
     <div style={SHEET}>
-      <div style={SHEET_HEAD}>
+      <div style={sheetHeadStyle(headBg)}>
         <span style={{fontSize:16}}>🔍</span>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:800}}>検索</div>
@@ -3450,7 +3466,7 @@ const FindSheet=({inspData,schedDataH,schedDataS,cust,custBusy,onGo,onGoCust,onC
 //  顧客リスト（v2.95・2026-09-24）：スマホからは「見る・探す・電話する・予約する」。
 //  取り込み・削除・列の直しは PC の顧客リスト（customers.html）のまま。
 // ══════════════════════════════════════════════════════════════════
-const CustSheet=({files,busy,initCust,initQuery,vsId,isClosedDk,inspData,onBook,onTemp,onClose,onReload})=>{
+const CustSheet=({files,busy,initCust,initQuery,vsId,isClosedDk,inspData,onBook,onTemp,onClose,onReload,headBg,embedded})=>{
   const names=(files||[]).map(f=>f.name);
   const [file,setFile]=useState(()=>(initCust&&initCust._file)||names[0]||'');
   const [q,setQ]=useState(initQuery||'');
@@ -3474,8 +3490,16 @@ const CustSheet=({files,busy,initCust,initQuery,vsId,isClosedDk,inspData,onBook,
   const dkOfInput=v=>{const p=String(v||'').split('-').map(Number);return p.length===3&&p[0]?`${p[0]}-${p[1]}-${p[2]}`:'';};
   const bookClosed=bookDk&&isClosedDk&&isClosedDk(dkOfInput(bookDk));
   return(
-    <div style={SHEET}>
-      <div style={SHEET_HEAD}>
+    <div style={embedded?{flex:1,display:'flex',flexDirection:'column',minHeight:0,background:'white'}:SHEET}>
+      {embedded?(
+        <div style={{flexShrink:0,display:'flex',alignItems:'center',gap:8,padding:'7px 12px',background:'#f1f5f9',borderBottom:'1px solid #e2e8f0'}}>
+          <span style={{fontSize:12,fontWeight:800,color:'#334155'}}>👥 顧客リスト</span>
+          <span style={{fontSize:10.5,color:'#64748b',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+            {busy?'読み込んでいます…':`${cur.name||'—'}　${list.length}件${(cur.customers||[]).length!==list.length?` / ${(cur.customers||[]).length}件`:''}`}</span>
+          <button onClick={onReload} style={{marginLeft:'auto',flexShrink:0,border:'none',background:'#e2e8f0',borderRadius:8,padding:'4px 10px',fontSize:11}}>🔄</button>
+        </div>
+      ):(
+      <div style={sheetHeadStyle(headBg)}>
         <span style={{fontSize:16}}>👥</span>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:800}}>顧客リスト</div>
@@ -3484,6 +3508,7 @@ const CustSheet=({files,busy,initCust,initQuery,vsId,isClosedDk,inspData,onBook,
         <button onClick={onReload} style={{...XBTN,fontSize:13}}>🔄</button>
         <button onClick={onClose} style={XBTN}>✕</button>
       </div>
+      )}
       <div style={{flexShrink:0,padding:'8px 10px',borderBottom:'1px solid #e5e7eb',background:'#f8fafc'}}>
         <div style={{display:'flex',gap:5,overflowX:'auto',paddingBottom:6}}>
           {names.map(n=>(
@@ -4067,6 +4092,8 @@ const App=()=>{
     const out=[];(cfFiles||[]).forEach(f=>(f.customers||[]).forEach(r=>{if(r&&r.name)out.push({...r,_file:f.name});}));
     return out;
   },[cfFiles]);
+  // 顧客タブを開いたら、その時に1回だけ読む
+  useEffect(()=>{ if(tab==='cust')loadCf(); },[tab,loadCf]);
   // 検索結果をタップ → その日のスケジュールを開く
   const goDay=useCallback(dk=>{
     const p=String(dk).split('-').map(Number);
@@ -4494,7 +4521,7 @@ const App=()=>{
   },[editMode,user,vsId,inspData,schedDataH,schedDataS,loanerResH,loanerResS,rentalResData,inspLimits]);
 
   if(!user&&handPending)
-    return <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,#1e1b4b,#3730a3 60%,#6d28d9)',color:'white',fontWeight:800,fontSize:15}}>登録を引き継いでいます…</div>;
+    return <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:UI_BG,color:'white',fontWeight:800,fontSize:15}}>登録を引き継いでいます…</div>;
   if(!user&&(showAuthAdd||(AUTH_REQUIRED&&authMine.length===0)))
     return <AuthAddScreen staffH={staffH} staffS={staffS} viaHandoff={viaHandoff}
       onCancel={(authMine.length>0||!AUTH_REQUIRED)?()=>{setShowAuthAdd(false);setViaHandoff(false);}:null}
@@ -4502,21 +4529,20 @@ const App=()=>{
   if(!user)return <LoginScreen
     onLogin={u=>{hubUse(u.name);hubRenew(u.name);setUser(u);setFadeIn(true);}}
     onAddAuth={()=>setShowAuthAdd(true)}/>;
-  const TABS=[{id:'cal',label:'カレンダー',icon:'📅'},{id:'sched',label:'スケジュール',icon:'⏰'},{id:'loaner',label:'代車',icon:'🚙'},{id:'off',label:'休日',icon:'🏖'}];
+  const TABS=[{id:'cal',label:'カレンダー',icon:'📅'},{id:'sched',label:'スケジュール',icon:'⏰'},{id:'loaner',label:'代車',icon:'🚙'},{id:'cust',label:'顧客',icon:'👥'},{id:'off',label:'休日',icon:'🏖'}];
+  const TH=uiTheme(vsId);   // 店舗ごとの色（メインは本店＝青／三田店＝赤。テスト版はオレンジ）
   return(
     <div style={{height:'100%',display:'flex',flexDirection:'column',position:'relative'}}>
       {fadeIn&&<div style={{position:'absolute',inset:0,background:'white',zIndex:999,animation:'loginFadeIn 2.5s ease forwards',pointerEvents:'none'}} onAnimationEnd={()=>setFadeIn(false)}/>}
-      <div style={{flexShrink:0,background:'linear-gradient(135deg,#1e1b4b,#1d4ed8)',paddingTop:'env(safe-area-inset-top,0px)'}}>
+      <div style={{flexShrink:0,background:TH.head,paddingTop:'env(safe-area-inset-top,0px)'}}>
         <div style={{padding:'7px 12px',display:'flex',alignItems:'center',gap:6}}>
-          <span style={{color:'white',fontSize:12,fontWeight:900,letterSpacing:'.5px'}}>🚗 Hub</span>
+          <span style={{color:'white',fontSize:12,fontWeight:900,letterSpacing:'.5px',flexShrink:0,whiteSpace:'nowrap'}}>🚗 Hub</span>
           <span style={{color:'rgba(255,255,255,.45)',fontSize:9,fontWeight:700,padding:'1px 5px',border:'1px solid rgba(255,255,255,.25)',borderRadius:8}}>v{MOBILE_VERSION}</span>
           <div style={{width:6,height:6,borderRadius:'50%',background:gasOk===true?'#4ade80':gasOk===false?'#f87171':'#fbbf24',marginLeft:2}}/>
-          <span style={{color:'rgba(255,255,255,.55)',fontSize:10,fontWeight:700}}>{user.name}（{vsId==='honten'?'本店':'三田店'}）</span>
-          <div style={{marginLeft:'auto',display:'flex',gap:6}}>
+          <span style={{color:'rgba(255,255,255,.55)',fontSize:10,fontWeight:700,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user.name}（{vsId==='honten'?'本店':'三田店'}）</span>
+          <div style={{marginLeft:'auto',flexShrink:0,display:'flex',gap:6}}>
             <button onClick={()=>{setShowFind(true);loadCf();}} title="検索"
               style={{padding:'3px 9px',background:'rgba(255,255,255,.15)',border:'none',borderRadius:6,color:'white',fontSize:11,cursor:'pointer'}}> 🔍 </button>
-            <button onClick={()=>{setCustSheet({});loadCf();}} title="顧客リスト"
-              style={{padding:'3px 9px',background:'rgba(255,255,255,.15)',border:'none',borderRadius:6,color:'white',fontSize:11,cursor:'pointer'}}> 👥 </button>
             <button onClick={()=>fetchAll(true)} disabled={loading}
               style={{padding:'3px 10px',background:'rgba(255,255,255,.15)',border:'none',borderRadius:6,color:'white',fontSize:10,fontWeight:700,cursor:'pointer'}}> {loading?'⏳':'🔄'} </button>
             <button onClick={()=>setMailModal(true)}
@@ -4527,14 +4553,14 @@ const App=()=>{
               style={{padding:'3px 8px',background:'rgba(255,255,255,.1)',border:'none',borderRadius:6,color:'rgba(255,255,255,.7)',fontSize:10,cursor:'pointer'}}> ↩ </button>
           </div>
         </div>
-        <div style={{display:'flex',alignItems:'flex-end',gap:2,padding:'0 8px',background:'linear-gradient(180deg,#1e1b4b,#1e293b)'}}>
+        <div style={{display:'flex',alignItems:'flex-end',gap:2,padding:'0 8px',background:TH.tab}}>
           {TABS.map(t=>{
             const isActive=tab===t.id;
             return(
               <div key={t.id} onClick={()=>setTab(t.id)}
-                style={{background:isActive?'white':'rgba(255,255,255,.12)',borderRadius:'10px 10px 0 0',padding:isActive?'8px 10px':'6px 8px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,minWidth:isActive?58:54,cursor:'pointer',boxShadow:isActive?'0 -3px 10px rgba(0,0,0,.2)':'none',marginTop:isActive?0:4,transition:'all .15s'}}>
+                style={{background:isActive?'white':'rgba(255,255,255,.12)',borderRadius:'10px 10px 0 0',padding:isActive?'8px 10px':'6px 8px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,minWidth:isActive?54:50,cursor:'pointer',boxShadow:isActive?'0 -3px 10px rgba(0,0,0,.2)':'none',marginTop:isActive?0:4,transition:'all .15s'}}>
                 <div style={{fontSize:isActive?16:13,opacity:isActive?1:.8}}>{t.icon}</div>
-                <div style={{fontSize:isActive?7.5:7,fontWeight:isActive?800:400,color:isActive?'#1d4ed8':'rgba(255,255,255,.65)',letterSpacing:'.3px'}}> {t.label} </div>
+                <div style={{fontSize:isActive?7.5:7,fontWeight:isActive?800:400,color:isActive?TH.acc:'rgba(255,255,255,.65)',letterSpacing:'.3px'}}> {t.label} </div>
               </div>
             );
           })}
@@ -4587,6 +4613,9 @@ const App=()=>{
           onSelectDate={(dk,y,m,d)=>setDayDetail({dk,y,m,d})}/>}
         {tab==='loaner'&&<LoanerView loanerResH={loanerResH} loanerResS={loanerResS} rentalResData={rentalResData} rentalCars={rentalCars}
           loanerCarsH={loanerCarsH} loanerCarsS={loanerCarsS} vsId={vsId}/>}
+        {tab==='cust'&&<CustSheet embedded files={cfFiles||[]} busy={cfBusy} initCust={custSheet&&custSheet.cust||null} initQuery={custSheet&&custSheet.query||''}
+          vsId={vsId} isClosedDk={isClosedDk} inspData={inspData}
+          onBook={bookFromCust} onTemp={tempFromCust} onReload={()=>loadCf(true)}/>}
         {tab==='off'&&<HolidayView user={user} vsId={vsId} adminMode={canRestore(user)}
           staffH={staffH.length?staffH:DEFAULT_STAFF.filter(s=>s.store==='honten')} staffS={staffS.length?staffS:DEFAULT_STAFF.filter(s=>s.store==='sanda')}
           dayOffH={dayOffH} dayOffS={dayOffS} pleaveH={pleaveH} pleaveS={pleaveS}
@@ -4615,12 +4644,8 @@ const App=()=>{
         onClose={closeEdit}/>}
       {showFind&&<FindSheet inspData={inspData} schedDataH={schedDataH} schedDataS={schedDataS}
         cust={cfAll} custBusy={cfBusy} onGo={goDay}
-        onGoCust={c=>{setShowFind(false);setCustSheet({cust:c});}}
-        onClose={()=>setShowFind(false)}/>}
-      {custSheet&&<CustSheet files={cfFiles||[]} busy={cfBusy} initCust={custSheet.cust||null} initQuery={custSheet.query||''}
-        vsId={vsId} isClosedDk={isClosedDk} inspData={inspData}
-        onBook={bookFromCust} onTemp={tempFromCust} onReload={()=>loadCf(true)}
-        onClose={()=>setCustSheet(null)}/>}
+        onGoCust={c=>{setShowFind(false);setCustSheet({cust:c});setTab('cust');}}
+        onClose={()=>setShowFind(false)} headBg={TH.head}/>}
       {mailModal&&<MailModal user={user} onClose={()=>setMailModal(false)} onSaveEmail={saveNotifyEmail}/>}
       {restoreModal&&<MobileRestoreModal user={user} onClose={()=>setRestoreModal(false)} inspData={inspData}/>}
     </div>

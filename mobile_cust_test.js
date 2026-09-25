@@ -17,6 +17,7 @@ const DIR = __dirname, PORT = 8177, STOR = 'hub-v8-dev-';
 let pass = 0, fail = 0;
 const t = (label, ok, extra) => { if (ok) { pass++; console.log('  ✔ ' + label); } else { fail++; console.log('  ✖ ' + label, extra === undefined ? '' : JSON.stringify(extra).slice(0, 400)); } };
 const seeText = async (page, s, ms = 8000) => { try { await page.waitForFunction(x => document.body.innerText.includes(x), s, { timeout: ms }); return true; } catch (e) { return false; } };
+const clickTab = (page, s) => page.evaluate(x => { const d = [...document.querySelectorAll('div')].find(e => e.offsetParent !== null && e.style && e.style.borderRadius.indexOf('10px 10px') === 0 && e.innerText.includes(x)); if (d) { d.click(); return true; } return false; }, s);
 const clickText = (page, s) => page.evaluate(x => { const b = [...document.querySelectorAll('button')].find(e => e.innerText.includes(x) && e.offsetParent !== null); if (b) { b.click(); return true; } return false; }, s);
 const FAKE_FB = fs.readFileSync(path.join(DIR, 'fake_firebase.js'), 'utf8');
 const EGAWA = { email: 'egawa@midori-m.com', fbuid: 'uid_egawa', uid: 'h7', name: '江川京志', store: 'honten', role: 'admin' };
@@ -110,7 +111,7 @@ const cust = (i, o) => Object.assign({
 
   // ── 2. 顧客リスト ──
   console.log('\n■ 顧客リスト（👥）');
-  t('ヘッダーに顧客リストのボタンがある', await clickText(page, '👥'));
+  t('下のタブに「顧客」がある（代車と休日の間）', await clickTab(page, '顧客') && await page.evaluate(() => { const tabs = [...document.querySelectorAll('div')].filter(e => e.style && e.style.borderRadius.indexOf('10px 10px') === 0).map(e => e.innerText.replace(/s/g, '')); return tabs.join(',').indexOf('代車') < tabs.join(',').indexOf('顧客') && tabs.join(',').indexOf('顧客') < tabs.join(',').indexOf('休日'); }));
   t('顧客リストが開き、新しい月が先に出る', await seeText(page, '井上花子', 10000) && (await page.evaluate(() => document.body.innerText)).includes('202610'));
   await page.screenshot({ path: path.join(DIR, 'smoke-mobile-custlist.png') });
   t('予約済みの人には印と入庫日が出る', await page.evaluate(() => { const t = document.body.innerText; return t.includes('椿三十郎') && t.includes('予約済'); }));
@@ -146,7 +147,7 @@ const cust = (i, o) => Object.assign({
 
   // ── 5. 本予約（いつもの入力画面 → 3つ揃う）──
   console.log('\n■ 本予約');
-  await clickText(page, '👥');
+  await clickTab(page, '顧客');
   await seeText(page, '井上花子', 10000);
   await page.evaluate(() => { const r = [...document.querySelectorAll('div')].find(e => e.innerText && e.innerText.startsWith('井上花子') && e.style && e.style.borderBottom); if (r) r.click(); });
   await clickText(page, '予約を入れ直す') || await clickText(page, 'この方を予約する');
@@ -164,7 +165,7 @@ const cust = (i, o) => Object.assign({
   t('顧客ファイルが「予約済」になり、入庫日が入る', await page.waitForFunction(([k, dk]) => { const c = (window.__fakeFb.get(k + 'cf-202610-chunk-0') || []).find(x => x.custId === 'c1'); return c && c.status === 'confirm' && c.entryDate === dk; }, [STOR, BDK], { timeout: 20000 }).then(() => true).catch(() => false), await kv(page, STOR + 'cf-202610-chunk-0'));
   t('同じチャンクの他の人（椿さん）は壊れていない', await page.evaluate(k => { const c = (window.__fakeFb.get(k + 'cf-202610-chunk-0') || []).find(x => x.custId === 'c2'); return !!c && c.name === '椿三十郎' && c.status === 'confirm'; }, STOR));
   t('予約枠（custbk）が本予約になる', await page.waitForFunction(([k, dk]) => { const e = (window.__fakeFb.get(k + 'custbk') || {})['井上花子::' + dk]; return e && e.status === 'confirmed'; }, [STOR, BDK], { timeout: 20000 }).then(() => true).catch(() => false), await kv(page, STOR + 'custbk'));
-  t('顧客リストを開き直すと「予約済」で出る', await clickText(page, '👥') && await page.waitForFunction(() => [...document.querySelectorAll('div')].some(e => e.innerText && e.innerText.startsWith('井上花子') && e.style && e.style.borderBottom && e.innerText.includes('予約済')), null, { timeout: 10000 }).then(() => true).catch(() => false));
+  t('顧客リストを開き直すと「予約済」で出る', await clickTab(page, '顧客') && await page.waitForFunction(() => [...document.querySelectorAll('div')].some(e => e.innerText && e.innerText.startsWith('井上花子') && e.style && e.style.borderBottom && e.innerText.includes('予約済')), null, { timeout: 10000 }).then(() => true).catch(() => false));
 
   await page.screenshot({ path: path.join(DIR, 'smoke-mobile-cust.png') });
   t('画面のエラーは出ていない', errs.length === 0, errs.slice(0, 3));

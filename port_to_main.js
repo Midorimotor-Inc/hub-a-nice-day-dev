@@ -52,9 +52,18 @@ const CUST_REGEX_RULES = [
   // 自動アップデート検知のビルド識別子をデプロイ毎に更新
   [/__APP_BUILD='build-\d+'/, "__APP_BUILD='build-" + Date.now() + "'", 1, 'APP_BUILDタイムスタンプ'],
 ];
-// mobile.html の環境固有差分は STOR のみ（タイトル[DEV]なし・バッジなし・配色差分なし。2026-07-04時点）
+// mobile.html の環境固有差分：STOR と 配色（2026-09-25 追加。テスト版＝オレンジ／メイン＝青。PC と同じ見分け方）
 const MOBILE_RULES = [
   ["const STOR='hub-v8-dev-';", "const STOR='hub-v8-';", 1],
+  ["const UI_BG='linear-gradient(160deg,#7c2d12,#EA580C 60%,#f97316)';", "const UI_BG='linear-gradient(160deg,#1e1b4b,#3730a3 60%,#6d28d9)';", 1],
+  ["const UI_HEAD='linear-gradient(135deg,#7c2d12,#EA580C)';", "const UI_HEAD='linear-gradient(135deg,#1e1b4b,#1d4ed8)';", 1],
+  ["const UI_TAB='linear-gradient(180deg,#7c2d12,#431407)';", "const UI_TAB='linear-gradient(180deg,#1e1b4b,#1e293b)';", 1],
+  ["const UI_ACC='#c2410c';", "const UI_ACC='#1d4ed8';", 1],
+  // 三田店（メインだけ赤。テスト版は両店ともオレンジ＝テスト版と分かるように）
+  ["const UI_BG_S=UI_BG;", "const UI_BG_S='linear-gradient(160deg,#450a0a,#dc2626 60%,#ef4444)';", 1],
+  ["const UI_HEAD_S=UI_HEAD;", "const UI_HEAD_S='linear-gradient(135deg,#7f1d1d,#dc2626)';", 1],
+  ["const UI_TAB_S=UI_TAB;", "const UI_TAB_S='linear-gradient(180deg,#7f1d1d,#450a0a)';", 1],
+  ["const UI_ACC_S=UI_ACC;", "const UI_ACC_S='#b91c1c';", 1],
 ];
 const MOBILE_REGEX_RULES = [
   // 自動アップデート検知のビルド識別子をデプロイ毎に更新（旧タブ/旧PWAが新版を検知してバナー表示）
@@ -62,7 +71,11 @@ const MOBILE_REGEX_RULES = [
 ];
 // 変換後にあってはならない文字列（残骸チェック）
 const FORBIDDEN = ['hub-v8-dev', '[DEV]', '[テスト版]', 'テスト版（DEV）', 'スケジュールシステム テスト版', 'DEV版警告バナー',
-  'linear-gradient(140deg,#7c2d12', "header ref={headerRef} style={{background:'#EA580C'"];
+  'linear-gradient(140deg,#7c2d12', "header ref={headerRef} style={{background:'#EA580C'",
+  // mobile.html の配色（この4つの定義だけ。同じ色を使う modal は本番にもあるので、const の形で見る）
+  "const UI_BG='linear-gradient(160deg,#7c2d12", "const UI_HEAD='linear-gradient(135deg,#7c2d12",
+  "const UI_TAB='linear-gradient(180deg,#7c2d12", "const UI_ACC='#c2410c'",
+  'const UI_BG_S=UI_BG;', 'const UI_HEAD_S=UI_HEAD;', 'const UI_TAB_S=UI_TAB;', 'const UI_ACC_S=UI_ACC;'];
 
 let failed = false;
 const countOf = (s, needle) => s.split(needle).length - 1;
