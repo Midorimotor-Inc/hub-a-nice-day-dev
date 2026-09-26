@@ -20,7 +20,7 @@
   // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
   // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
   // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-  window.__APP_BUILD='build-1790299640718';
+  window.__APP_BUILD='build-1790430570974';
   (function(){
     var RUNNING=window.__APP_BUILD, shown=false, checking=false;
     function runningVer(){
@@ -141,7 +141,7 @@ const hubRenew = async name => {};
 // index側の全画面オーバーレイ（iframe）内で開かれているか。埋め込み時は
 // 「スケジュールに戻る」がページ遷移ではなく親へのpostMessage（オーバーレイ閉鎖）になる。
 const IS_EMBED=(()=>{try{return window.self!==window.top;}catch(e){return true;}})();
-const APP_VERSION='2.97'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
+const APP_VERSION='2.98'; // 表示用バージョン。更新ごとに上げる（軽微+0.01／大型は整数を上げる）。index_dev.htmlと揃える
 const storKey=(base,sid)=>`${STOR}${sid}-${base}`;
 const CHUNK_SIZE=100;
 // ファイル名をGASキーに使える形に変換
@@ -151,6 +151,73 @@ const safeName=n=>n.replace(/[^a-zA-Z0-9　-鿿゠-ヿ぀-ゟ]/g,'_').slice(0,30
 //   1行の予約で3チャンク（各40KB弱＝GASのDrive書き込み）を毎回書き直しており、GASのロック
 //   （全書き込み共通・25秒）を長時間占有して他の保存をlock_timeoutで無言failさせていた。
 let __saveCount=0;
+
+// ══ 顧客の横断検索「索引」（v2.98・2026-09-26）══════════════════════════
+//   月ファイル（cf-*）がいつでも正。索引はそこから何度でも作り直せる“探すための軽い写し”で、
+//   DM の月ごと一覧にも集計にも使わない。だから消えても作り直すだけで済む。
+//   中身は 氏名・車種・顧客No・電話・満了日・どのファイルの誰か だけ。
+//   ★予約状況（status/入庫日）は入れない：変わるたびに索引を直す必要が無くなり、古い情報が出ない。
+//   キー： cf-search-index … {built, total, chunks, files:[月...]}
+//          cf-search-chunk-i … 索引の行の配列（1本 2500行・約200KB）
+const CFX_CHUNK = 2500;
+const cfxIndexKey = () => STOR + 'cf-search-index';
+const cfxChunkKey = i => STOR + 'cf-search-chunk-' + i;
+const cfxRow = (c, fileName) => ({
+  n: String(c.name || ''), c: String(c.carType || ''), no: (c.no == null ? '' : c.no),
+  p: [c.phoneMobile, c.phoneHome].map(v => String(v || '').trim()).filter(Boolean).join('/'),
+  e: String(c.expiry || ''), f: String(fileName || ''), i: String(c.custId || ''),
+});
+// 探す時の正規化：全角半角・大小・空白・ハイフン・かっこを無視する（画面の検索と同じ規則）
+const cfxNorm = s => String(s == null ? '' : s).normalize('NFKC').toLowerCase().replace(/[\s　\-‐ー－()（）]/g, '');
+const cfxDigits = s => String(s == null ? '' : s).normalize('NFKC').replace(/[^0-9]/g, '');
+// 同じ人をまとめる鍵：顧客Noがあればそれ、無ければ氏名＋車種
+const cfxPersonKey = r => (r.no !== '' && r.no != null) ? ('no:' + cfxNorm(r.no)) : ('nm:' + cfxNorm(r.n) + '/' + cfxNorm(r.c));
+// 索引を読む（sGet を渡す）。無ければ null＝まだ作られていない
+const cfxLoad = async (sGet) => {
+  const idx = await sGet(cfxIndexKey());
+  if (!idx || !Number(idx.chunks)) return null;
+  const parts = await Promise.all(Array.from({ length: Number(idx.chunks) }, async (_, i) => {
+    let a = await sGet(cfxChunkKey(i));
+    for (let t = 0; !Array.isArray(a) && t < 2; t++) { await new Promise(r => setTimeout(r, 600 * (t + 1))); a = await sGet(cfxChunkKey(i)); }
+    return Array.isArray(a) ? a : null;
+  }));
+  if (parts.some(p => !p)) return null;                 // 欠けている＝作り直しが要る
+  return { meta: idx, rows: parts.flat() };
+};
+// 索引を作って書く（files は [{name, customers:[...]}]。PC の顧客リストが持っているもの）
+const cfxBuild = async (files, sSet) => {
+  const rows = [];
+  [...files].sort((a, b) => String(b.name).localeCompare(String(a.name)))
+    .forEach(f => (f.customers || []).forEach(c => { if (c && c.name) rows.push(cfxRow(c, f.name)); }));
+  const chunks = [];
+  for (let i = 0; i < rows.length; i += CFX_CHUNK) chunks.push(rows.slice(i, i + CFX_CHUNK));
+  for (let i = 0; i < chunks.length; i++) await sSet(cfxChunkKey(i), chunks[i]);
+  const meta = { built: Date.now(), total: rows.length, chunks: chunks.length, files: files.map(f => f.name) };
+  await sSet(cfxIndexKey(), meta);
+  return meta;
+};
+// 探す：ヒットした行を「人」でまとめ、新しい月を今回・それ以外を前回として返す
+//   数字だけを打った時は 電話と顧客No の数字で探す（電話の下4桁だけでも出る）
+const cfxSearch = (rows, q, limit) => {
+  const raw = String(q || '').trim();
+  if (raw.length < 2) return [];
+  const nq = cfxNorm(raw), dq = cfxDigits(raw);
+  const numOnly = dq.length >= 2 && cfxNorm(raw) === dq;
+  const hit = r => numOnly
+    ? (cfxDigits(r.p).includes(dq) || cfxDigits(r.no).includes(dq))
+    : (cfxNorm(r.n).includes(nq) || cfxNorm(r.c).includes(nq) || cfxNorm(r.no).includes(nq) || cfxNorm(r.p).includes(nq));
+  const groups = new Map();
+  for (const r of rows) {
+    if (!hit(r)) continue;
+    const k = cfxPersonKey(r);
+    const g = groups.get(k);
+    if (!g) groups.set(k, { key: k, now: r, past: [] });
+    else if (String(r.f) > String(g.now.f)) { g.past.unshift(g.now); g.now = r; }
+    else g.past.push(r);
+    if (groups.size >= (limit || 200) && !groups.has(k)) break;
+  }
+  return [...groups.values()].sort((a, b) => String(b.now.f).localeCompare(String(a.now.f)));
+};
 const splitChunks=custs=>{const cs=[];for(let i=0;i<custs.length;i+=CHUNK_SIZE)cs.push(custs.slice(i,i+CHUNK_SIZE));return cs;};
 // ★sSetはno-cors＝GASが lock_timeout を返しても成功として返る。重要な書き込みは
 //   「書く→読み返す→違えば再送」で必ず着地を確認する（2026-08-24追加）。
@@ -2168,6 +2235,28 @@ const App=()=>{
   const pollUpdatesRef = useRef(null);
   const reconcileRef = useRef(null); // スケジュール→リスト突き合わせ（自己修復）
   const [activeIdx,setActiveIdx]=useState(0);
+  // ── 横断検索の索引（v2.98）──
+  const [cfxRows,setCfxRows]=useState(null);     // null=まだ読んでいない／[]=索引が無い
+  const [cfxMeta,setCfxMeta]=useState(null);
+  const [cfxQ,setCfxQ]=useState('');
+  const [cfxBusy,setCfxBusy]=useState(false);
+  useEffect(()=>{ (async()=>{
+    try{ const r=await cfxLoad(sGet); if(r){setCfxRows(r.rows);setCfxMeta(r.meta);} else setCfxRows([]); }
+    catch(e){ setCfxRows([]); }
+  })(); },[]);
+  // 索引を作り直す（取り込み・削除のあとに自動で。手動ボタンもある）
+  const cfxRebuild=useCallback(async(fileList)=>{
+    const list=(fileList||filesRef.current||[]).filter(f=>f&&Array.isArray(f.customers)&&f.customers.length);
+    if(!list.length){setCfxRows([]);setCfxMeta(null);return null;}
+    setCfxBusy(true);
+    try{
+      const meta=await cfxBuild(list,sSet);
+      const r=await cfxLoad(sGet);
+      if(r){setCfxRows(r.rows);setCfxMeta(r.meta);}
+      return meta;
+    }catch(e){ console.warn('[CFX] 索引を作れません',e&&e.message); return null; }
+    finally{ setCfxBusy(false); }
+  },[]);
   const [search,setSearch]=useState('');
   const [filterStatus,setFilterStatus]=useState('all');
   // ★スケジュール画面の「検索」から開かれた時（2026-09-19）：sessionStorage の指示で、そのファイルを開いて名前で絞る
@@ -2810,6 +2899,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
 他のPCからは見えない状態です。通信が混み合っている可能性があるので、少し待ってからもう一度取り込んでください。`);
       }else{
         setCfWarn([]);
+        cfxRebuild(okFiles);   // 横断検索の索引を作り直す（v2.98）
         alert(`${results.map(r=>`「${r.name}」${r.customers.length}件`).join('、')} をインポートしました。
 保存を確認しました（開いた人全員のPCに共有されます）。`);
       }
@@ -2834,6 +2924,7 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
       await saveFilesIndex(next,{remove:[deletedFile.name]});   // 一覧から外す（これで他のPCからも消える）
       await deleteFileOnServer(deletedFile.name,(n,total)=>setImportMsg(`「${deletedFile.name}」を削除中… ${n}/${total}`));
       setImportMsg('');
+      cfxRebuild(next);   // 横断検索の索引も作り直す（v2.98）
     }catch(e){
       setImportMsg('');
       alert('⚠ 削除の途中で通信に失敗しました。\nもう一度お試しください（一覧からは外れています）。');
@@ -3496,6 +3587,53 @@ ${failed.length?failed.map(n=>'「'+n+'」').join('、'):'一覧の更新に失�
         <input ref={fileInputRef} type="file" accept=".xlsx,.xls" multiple style={{display:'none'}}
           onChange={handleImport}/>
       </div>
+
+      {/* ── 全月から探す（横断検索・v2.98）。月ごとの一覧と集計は今までどおり下に出る ── */}
+      {files.length>0&&(
+        <div style={{flexShrink:0,background:'#f8fafc',borderBottom:'1px solid #e5e7eb',padding:'7px 14px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',position:'relative'}}>
+          <span style={{fontSize:12,fontWeight:800,color:'#334155',whiteSpace:'nowrap'}}>🔍 全月から探す</span>
+          <input value={cfxQ} onChange={e=>setCfxQ(e.target.value)}
+            placeholder="氏名・電話・車種・No（電話は下4桁だけでも可）"
+            style={{padding:'7px 12px',border:'2px solid #93c5fd',borderRadius:8,fontSize:13,outline:'none',minWidth:330}}/>
+          {cfxQ&&<button onClick={()=>setCfxQ('')} style={{padding:'5px 10px',borderRadius:8,border:'1px solid #cbd5e1',background:'white',color:'#475569',fontSize:11,fontWeight:700}}>消す</button>}
+          <span style={{fontSize:11,color:'#64748b'}}>
+            {cfxRows===null?'索引を読み込み中…'
+              :cfxRows.length?`${(cfxMeta&&cfxMeta.files&&cfxMeta.files.length)||0}ヶ月・${cfxRows.length}件から探します`
+              :'索引がまだありません（右のボタンで作れます）'}
+          </span>
+          <button onClick={()=>cfxRebuild()} disabled={cfxBusy||files.length===0}
+            style={{marginLeft:'auto',padding:'5px 12px',borderRadius:20,border:'1.5px solid #cbd5e1',background:'white',color:'#475569',fontSize:11,fontWeight:700,opacity:cfxBusy?0.6:1}}>
+            {cfxBusy?'作成中…':'🗂 索引を作り直す'}
+          </button>
+          {cfxQ.trim().length>=2&&cfxRows&&cfxRows.length>0&&(()=>{
+            const hits=cfxSearch(cfxRows,cfxQ,60);
+            return(
+              <div style={{position:'absolute',top:'100%',left:120,zIndex:50,width:'min(760px,88vw)',maxHeight:360,overflowY:'auto',
+                background:'white',border:'1px solid #cbd5e1',borderRadius:10,boxShadow:'0 14px 34px rgba(15,23,42,.22)'}}>
+                {hits.length===0
+                  ?<div style={{padding:'16px',fontSize:12.5,color:'#94a3b8',textAlign:'center'}}>見つかりませんでした</div>
+                  :hits.map(g=>(
+                    <div key={g.key} onClick={()=>{
+                        const i=files.findIndex(f=>f.name===g.now.f);
+                        if(i>=0){setActiveIdx(i);setFilterStatus('all');setSearch(g.now.n);setCfxQ('');}
+                        else alert('「'+g.now.f+'」がこのPCで読み込めていません。少し待ってからもう一度お試しください。');
+                      }}
+                      style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',borderTop:'1px solid #f1f5f9',cursor:'pointer'}}
+                      onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'}
+                      onMouseLeave={e=>e.currentTarget.style.background='white'}>
+                      <span style={{fontWeight:800,fontSize:13.5,minWidth:110}}>{g.now.n}</span>
+                      <span style={{fontSize:12,color:'#64748b',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                        {g.now.c}{g.now.no!==''?' ・ No.'+g.now.no:''}{g.now.p?' ・ '+g.now.p:''}{g.now.e?' ・ 満了 '+g.now.e:''}
+                      </span>
+                      <span style={{fontSize:10.5,fontWeight:800,background:'#dbeafe',color:'#1d4ed8',borderRadius:12,padding:'2px 9px',whiteSpace:'nowrap'}}>{g.now.f}</span>
+                      {g.past.length>0&&<span style={{fontSize:10.5,fontWeight:700,background:'#f1f5f9',color:'#64748b',borderRadius:12,padding:'2px 9px',whiteSpace:'nowrap'}}>前回 {g.past[0].f}</span>}
+                    </div>
+                  ))}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* サーバーに保存しきれなかったファイルの警告（黙って消えたように見せない） */}
       {cfWarn.length>0&&(

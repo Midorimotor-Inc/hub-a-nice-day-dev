@@ -22,7 +22,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1790299640718';
+    window.__APP_BUILD='build-1790430570974';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function runningVer(){
@@ -123,7 +123,7 @@
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
 
 // ★ バージョン管理：アップデートのたびにここだけ変更する
-const APP_VERSION = '2.97';
+const APP_VERSION = '2.98';
 // 本人認証を必須にするか。false の間は従来どおり名前を選ぶだけで入れる（移行期間）。
 //   false … 全員が今までどおり使える。端末の登録（＋スタッフを追加）は先にできる。
 //   true  … その端末で本人確認を済ませた人しかログイン画面に出ない。
@@ -5096,6 +5096,73 @@ const HolidayModal=memo(({isOpen,onClose,closedDays,setClosedDays,closedDates,se
 //  「空き枠検索」の置き換え（車検はカレンダーで空きが分かり、整備は前後を見ないと決められないため使われなかった）。
 //  顧客ファイルは開いた時に1回だけ読む（Firestore の cf-index → 各ファイルの index → チャンク）。
 // ============================================
+
+// ══ 顧客の横断検索「索引」（v2.98・2026-09-26）══════════════════════════
+//   月ファイル（cf-*）がいつでも正。索引はそこから何度でも作り直せる“探すための軽い写し”で、
+//   DM の月ごと一覧にも集計にも使わない。だから消えても作り直すだけで済む。
+//   中身は 氏名・車種・顧客No・電話・満了日・どのファイルの誰か だけ。
+//   ★予約状況（status/入庫日）は入れない：変わるたびに索引を直す必要が無くなり、古い情報が出ない。
+//   キー： cf-search-index … {built, total, chunks, files:[月...]}
+//          cf-search-chunk-i … 索引の行の配列（1本 2500行・約200KB）
+const CFX_CHUNK = 2500;
+const cfxIndexKey = () => STOR + 'cf-search-index';
+const cfxChunkKey = i => STOR + 'cf-search-chunk-' + i;
+const cfxRow = (c, fileName) => ({
+  n: String(c.name || ''), c: String(c.carType || ''), no: (c.no == null ? '' : c.no),
+  p: [c.phoneMobile, c.phoneHome].map(v => String(v || '').trim()).filter(Boolean).join('/'),
+  e: String(c.expiry || ''), f: String(fileName || ''), i: String(c.custId || ''),
+});
+// 探す時の正規化：全角半角・大小・空白・ハイフン・かっこを無視する（画面の検索と同じ規則）
+const cfxNorm = s => String(s == null ? '' : s).normalize('NFKC').toLowerCase().replace(/[\s　\-‐ー－()（）]/g, '');
+const cfxDigits = s => String(s == null ? '' : s).normalize('NFKC').replace(/[^0-9]/g, '');
+// 同じ人をまとめる鍵：顧客Noがあればそれ、無ければ氏名＋車種
+const cfxPersonKey = r => (r.no !== '' && r.no != null) ? ('no:' + cfxNorm(r.no)) : ('nm:' + cfxNorm(r.n) + '/' + cfxNorm(r.c));
+// 索引を読む（sGet を渡す）。無ければ null＝まだ作られていない
+const cfxLoad = async (sGet) => {
+  const idx = await sGet(cfxIndexKey());
+  if (!idx || !Number(idx.chunks)) return null;
+  const parts = await Promise.all(Array.from({ length: Number(idx.chunks) }, async (_, i) => {
+    let a = await sGet(cfxChunkKey(i));
+    for (let t = 0; !Array.isArray(a) && t < 2; t++) { await new Promise(r => setTimeout(r, 600 * (t + 1))); a = await sGet(cfxChunkKey(i)); }
+    return Array.isArray(a) ? a : null;
+  }));
+  if (parts.some(p => !p)) return null;                 // 欠けている＝作り直しが要る
+  return { meta: idx, rows: parts.flat() };
+};
+// 索引を作って書く（files は [{name, customers:[...]}]。PC の顧客リストが持っているもの）
+const cfxBuild = async (files, sSet) => {
+  const rows = [];
+  [...files].sort((a, b) => String(b.name).localeCompare(String(a.name)))
+    .forEach(f => (f.customers || []).forEach(c => { if (c && c.name) rows.push(cfxRow(c, f.name)); }));
+  const chunks = [];
+  for (let i = 0; i < rows.length; i += CFX_CHUNK) chunks.push(rows.slice(i, i + CFX_CHUNK));
+  for (let i = 0; i < chunks.length; i++) await sSet(cfxChunkKey(i), chunks[i]);
+  const meta = { built: Date.now(), total: rows.length, chunks: chunks.length, files: files.map(f => f.name) };
+  await sSet(cfxIndexKey(), meta);
+  return meta;
+};
+// 探す：ヒットした行を「人」でまとめ、新しい月を今回・それ以外を前回として返す
+//   数字だけを打った時は 電話と顧客No の数字で探す（電話の下4桁だけでも出る）
+const cfxSearch = (rows, q, limit) => {
+  const raw = String(q || '').trim();
+  if (raw.length < 2) return [];
+  const nq = cfxNorm(raw), dq = cfxDigits(raw);
+  const numOnly = dq.length >= 2 && cfxNorm(raw) === dq;
+  const hit = r => numOnly
+    ? (cfxDigits(r.p).includes(dq) || cfxDigits(r.no).includes(dq))
+    : (cfxNorm(r.n).includes(nq) || cfxNorm(r.c).includes(nq) || cfxNorm(r.no).includes(nq) || cfxNorm(r.p).includes(nq));
+  const groups = new Map();
+  for (const r of rows) {
+    if (!hit(r)) continue;
+    const k = cfxPersonKey(r);
+    const g = groups.get(k);
+    if (!g) groups.set(k, { key: k, now: r, past: [] });
+    else if (String(r.f) > String(g.now.f)) { g.past.unshift(g.now); g.now = r; }
+    else g.past.push(r);
+    if (groups.size >= (limit || 200) && !groups.has(k)) break;
+  }
+  return [...groups.values()].sort((a, b) => String(b.now.f).localeCompare(String(a.now.f)));
+};
 const _hubNorm=s=>String(s==null?'':s).normalize('NFKC').toLowerCase().replace(/[\s\u3000\-‐ー－()（）]/g,'');
 const FindModal=memo(({isOpen,onClose,inspData,schedDataH,schedDataS,onGo,onGoCust})=>{
   const [q,setQ]=useState('');
@@ -5108,20 +5175,26 @@ const FindModal=memo(({isOpen,onClose,inspData,schedDataH,schedDataS,onGo,onGoCu
     setQ('');setTab('all');
     setTimeout(()=>{try{inputRef.current&&inputRef.current.focus();}catch(e){}},50);
     if(cust!==null||custBusy)return;
-    // 顧客ファイルを読む（customers.html と同じ置き方：cf-index → cf-{name}-index → cf-{name}-chunk-i）
+    // 顧客は索引（cf-search-*）から引く。24ヶ月ぶんでも数本の読み取りで済む（v2.98）。
+    //   索引がまだ無い環境では、今までどおり月ファイルを全部読む（顧客リストで作れば軽くなる）。
     setCustBusy(true);
     (async()=>{
-      const out=[];
+      let out=[];
       try{
-        const safeName=n=>String(n).replace(/[^a-zA-Z0-9\u3000-\u9fff\u30a0-\u30ff\u3040-\u309f]/g,'_').slice(0,30);
-        const idx=await sGet(STOR+'cf-index');
-        const files=(Array.isArray(idx)?idx:[]).map(f=>f&&f.name).filter(Boolean).sort().reverse();
-        for(const fn of files){
-          const sn=safeName(fn);
-          const fi=await sGet(STOR+'cf-'+sn+'-index');
-          const n=(fi&&Number(fi.chunks))||0;
-          const chunks=await Promise.all(Array.from({length:n},(_,i)=>sGet(STOR+'cf-'+sn+'-chunk-'+i).catch(()=>null)));
-          chunks.forEach(c=>{ if(Array.isArray(c)) c.forEach(r=>{ if(r&&r.name) out.push({...r,_file:fn}); }); });
+        const r=await cfxLoad(sGet);
+        if(r&&r.rows.length){
+          out=r.rows.map(x=>({name:x.n,carType:x.c,no:x.no,phoneMobile:(String(x.p||'').split('/')[0]||''),phoneHome:(String(x.p||'').split('/')[1]||''),expiry:x.e,custId:x.i,_file:x.f}));
+        }else{
+          const safeName=n=>String(n).replace(/[^a-zA-Z0-9\u3000-\u9fff\u30a0-\u30ff\u3040-\u309f]/g,'_').slice(0,30);
+          const idx=await sGet(STOR+'cf-index');
+          const files=(Array.isArray(idx)?idx:[]).map(f=>f&&f.name).filter(Boolean).sort().reverse();
+          for(const fn of files){
+            const sn=safeName(fn);
+            const fi=await sGet(STOR+'cf-'+sn+'-index');
+            const n=(fi&&Number(fi.chunks))||0;
+            const chunks=await Promise.all(Array.from({length:n},(_,i)=>sGet(STOR+'cf-'+sn+'-chunk-'+i).catch(()=>null)));
+            chunks.forEach(c=>{ if(Array.isArray(c)) c.forEach(r2=>{ if(r2&&r2.name) out.push({...r2,_file:fn}); }); });
+          }
         }
       }catch(e){}
       setCust(out); setCustBusy(false);
